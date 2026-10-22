@@ -7,6 +7,7 @@ export EDK_TOOLS_PATH="$task_root/uefi-sheng/Mu_Basecore/BaseTools"
 export PACKAGES_PATH="$task_root:$task_root/uefi-sheng/Mu_Basecore"
 export CONF_PATH="$task_root/out/uefi-conf"
 export PYTHON_COMMAND=python3
+export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$task_root/UniXNU-sheng/drivers/ShengPreflight" log -1 --format=%ct)}
 export PATH="$EDK_TOOLS_PATH/BinWrappers/PosixLike:$EDK_TOOLS_PATH/Source/C/bin:$PATH"
 mkdir -p "$CONF_PATH" "$task_root/out/logs"
 for config in target tools_def build_rule; do
@@ -34,6 +35,8 @@ if data[:2] != b'MZ' or data[pe:pe+4] != b'PE\0\0' or struct.unpack_from('<H', d
     raise SystemExit('not an AArch64 PE image')
 record = dict(file=path.name, sha256=hashlib.sha256(data).hexdigest(), bytes=len(data),
               hardware_executed=False, note='Standalone UEFI application; not an Android boot image')
+record['source_sha256'] = hashlib.sha256(Path('UniXNU-sheng/drivers/ShengPreflight/ShengPreflight.c').read_bytes()).hexdigest()
+record['sources_lock_sha256'] = hashlib.sha256(Path('sources.lock.json').read_bytes()).hexdigest()
 Path('out/preflight-build.json').write_text(json.dumps(record, indent=2)+'\n')
 print(json.dumps(record))
 PY

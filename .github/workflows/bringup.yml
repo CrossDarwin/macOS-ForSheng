@@ -76,6 +76,12 @@ jobs:
       - name: Install LLVM
         if: inputs.target == 'monitor'
         run: brew install llvm lld
+      - name: Cache exact KDK input
+        if: inputs.target == 'apple'
+        uses: actions/cache@v4
+        with:
+          path: private/apple/Kernel_Debug_Kit_27.0_build_26A428.dmg
+          key: ${{ runner.os }}-${{ runner.arch }}-sdk27.0-${{ hashFiles('sources.lock.json', 'patches/**', 'config/guest.json', 'scripts/verify_kdk.sh') }}
       - name: Compile monitor
         if: inputs.target == 'monitor'
         run: python3 scripts/build_monitor.py --llvm-bin "$(brew --prefix llvm)/bin"

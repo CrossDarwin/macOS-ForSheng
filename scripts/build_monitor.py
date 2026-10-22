@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,9 @@ def main():
     record = dict(sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload),
                   source='Snapintosh/probes/xnuboot.*', hardware_executed=False,
                   sheng_qualified=False, note='Upstream A16 monitor build; not a sheng launch image')
+    record['compiler'] = subprocess.check_output([str(args.llvm_bin/'clang'), '--version'], text=True).splitlines()[0]
+    record['flags'] = run.FLAGS
+    record['sources_lock_sha256'] = hashlib.sha256((ROOT/'sources.lock.json').read_bytes()).hexdigest()
     (directory / 'build.json').write_text(json.dumps(record, indent=2)+'\n')
     print(json.dumps(record))
 

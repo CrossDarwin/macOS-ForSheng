@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--llvm-bin', type=Path, required=True)
     parser.add_argument('--iasl-bin', type=Path, required=True)
     parser.add_argument('--fetch-firmware', action='store_true', help='download the pinned 7 GiB vendor archive if needed')
+    parser.add_argument('--bootimg', action='store_true', help='also package a UEFI-only Android boot container')
     args = parser.parse_args()
     env = dict(os.environ, PATH=f'{args.llvm_bin.resolve()}:{args.iasl_bin.resolve()}:{os.environ["PATH"]}',
                CLANG_BIN=str(args.llvm_bin.resolve()) + '/')
@@ -80,6 +81,14 @@ def main():
     fd = ROOT/'uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd'
     record = dict(file=fd.name, bytes=fd.stat().st_size, sha256=hashlib.sha256(fd.read_bytes()).hexdigest(),
                   deployed=False, hardware_qualified=False)
+    record['vendor_archive_sha256'] = json.loads(manifest.read_text())['archive_sha256']
+    record['sources_lock_sha256'] = hashlib.sha256((ROOT/'sources.lock.json').read_bytes()).hexdigest()
+    if args.bootimg:
+        command = ['python3', 'scripts/package-sheng-boot.py']
+        if not shutil.which('qemu-system-aarch64', path=env['PATH']):
+            command.append('--skip-qemu')
+        run(command, DEVICE, 'firmware-bootimg')
+        record['bootimg'] = json.loads((DEVICE/'build/sheng/boot/report.json').read_text())
     (ROOT/'out/firmware-build.json').write_text(json.dumps(record, indent=2)+'\n')
     print(json.dumps(record))
 
