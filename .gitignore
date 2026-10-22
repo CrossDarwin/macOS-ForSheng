@@ -1,0 +1,14 @@
+/UniXNU/
+/UniXNU-sheng/
+/uefi-sheng/
+/xnu/
+/Snapintosh/
+/q1n1/
+/sources/
+/private/
+/out/
+/research/
+/local.json
+__pycache__/
+*.pyc
+/.venv/

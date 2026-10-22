@@ -1,0 +1,19 @@
+{
+  "version": "27.0",
+  "build": "26A428",
+  "device_class": "j700ap",
+  "profile": "j700ap-26A428",
+  "ipsw": {
+    "url": "https://updates.cdn-apple.com/2026FallFCS/afcfc88e-bbe6-44bf-a5da-07c56eebc06c/UniversalMac_27.0_26A428_Restore.ipsw",
+    "filename": "UniversalMac_27.0_26A428_Restore.ipsw",
+    "bytes": 26626436228,
+    "sha256": "2a5d3c695d501022b7fad9adaffcf2627bcb867d993fb5662dcd41bac99a2836"
+  },
+  "kdk": {
+    "url": "https://github.com/dortania/KdkSupportPkg/releases/download/26A428/Kernel_Debug_Kit_27.0_build_26A428.dmg",
+    "filename": "Kernel_Debug_Kit_27.0_build_26A428.dmg",
+    "bytes": 1245374613,
+    "sha256": "7ce685e305d3bcee5e1d8fe9418c55c7e0bbc38075ab1841602444e9098a6efc",
+    "source": "Dortania mirror; Apple package signature verification required before install"
+  }
+}

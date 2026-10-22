@@ -1,0 +1,111 @@
+{
+  "format": 1,
+  "sources": [
+    {
+      "path": "UniXNU",
+      "url": "https://github.com/UniXNU/UniXNU.git",
+      "commit": "fb6aad6ab1f50199a4d99d2da1d0ca403b067633",
+      "group": "core",
+      "submodules": true
+    },
+    {
+      "path": "UniXNU-sheng",
+      "url": "https://github.com/UniXNU/UniXNU-sheng.git",
+      "commit": "2b7a5815110bf75713eb596612b0b33231b181f8",
+      "group": "core",
+      "submodules": true
+    },
+    {
+      "path": "uefi-sheng",
+      "url": "https://github.com/UniXNU/uefi-sheng.git",
+      "commit": "0eb4514db0744b8136a3897ab1af93b713c2c27b",
+      "group": "core",
+      "submodules": true,
+      "nested_submodules": {
+        "Mu_Basecore": [
+          "BaseTools/Source/C/BrotliCompress/brotli",
+          "MdePkg/Library/BaseFdtLib/libfdt"
+        ]
+      }
+    },
+    {
+      "path": "xnu",
+      "url": "https://github.com/apple-oss-distributions/xnu.git",
+      "commit": "d8b80295118ef25ac3a784134bcf95cd8e88109f",
+      "group": "core",
+      "submodules": false
+    },
+    {
+      "path": "Snapintosh",
+      "url": "https://github.com/Acelogic/Snapintosh.git",
+      "commit": "28663c30f0a14c1862c099d6ea46f1b3421ab011",
+      "group": "core",
+      "submodules": false
+    },
+    {
+      "path": "q1n1",
+      "url": "https://github.com/Acelogic/q1n1.git",
+      "commit": "b72baceeafbdc28c866838e000146455a9f4a653",
+      "group": "core",
+      "submodules": false
+    },
+    {
+      "path": "sources/libplatform",
+      "url": "https://github.com/apple-oss-distributions/libplatform.git",
+      "commit": "a00a4cc36da2110578bcf3b8eeeeb93dcc7f4e11",
+      "group": "feeds"
+    },
+    {
+      "path": "sources/libdispatch",
+      "url": "https://github.com/apple-oss-distributions/libdispatch.git",
+      "commit": "30fe6a7d945340ce69cef121132f049e810089a5",
+      "group": "feeds"
+    },
+    {
+      "path": "sources/AvailabilityVersions",
+      "url": "https://github.com/apple-oss-distributions/AvailabilityVersions.git",
+      "commit": "933f9360f1b70dfbda5548386a3d65e0358b4f7d",
+      "group": "feeds"
+    },
+    {
+      "path": "sources/libpthread",
+      "url": "https://github.com/apple-oss-distributions/libpthread.git",
+      "commit": "c0e60fb5ecfc54cf379c261d3f9572cc22ded891",
+      "group": "feeds"
+    },
+    {
+      "path": "sources/corecrypto-2023",
+      "url": "https://github.com/ONLYA/corecrypto-2023.git",
+      "commit": "11fba65b12d8830630e248dfa8344caf8b065f26",
+      "group": "feeds"
+    },
+    {
+      "path": "sources/IOStorageFamily",
+      "url": "https://github.com/apple-oss-distributions/IOStorageFamily.git",
+      "commit": "e45fbe30a7879e0b16e26dddb78538f1b00e0bff",
+      "group": "feeds"
+    },
+    {
+      "path": "sources/linux-sheng",
+      "url": "https://github.com/ianchb/sm8550-mainline.git",
+      "commit": "42f3b40c702abbc37c3a04c95af008cd283aeaf3",
+      "group": "feeds",
+      "sparse": [
+        "arch/arm64/boot/dts/qcom",
+        "include/dt-bindings"
+      ]
+    },
+    {
+      "path": "sources/mesa-unixnu",
+      "url": "https://chromium.googlesource.com/external/gitlab.freedesktop.org/mesa/mesa",
+      "commit": "85fda3b36405bcaea8bffc64aa4f2651dc90770d",
+      "group": "graphics"
+    },
+    {
+      "path": "Snapintosh/gpu/air2ir3/third_party/mesa",
+      "url": "https://chromium.googlesource.com/external/gitlab.freedesktop.org/mesa/mesa",
+      "commit": "bbeb2dca9feed6ac88d71234a9dc5ae8aeed4275",
+      "group": "graphics"
+    }
+  ]
+}
