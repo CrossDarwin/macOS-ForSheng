@@ -1,0 +1,99 @@
+name: sheng macOS bring-up
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Build target; no job deploys to hardware
+        type: choice
+        options: [check, preflight, monitor, kext, xnu]
+        default: check
+permissions:
+  contents: read
+concurrency:
+  group: sheng-${{ github.ref }}-${{ inputs.target }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python3 scripts/sources.py fetch --group core
+      - run: python3 scripts/apply_patches.py
+      - run: python3 scripts/sources.py verify --group core
+      - run: python3 -m unittest discover -s tests -v
+  preflight:
+    if: inputs.target == 'preflight'
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: sudo apt-get update && sudo apt-get install -y clang lld llvm uuid-dev nasm
+      - run: python3 scripts/sources.py fetch --group core
+      - run: python3 scripts/apply_patches.py
+      - name: Prepare LLVM tool paths
+        run: |
+          mkdir -p out/toolchain
+          for tool in clang llvm-lib lld-link llvm-rc; do
+            ln -s "$(command -v "$tool")" "out/toolchain/$tool"
+          done
+          echo "CLANG_BIN=$GITHUB_WORKSPACE/out/toolchain/" >> "$GITHUB_ENV"
+      - run: bash scripts/build_preflight.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sheng-preflight
+          path: |
+            out/uefi/RELEASE_CLANGPDB/AARCH64/ShengPreflight.efi
+            out/preflight-build.json
+            out/logs/
+          retention-days: 7
+  macos:
+    if: inputs.target == 'monitor' || inputs.target == 'kext' || inputs.target == 'xnu'
+    needs: check
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python3 scripts/sources.py fetch --group core
+      - name: Verify toolchain
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          test "$(xcrun --sdk macosx --show-sdk-version)" = 27.0
+          test "$(uname -m)" = arm64
+      - name: Install LLVM
+        run: brew install llvm lld
+      - name: Compile monitor
+        if: inputs.target == 'monitor'
+        run: python3 scripts/build_monitor.py --llvm-bin "$(brew --prefix llvm)/bin"
+      - name: Verify kext prerequisites
+        if: inputs.target == 'kext'
+        run: python3 scripts/check_apple.py --kext
+      - name: Build qualified upstream kext
+        if: inputs.target == 'kext'
+        run: OUT="$GITHUB_WORKSPACE/out/kext" sh Snapintosh/gpu/adreno-kext/kext/build.sh
+      - name: Verify XNU prerequisites
+        if: inputs.target == 'xnu'
+        run: python3 scripts/check_apple.py --xnu
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-${{ inputs.target }}
+          path: |
+            out/monitor/*.bin
+            out/monitor/build.json
+            out/logs/
+          if-no-files-found: warn
+          retention-days: 7
