@@ -8,9 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from gates import assess, host_runtime, parse_preflight, StorageWindow
 from guestprofile import get_profile
+from check_apple import trusted_kdk_signature
 
 
 class Gates(unittest.TestCase):
+    def test_apple_software_signature_status(self):
+        text = 'Status: signed Apple Software\n2. Apple Software Update Certification Authority\n3. Apple Root CA\n'
+        self.assertTrue(trusted_kdk_signature(text))
+        self.assertFalse(trusted_kdk_signature(text.replace('signed Apple Software', 'no signature')))
+        self.assertFalse(trusted_kdk_signature(text.replace('Apple Root CA', 'Untrusted Root')))
+        self.assertFalse(trusted_kdk_signature('Status: signed by a certificate trusted by macOS\nDeveloper ID Installer: Someone Else'))
+
     def test_wrong_guest_hash_and_unknown_abi(self):
         with self.assertRaises(ValueError):
             get_profile('sheng-unverified-abi')
@@ -26,7 +34,7 @@ class Gates(unittest.TestCase):
 
     def test_required_features_and_actual_probes(self):
         self.assertTrue(assess(self.cpu_report())['ready'])
-        for change in (dict(EL=1), dict(MMFR2=0), dict(TIMER=0)):
+        for change in (dict(EL=1), dict(MMFR2=0), dict(MMFR2=15 << 24), dict(TIMER=0)):
             report = self.cpu_report()
             report['cpus'][0].update(change)
             self.assertFalse(assess(report)['ready'])

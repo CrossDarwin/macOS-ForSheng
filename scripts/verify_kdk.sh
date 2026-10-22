@@ -16,8 +16,9 @@ hdiutil attach private/apple/Kernel_Debug_Kit_27.0_build_26A428.dmg -readonly -n
 pkgutil --check-signature "$kdk_mount/KernelDebugKit.pkg" > out/logs/kdk-signature.log
 python3 - <<'PY'
 from pathlib import Path
+from scripts.check_apple import trusted_kdk_signature
 text = Path('out/logs/kdk-signature.log').read_text()
-if 'signed by a certificate trusted by' not in text or 'Apple Inc.' not in text:
+if not trusted_kdk_signature(text):
     raise SystemExit('KDK package does not have the expected trusted Apple signer')
 print('PASS trusted Apple KDK package signature')
 PY

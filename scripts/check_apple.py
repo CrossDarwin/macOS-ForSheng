@@ -12,6 +12,14 @@ sys.path.insert(0, str(ROOT / 'Snapintosh/probes'))
 from guestprofile import get_profile
 
 
+def trusted_kdk_signature(text):
+    """pkgutil distinguishes Apple Software packages from third-party developer signatures."""
+    lines = [line.strip() for line in text.splitlines()]
+    return ('Status: signed Apple Software' in lines
+            and any(line.endswith('Apple Software Update Certification Authority') for line in lines)
+            and any(line.endswith('Apple Root CA') for line in lines))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     choice = parser.add_mutually_exclusive_group()

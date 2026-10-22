@@ -45,7 +45,7 @@ def assess(report):
         name = f'cpu {cpu.get("cpu")}'
         if cpu.get('EL') != 2:
             reasons.append(f'{name}: EL2 unavailable at handoff')
-        if ((cpu.get('MMFR2', 0) >> 24) & 15) < 2:
+        if ((cpu.get('MMFR2', 0) >> 24) & 15) != 2:
             reasons.append(f'{name}: NV2 not advertised')
         if not 0 < cpu.get('TIMER', 0) < 1 << 32:
             reasons.append(f'{name}: invalid timer frequency')
