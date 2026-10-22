@@ -1,0 +1,6 @@
+diff --git a/drivers/ShengPreflight b/drivers/ShengPreflight
+--- a/drivers/ShengPreflight
++++ b/drivers/ShengPreflight
+@@ -1 +1 @@
+-Subproject commit 471e5cb92efda246e6300c04392417f66c2c5ee4
++Subproject commit 471e5cb92efda246e6300c04392417f66c2c5ee4-dirty
