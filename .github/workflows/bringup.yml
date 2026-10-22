@@ -5,7 +5,7 @@ on:
       target:
         description: Build target; no job deploys to hardware
         type: choice
-        options: [check, preflight, monitor, kext, xnu]
+        options: [check, preflight, monitor, apple, kext, xnu]
         default: check
 permissions:
   contents: read
@@ -56,7 +56,7 @@ jobs:
             out/logs/
           retention-days: 7
   macos:
-    if: inputs.target == 'monitor' || inputs.target == 'kext' || inputs.target == 'xnu'
+    if: inputs.target == 'monitor' || inputs.target == 'apple' || inputs.target == 'kext' || inputs.target == 'xnu'
     needs: check
     runs-on: xcode-27
     timeout-minutes: 60
@@ -74,10 +74,14 @@ jobs:
           test "$(xcrun --sdk macosx --show-sdk-version)" = 27.0
           test "$(uname -m)" = arm64
       - name: Install LLVM
+        if: inputs.target == 'monitor'
         run: brew install llvm lld
       - name: Compile monitor
         if: inputs.target == 'monitor'
         run: python3 scripts/build_monitor.py --llvm-bin "$(brew --prefix llvm)/bin"
+      - name: Verify Apple package and kernel identity
+        if: inputs.target == 'apple'
+        run: bash scripts/verify_kdk.sh
       - name: Verify kext prerequisites
         if: inputs.target == 'kext'
         run: python3 scripts/check_apple.py --kext
@@ -94,6 +98,7 @@ jobs:
           path: |
             out/monitor/*.bin
             out/monitor/build.json
+            out/kdk-verification.json
             out/logs/
           if-no-files-found: warn
           retention-days: 7
