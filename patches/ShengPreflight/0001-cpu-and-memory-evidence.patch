@@ -1,0 +1,129 @@
+diff --git a/ShengPreflight.c b/ShengPreflight.c
+index 3331147..3f1165d 100644
+--- a/ShengPreflight.c
++++ b/ShengPreflight.c
+@@ -1,9 +1,98 @@
+ // SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Uefi.h>
++#include <Pi/PiMultiPhase.h>
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiLib.h>
+ #include <Protocol/GraphicsOutput.h>
++#include <Protocol/MpService.h>
++
++#define MAX_PROBE_CPUS 64
++
++typedef struct {
++  UINT64 Midr;
++  UINT64 El;
++  UINT64 Mmfr0;
++  UINT64 Mmfr1;
++  UINT64 Mmfr2;
++  UINT64 Isar1;
++  UINT64 Isar2;
++  UINT64 Dfr0;
++  UINT64 Frequency;
++  BOOLEAN Valid;
++} CPU_SAMPLE;
++
++STATIC CPU_SAMPLE mSamples[MAX_PROBE_CPUS];
++STATIC EFI_MP_SERVICES_PROTOCOL *mMp;
++
++STATIC VOID
++ReadCpu (CPU_SAMPLE *Sample)
++{
++  __asm__ volatile ("mrs %0, midr_el1" : "=r" (Sample->Midr));
++  __asm__ volatile ("mrs %0, CurrentEL" : "=r" (Sample->El));
++  Sample->El >>= 2;
++  __asm__ volatile ("mrs %0, id_aa64mmfr0_el1" : "=r" (Sample->Mmfr0));
++  __asm__ volatile ("mrs %0, id_aa64mmfr1_el1" : "=r" (Sample->Mmfr1));
++  __asm__ volatile ("mrs %0, id_aa64mmfr2_el1" : "=r" (Sample->Mmfr2));
++  __asm__ volatile ("mrs %0, id_aa64isar1_el1" : "=r" (Sample->Isar1));
++  __asm__ volatile ("mrs %0, id_aa64isar2_el1" : "=r" (Sample->Isar2));
++  __asm__ volatile ("mrs %0, id_aa64dfr0_el1" : "=r" (Sample->Dfr0));
++  __asm__ volatile ("mrs %0, cntfrq_el0" : "=r" (Sample->Frequency));
++  Sample->Valid = TRUE;
++}
++
++STATIC VOID EFIAPI
++ReadAp (VOID *Argument)
++{
++  UINTN Index;
++  (VOID) Argument;
++  if (!EFI_ERROR (mMp->WhoAmI (mMp, &Index)) && Index < MAX_PROBE_CPUS) {
++    ReadCpu (&mSamples[Index]);
++  }
++}
++
++STATIC VOID
++PrintCpus (VOID)
++{
++  EFI_STATUS Status;
++  UINTN Total;
++  UINTN Enabled;
++  UINTN Bsp;
++  UINTN Index;
++  CPU_SAMPLE *Sample;
++
++  Total = 1;
++  Enabled = 1;
++  Bsp = 0;
++  Status = gBS->LocateProtocol (&gEfiMpServiceProtocolGuid, NULL, (VOID **) &mMp);
++  if (!EFI_ERROR (Status)) {
++    Status = mMp->GetNumberOfProcessors (mMp, &Total, &Enabled);
++    if (!EFI_ERROR (Status)) {
++      Status = mMp->WhoAmI (mMp, &Bsp);
++    }
++    if (EFI_ERROR (Status) || Total > MAX_PROBE_CPUS || Bsp >= MAX_PROBE_CPUS) {
++      Print (L"SHENG-PREFLIGHT: CPU enumeration failed status=%r total=%lu\r\n", Status, (UINT64) Total);
++      return;
++    }
++  }
++  ReadCpu (&mSamples[Bsp]);
++  Print (L"SHENG-PREFLIGHT: schema=1 scope=uefi total=%lu enabled=%lu\r\n", (UINT64) Total, (UINT64) Enabled);
++  if (!EFI_ERROR (Status) && Enabled > 1) {
++    // Do not start disabled cores or guess their PSCI entry contract.
++    Status = mMp->StartupAllAPs (mMp, ReadAp, TRUE, NULL, 1000000, NULL, NULL);
++    Print (L"SHENG-PREFLIGHT: AP collection status=%r\r\n", Status);
++  }
++  for (Index = 0; Index < MAX_PROBE_CPUS; Index++) {
++    Sample = &mSamples[Index];
++    if (!Sample->Valid) {
++      continue;
++    }
++    Print (L"SHENG-PREFLIGHT: cpu=%lu MIDR=0x%lx EL=%lu MMFR0=0x%lx MMFR1=0x%lx MMFR2=0x%lx ISAR1=0x%lx ISAR2=0x%lx DFR0=0x%lx TIMER=%lu\r\n",
++      (UINT64) Index, Sample->Midr, Sample->El, Sample->Mmfr0, Sample->Mmfr1,
++      Sample->Mmfr2, Sample->Isar1, Sample->Isar2, Sample->Dfr0, Sample->Frequency);
++  }
++  Print (L"SHENG-PREFLIGHT: register advertisement only; NV2, debug and granule execution not qualified\r\n");
++}
+ 
+ EFI_STATUS
+ EFIAPI
+@@ -39,6 +128,7 @@ UefiMain (
+   Print (L"SHENG-PREFLIGHT: MMFR0=0x%lx TGran4=%lu TGran16=%lu TGran64=%lu\r\n",
+     Mmfr0, (Mmfr0 >> 28) & 15, (Mmfr0 >> 20) & 15, (Mmfr0 >> 24) & 15);
+   Print (L"SHENG-PREFLIGHT: timer frequency=%lu\r\n", Frequency);
++  PrintCpus ();
+ 
+   Size = 0;
+   Map = NULL;
+@@ -60,6 +150,8 @@ UefiMain (
+   ReservedPages = 0;
+   for (Offset = 0; Offset < Size; Offset += Stride) {
+     Descriptor = (EFI_MEMORY_DESCRIPTOR *) ((UINT8 *) Map + Offset);
++    Print (L"SHENG-PREFLIGHT: memory type=%u base=0x%lx pages=0x%lx attributes=0x%lx\r\n",
++      Descriptor->Type, Descriptor->PhysicalStart, Descriptor->NumberOfPages, Descriptor->Attribute);
+     if (Descriptor->Type == EfiConventionalMemory) {
+       FreePages += Descriptor->NumberOfPages;
+     }
+diff --git a/ShengPreflight.inf b/ShengPreflight.inf
+index 9ae3572..b33f1a3 100644
+--- a/ShengPreflight.inf
++++ b/ShengPreflight.inf
+@@ -21,3 +21,4 @@
+ 
+ [Protocols]
+   gEfiGraphicsOutputProtocolGuid
++  gEfiMpServiceProtocolGuid
