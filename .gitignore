@@ -7,6 +7,8 @@
 /sources/
 /private/
 /out/
+/build/
+/.cache/
 /research/
 /local.json
 __pycache__/

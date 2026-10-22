@@ -5,6 +5,7 @@
 目标固定 macOS 27.0 / 26A428。UniXNU 提供 sheng 硬件基线，Snapintosh 提供 macOS 客体兼容实现。
 
 - [开发、构建与设备探测](docs/bringup.md)
+- [实施状态与当前阻塞](docs/status.md)
 - [固定源码提交](sources.lock.json)
 - [手动构建工作流](.github/workflows/bringup.yml)
 

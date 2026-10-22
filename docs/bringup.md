@@ -29,6 +29,7 @@ python3 scripts/check_apple.py
 
 IPSW 来自 Apple CDN，大小和哈希由 CDN 元数据固定。KDK 来自 Dortania 镜像，先校验下载哈希；
 在 Mac 安装前还须通过 `pkgutil --check-signature` 验证内部 Apple 安装包签名。
+手动工作流的 `apple` 目标在 macOS runner 校验签名，并展开包验证 T8140 内核 UUID；不安装到用户电脑。
 获取引导组件复用 UniXNU 的范围读取和 Snapintosh 的 IM4P 解码器，结果必须匹配上游四项哈希。
 完整 IPSW、KDK、解包内容和 ABI 还原结果都留在忽略目录。
 
@@ -57,6 +58,30 @@ python3 scripts/gates.py private/device/preflight.log --output private/device/as
 独立 EFI 应用不是 Android 启动镜像。部署前需要可读的原始 GPT、boot/recovery 备份，
 以及已验证的恢复路径。没有这些条件不写入 UEFI 或分区。
 评估程序即使接受寄存器声明，仍会拒绝缺少行为验证记录的环境。
+
+在已开启 root ADB 的 sheng Recovery 中备份：
+
+```sh
+python3 scripts/backup_device.py --output private/backups/run-name
+```
+
+保存六个 UFS LUN 的两份 GPT，验证头部及分区数组 CRC 和副本一致性。
+保存两套 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta、vbmeta_system、uefi，
+并将本地文件哈希与设备重新读取的哈希核对。这不包含 Android 用户数据。
+
+## 完整 UEFI 固件
+
+```sh
+python3 scripts/build_firmware.py --llvm-bin /path/to/llvm/bin --iasl-bin /path/to/iasl/bin --fetch-firmware
+```
+
+复用上游的固定厂商包、DTS、模块导入、固件构建和 FV 检查，不执行刷写。
+厂商包约 7 GiB，先验证上游固定 MD5 及完整 SHA-256，再提取所需文件。
+UEFIExtract 源码版本也在锁文件中；需要 CMake 3.22+，或由 uvx 获取固定 CMake 3.31.6。
+默认板级配置为 `SHENG_VENDOR_HW=0`，FV 检查的厂商模块覆盖数必须按实际配置解读，
+不能把 0 个厂商模块参与检查说成全部厂商模块均已验证。
+加 `--bootimg` 可以封装只含 UEFI 的 Android 容器，验证 header、gzip、FD 和追加 DTB 的往返一致性。
+无 QEMU 时明确记录执行测试未运行。它不含 macOS 内核或用户态，也没有证明 ABL 会接受该镜像。
 
 ## 构建与状态
 

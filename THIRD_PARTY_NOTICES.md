@@ -12,6 +12,8 @@ retain their own licenses and authorship; they are not vendored into this reposi
 - q1n1 / Asahi m1n1: upstream licenses and notices remain in their checkout.
 - Mesa / Linux / Apple open source: fetched separately at pinned revisions;
   consult their own license files.
+- UEFITool / UEFIExtract: BSD-2-Clause with bundled third-party notices;
+  source is fetched separately and used to audit firmware volumes.
 
 Apple restore images, KDKs, reconstructed private ABI headers, firmware and
 device backups are not included in this repository.
