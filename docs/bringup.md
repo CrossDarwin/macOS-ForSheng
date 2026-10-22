@@ -44,7 +44,7 @@ python3 scripts/capture_device.py --cpu-probe out/probes/cpu-id
 EL0 的 ID 值可能由 Linux 模拟，不能据此确认 NV2 不存在或宣告监控层可运行。
 采样范围由当前进程 CPU affinity 决定，不能把部分 CPU 结果扩展到整机。
 
-UEFI 探针在已有 ShengPreflight 上扩展，补丁位于 `patches/UniXNU-sheng/`。
+UEFI 探针在已有 ShengPreflight 上扩展，补丁位于 `patches/ShengPreflight/`。
 MP Services 可用时读取已启用的 AP，不擅自启动禁用核心。协议不可用时只报告启动核。
 输出包括 CurrentEL、ID 寄存器、定时器频率、所有 UEFI 内存描述符和 GOP。
 它只读取特性声明，不执行 NV2、PAC、页表切换或调试陷入测试，不退出 Boot Services。

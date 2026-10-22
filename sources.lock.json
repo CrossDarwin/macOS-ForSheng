@@ -24,7 +24,8 @@
       "nested_submodules": {
         "Mu_Basecore": [
           "BaseTools/Source/C/BrotliCompress/brotli",
-          "MdePkg/Library/BaseFdtLib/libfdt"
+          "MdePkg/Library/BaseFdtLib/libfdt",
+          "MdePkg/Library/MipiSysTLib/mipisyst"
         ]
       }
     },
@@ -106,6 +107,12 @@
       "url": "https://chromium.googlesource.com/external/gitlab.freedesktop.org/mesa/mesa",
       "commit": "bbeb2dca9feed6ac88d71234a9dc5ae8aeed4275",
       "group": "graphics"
+    },
+    {
+      "path": "sources/uefitool",
+      "url": "https://github.com/LongSoft/UEFITool.git",
+      "commit": "dac91b26733ca21cb204e41614c1b8c81cc50860",
+      "group": "feeds"
     }
   ]
 }
