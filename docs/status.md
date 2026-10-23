@@ -399,3 +399,13 @@ Actions 39961597801（9114516）构建成功；QEMU 再次完成原始 POST（13
 只读分析匹配 BootKC 得到六个安全模块、12677 个链式指针，其中 7070 个需要认证；内核指针目标均存在同名导出候选。
 当前普通 ARM64 的回调/虚表契约及未启用 PAC 的 XNU 链式加载器不能执行这些 ARM64E 组件。
 上游可复用部分、实际 Image4 注册入口及后续契约记录于 docs/macos26-security.md；没有绕过安全初始化，也未部署平板。
+
+
+Actions 39968730207（989144e）成功构建独立 ARM64E 内核，UUID 06C8764F-00D3-35AB-9069-A4B01E78F7F2。
+QEMU 已进入 arm_init；首次异常为 static_if_init+0x40，FAR=0x1a92c0，标准 panic 区尚未初始化。
+实际 Mach-O 是 MH_EXECUTE，包含格式 7 的 LC_DYLD_CHAINED_FIXUPS，__thread_starts 为空。
+配套 XNU 对 MH_EXECUTE 只执行 rebase_threaded_starts，未处理该新表；static_if_init 因此访问了未还原的相对指针。
+ARM64E 链接改为显式生成 __thread_starts，要求该表非空且不再输出 LC_DYLD_CHAINED_FIXUPS；由 XNU 原始路径完成还原与签名，不清除 PAC。
+该修正及早期 framebuffer 控制台仍待新产物运行，不作为 ARM64E 完整启动成功。
+同轮 CI 已实际命中 KDK 约 1.18 GB、ARM64E 编译产物约 172 MB，总耗时约 5 分 45 秒。
+新增固定源码缓存，锁定两份依赖清单并在打补丁前保存；编译缓存继续按架构、工具链和适配输入隔离。
