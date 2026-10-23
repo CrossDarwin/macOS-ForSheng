@@ -7,6 +7,8 @@ UniXNU 提供 sheng 硬件基线；Snapintosh 作为兼容实现参考，不限�
 
 - [开发、构建与设备探测](docs/bringup.md)
 - [实施状态与当前阻塞](docs/status.md)
+- [完整上游 sheng 配置](config/sheng_defconfig)
+- [配置、构建链和输入锁](config/sheng-baseline.json)
 - [硬件基线源码提交](sources.lock.json)
 - [macOS 26.5 源码提交](config/macos26-sources.json)
 - [系统输入与配对约束](config/macos26.json)

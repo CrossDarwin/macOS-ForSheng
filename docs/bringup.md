@@ -105,6 +105,27 @@ python3 scripts/capture_boot_logs.py --serial DEVICE_SERIAL --output private/dev
 离线解析可使用 `--decode-only private/device/saved-raw-capture`；不会覆盖既有解析文件。
 rawdump 可能残留旧启动，必须用版本和具体启动记录建立关联。
 
+## 完整 sheng 基线
+
+`config/sheng_defconfig` 与固定提交的 `UniXNU-sheng/configs/sheng_defconfig` 字节一致。
+35 项配置和 `board.toml` 的 19 个归档步骤全部保留，没有覆盖项。
+构建前检查配置和 board 哈希；上游依赖缺失时保留原开关并报告缺项。
+
+```sh
+python3 scripts/build_reference_xnu.py --upstream-sheng --prepare-only
+.venv/bin/python scripts/fetch_sheng_inputs.py
+# Mac / Actions 的完整上游构建，保留原版预链接阶段
+python3 scripts/build_reference_xnu.py --upstream-sheng -j 4
+```
+
+手动工作流 `sheng-xnu` 使用完整配置；`reference-xnu` 保留为此前纯源码定位实验。
+两者使用独立构建目录。不能将精简实验的通过说成完整 sheng 配置已通过。
+完整基线仍属于 iPadOS 17 ABI；Apple 输入单独存放在 `private/apple/sheng-reference`，不与 macOS 26 配对。
+
+上游完整构建还需要重建存储 ABI 观测、PMGR/Legacy 原始组件候选、验证后的 VirtIO 和 VerifiedRoot 归档。
+`out/sheng-xnu/build.json` 记录当前已观察到的缺项；这不是已经完成的全量依赖审计。
+这些输入不能用空归档、未验证地址或关闭相关选项替代。
+
 ## 构建与状态
 
 GitHub Actions 只接受手动触发。`check` 运行输入拒绝测试；`preflight` 构建 EFI；

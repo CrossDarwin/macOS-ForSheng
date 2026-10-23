@@ -17,3 +17,5 @@ retain their own licenses and authorship; they are not vendored into this reposi
 
 Apple restore images, KDKs, reconstructed private ABI headers, firmware and
 device backups are not included in this repository.
+
+`config/sheng_defconfig` 原样来自固定提交的 UniXNU/UniXNU-sheng，遵循其 BSD-2-Clause-Patent 许可证；来源与文件哈希见 `config/sheng-baseline.json`。
