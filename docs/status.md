@@ -202,3 +202,25 @@ Actions 39925158581 成功，原始签名日志和配对 UUID 报告已下载并
 Neo/T8140 UUID `6F5E696D-EDA7-3AA0-91DC-24B13CF58148` 均与各自 IPSW 内核及 KDK DWARF 一致。
 这建立了配对调试输入，不等于私有 IOKit ABI 或 sheng 硬件适配已通过。
 [验证工作流](https://github.com/Jelly10086/macOS-ForSheng/actions/runs/39925158581)。
+
+## macOS 26 原生平台源码构建
+
+新增 `scripts/build_macos26_xnu.py` 和独立 `SHENG` 目标，固定 XNU 12377.121.6 / Darwin 25.5.0。
+固定源码树保持干净，补丁只应用到 `out/macos26-xnu/source`。已有完整 sheng 配置和 19 项归档清单保持原样。
+本轮编译采用 macOS 26 的 MacOSX 配置，启用实际 ARM 汇编和 pmap 源文件，使用原生 EL1、4 KiB 页表及架构定时器路径。
+不定义 VMAPPLE、Apple CPU、SME/SME2 或虚拟 PAC 服务。Apple 专属性能计数器不在此物理平台启用。
+缓存维护、monitor 条件和 SART 路径按 12377.121.6 重新迁移，设备树 panic 缓冲区路径仍保留。
+
+现阶段构建普通内核翻译单元的归档，再以真实 IOPlatformExpert 编译记录重编 ArmDTPlatform/ArmCpu。
+构建时保留 `-mkernel` 与 `-Werror`，不链接 Apple SoC 机器支持库，不复用旧 iPadOS 二进制归档，不输出设备启动镜像。
+源码归档、可链接内核、驱动 ABI、QEMU 和实机启动分别记录，不能互相替代。
+
+本地真实编译器已生成 macOS 26.5 ARM64 平台头检查对象，确认无 Apple/VM/SME 平台定义；
+错误部署版本拒绝检查和未记录源码改动保护通过，28 项现有测试通过。
+`boot_args` 在两份固定源码中的结构声明一致，尚待新版内核编译记录验证实际布局。
+
+Actions 39927508455 已通过匹配 KDK 签名、UUID、AvailabilityVersions 构建和新版内核头导出。
+第一次源码编译因公开 SDK/KDK 不存在的私有 include 目录在 `-Werror` 下中止。
+已迁移独立 kernel SDK 搜索路径，暂存固定 macOS 26 libplatform/libdispatch 头，并仅保留实际存在的目录。
+缺失的实际头仍在 include 位置报错，不生成占位头，不关闭缺失目录警告。
+Actions 39928465964 正在验证该修正，尚无 macOS 26 内核编译或启动通过结果。
