@@ -109,3 +109,12 @@ python3 scripts/package_macos26_kernel.py --kernel-build <macos26-sheng-kernel�
 ```
 
 封装使用当前厂商 DTB、32 MiB 同余加载器和 256 字节启动熵，不自动部署。
+
+DarwinBoot 现在可为 `--panic-log` 设备树在 owned window 内分配独立 512 KiB，并填写 `/pram/reg`。
+`/chosen/embedded-panic-log-size` 沿用 XNU 原接口；不使用厂商固定保留地址或未分配内存。
+QEMU 实测 gPanicBase=0xfffffe000a000000、gPanicSize=0x80000，标准 panic 流程已产生完整寄存器、内核 UUID、回溯和压缩 stackshot。
+已取回 512 KiB 原始 panic 区；version=8、CRC 匹配、内核 UUID 匹配，panic 文本 3500 字节、stackshot 2314 字节。
+这是 QEMU 运行结果，未验收 sheng 重启后的保留或 USB 导出。
+
+观察器增加 `--capture-panic-buffer`：从现场 gPanicBase 指针分块读取，保存 `xnu-panic.bin`、`xnu-panic.txt`、`xnu-stackshot.bin` 和元数据。
+`scripts/decode_xnu_panic.py` 按配套源码的 packed version-8 头解码；范围损坏、UUID 不匹配或 CRC 未完成时保留原始区并明确标记。

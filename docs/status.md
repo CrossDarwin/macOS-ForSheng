@@ -365,3 +365,13 @@ QEMU 经真实 DarwinBoot 进入 C、完成 VM 初始化并启动 IOKit/NVRAM，
 日志原始快照、寄存器、对应 dSYM 和 map 已保存在本地私有产物中。
 已封装同版本 RAM 启动候选 c2c9f15c0ae9dd688509b5825b0507452adabdc1df1b9f1fd98954895996d9f0，未部署设备。
 下一项是为原生内核接入真实 corecrypto 源码提供者，复用 UniXNU 的初始化时序，保留完整 POST。
+
+标准 panic 缓冲区已在 QEMU 验证：DarwinBoot 只从已有 owned window 分配 512 KiB，经 `/pram/reg` 交给 XNU。
+gPanicBase 正常初始化；原有缺失缓冲区提示消失，取回完整寄存器、15 层回溯及压缩 stackshot。
+512 KiB 原始区的版本 8、CRC 和 UUID 匹配，panic 文本 3500 字节、stackshot 2314 字节。
+原生控制台保留 11882 字节，无覆盖或忙写丢失。实机 RAM 跨重启保留、USB、KDP 传输仍未验收。
+
+Apple 2026-05 corecrypto（9612a959，模块 26.0）631 个 C 源文件已完成 macOS 26.5 目标编译和命名隔离。
+Actions 39954559619 停在构建器对 IOMallocData 的误判：它由 XNU 的 IOKit.exports 映射到实际 IOMallocData_external。
+已按原导出表识别别名，不增加替代分配器；Actions 39955552708 继续真实链接及 POST。
+该公开提供者没有填充 XNU 26.5 新增的 sized digest/HMAC 尾部，未宣称完整原版组件 ABI 已兼容。

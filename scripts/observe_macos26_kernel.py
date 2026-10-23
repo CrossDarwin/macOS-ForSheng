@@ -174,10 +174,9 @@ def main() -> None:
             raw = b''.join(bytes.fromhex(piece['bytes']) for piece in pieces)
             if len(raw) != 524288:
                 raise ValueError('incomplete XNU panic region capture')
-            (args.output / 'xnu-panic.bin').write_bytes(raw)
-            info = dict(bytes=len(raw), virtual_base=pieces[0]['pointer'],
-                        kernel_uuid=record['uuid'], magic=raw[:4].hex(),
-                        read_only=True, decoded=False)
+            from decode_xnu_panic import save as save_panic
+            info = save_panic(args.output, raw, record['uuid'])
+            info.update(bytes=len(raw), virtual_base=pieces[0]['pointer'], read_only=True)
         else:
             info = dict(unavailable='gPanicBase not initialized or snapshot read failed')
         (args.output / 'xnu-panic.json').write_text(json.dumps(info, indent=2) + '\n')
