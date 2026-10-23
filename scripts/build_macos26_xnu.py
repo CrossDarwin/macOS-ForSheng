@@ -35,6 +35,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0018-native-panic-console-mirror.patch',
     ROOT / 'platform/sheng/macos26/patches/0019-native-console-fallback-mirror.patch',
     ROOT / 'platform/sheng/macos26/patches/0020-native-crypto-module-view.patch',
+    ROOT / 'platform/sheng/macos26/patches/0021-native-panic-console-flush.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',

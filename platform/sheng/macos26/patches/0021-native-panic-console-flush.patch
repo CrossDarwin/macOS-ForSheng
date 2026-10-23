@@ -1,0 +1,18 @@
+--- a/osfmk/kern/printf.c
++++ b/osfmk/kern/printf.c
+@@ -925,7 +925,15 @@
+ void
+ consdebug_putc(char c)
+ {
++#if SHENG
++	/* The firmware fallback must reach the retained console before panic stops. */
++	if (PE_kputc == console_write_unbuffered) {
++		console_write_unbuffered(c);
++	} else
++#endif
++	{
+ 	console_write_char(c);
++	}
+ 
+ 	debug_putc(c);
+ 

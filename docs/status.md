@@ -382,3 +382,12 @@ Actions 39955552708 已链接包含 corecrypto 的内核；真实 QEMU POST 的 
 命名隔离从 C 宏改为汇编符号 pragma，保留服务指示器使用的规范 C 字符串；没有修改测试的判定或算法策略。
 原串口初始化失败时 PE_kputc 会回退到 console_write_unbuffered，panic 又把同一字符发到同一控制台两次；新增 SHENG 判断跳过这次冗余镜像。
 已失败和被替代的部署镜像清理 56 个文件，释放约 2.19 GiB；在用 Android 恢复备份、配套输入和调试现场保留。
+
+Actions 39958185731（4636503）已成功构建；QEMU 中原始 corecrypto POST 全部通过，完成函数表注册和 PRNG 初始化。
+内核 UUID 为 E1D86942-7CD8-3E8A-8A08-595CBD5D1117；该结果仅确认当前公开源码提供者的启动自检，不代表闭源组件完整加密 ABI 已兼容。
+下一处实际 panic 是 kern_trustcache.c:584 的 `image4 interface not available`，尚未进入 BSD、launchd 或恢复界面。
+已保留 512 KiB 原始 panic 区、匹配 UUID/CRC、2390 字节 panic 文本和 2620 字节 stackshot。
+完整 panic 可从独立缓冲区取回，但此前去重改动让控制台回退路径只作缓冲写入，部分 panic 文字未及时进入字符日志。
+新增 0021 补丁使该回退路径只执行一次无缓冲写入；补丁的实际目标编译和运行结果留待下一次必要构建。
+匹配的 25F71 内核集合已确认包含 AppleImage4 和 AMFI；当前需要解决其 ARM64E fileset 的依赖、认证指针和原生加载契约，不能直接套用旧 ARM64 prelink。
+已结束观察的 ESP 暂存另释放约 854 MiB；累计清理约 3.02 GiB，当前配套输入与有效恢复备份保留。
