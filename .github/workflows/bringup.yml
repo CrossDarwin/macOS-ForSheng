@@ -5,7 +5,7 @@ on:
       target:
         description: Build target; no job deploys to hardware
         type: choice
-        options: [check, preflight, monitor, apple, kext, xnu]
+        options: [check, preflight, monitor, apple, kext, xnu, reference-xnu]
         default: check
 permissions:
   contents: read
@@ -106,5 +106,33 @@ jobs:
             out/monitor/build.json
             out/kdk-verification.json
             out/logs/
+          if-no-files-found: warn
+          retention-days: 7
+  reference-xnu:
+    if: inputs.target == 'reference-xnu'
+    needs: check
+    runs-on: xcode-27
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python3 scripts/sources.py fetch --group core
+      - run: python3 scripts/sources.py fetch --group feeds
+      - run: python3 scripts/apply_patches.py
+      - name: Install source kernel build tools
+        run: brew install cmake ninja unifdef llvm lld
+      - name: Build EL1 reference only
+        run: python3 scripts/build_reference_xnu.py -j 4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sheng-el1-reference-xnu
+          path: |
+            out/reference-xnu/kernel.macho
+            out/reference-xnu/build.json
+            out/reference-xnu/restored-headers.json
+            out/reference-xnu/work/sheng/logs/
           if-no-files-found: warn
           retention-days: 7

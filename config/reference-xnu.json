@@ -1,0 +1,22 @@
+{
+  "purpose": "EL1 hardware bring-up only; not a macOS 27 kernel",
+  "darwin": "23.6.0",
+  "xnu": "10063.141.1",
+  "omitted_headers": {
+    "driverkit": {
+      "tag": "xnu-10063.121.3",
+      "commit": "2c2f96dc2b9a4408a43d3150ae9c105355ca3daa"
+    },
+    "trustcache": {
+      "tag": "xnu-8796.101.5",
+      "commit": "aca3beaa3dfbd42498b42c5e5ce20a938e6554e5"
+    }
+  },
+  "archives": [
+    "build-corecrypto-14.py",
+    "build-corecrypto-14.py --namespace",
+    "build-arm-driver.py ArmDTPlatform",
+    "build-arm-driver.py ArmCpu",
+    "build-libpthread-kernel.py"
+  ]
+}
