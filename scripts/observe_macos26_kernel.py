@@ -14,6 +14,7 @@ import uuid
 from native_macho import macho, symbols
 
 ROOT = Path(__file__).resolve().parents[1]
+NATIVE_BOOT_ARGS = '-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam'
 sys.path.insert(0, str(ROOT / 'UniXNU/kits/NativePrelink'))
 from native_prelink import backed_offset
 
@@ -82,6 +83,7 @@ def main() -> None:
                         help='allow the kernel exception hook to retain the first fault before a bounded stop')
     parser.add_argument('--capture-screen', action='store_true', help='save the actual QEMU framebuffer')
     parser.add_argument('--handoff-pause', action='store_true', help='exercise the ten-second hardware handoff capture window')
+    parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot'), default='arm_init')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
@@ -108,7 +110,9 @@ def main() -> None:
     shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
     record['loader_sha256'] = loader['sha256']
     shutil.copy2(kernel, payload / 'kernel.macho')
-    boot_args = '-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam'
+    boot_args = NATIVE_BOOT_ARGS
+    if args.early_console:
+        boot_args += ' -sheng-early-console'
     if args.handoff_pause:
         if not loader.get('handoff_panic_address_visible'):
             raise ValueError('handoff capture needs the loader with visible panic PA')

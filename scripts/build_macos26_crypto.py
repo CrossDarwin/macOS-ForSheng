@@ -81,7 +81,7 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
             destination = object_dir / (name + '.o')
             identity = hashlib.sha256((sha(path) + json.dumps(full_command)
                                        + report['source_revision']
-                                       + ('kernel-assembly-text-v1' if ARCH == 'arm64e' else '')
+                                       + ('kernel-assembly-text-v2' if ARCH == 'arm64e' else '')
                                        + (sha(work / 'namespace.h') if extra else '')).encode()).hexdigest()
             stamp = destination.with_suffix('.identity')
             if destination.exists() and stamp.exists() and stamp.read_text() == identity:
@@ -95,8 +95,7 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
                 # Keep compiler-emitted kernel PAC metadata; a user-ABI ld -r discards these objects.
                 text, renamed = re.subn(r'(\.section\s+)__TEXT,__text(?=[,\s])',
                     r'\1__TEXT_EXEC,__cc26_text', assembly.read_text())
-                if not renamed:
-                    raise ValueError(f'{relative}: compiler emitted no standard text section')
+                # CC_USE_ASM=0 makes hardware-only translation units empty.
                 assembly.write_text(text)
                 result = subprocess.run(['xcrun', 'clang', '-target', 'arm64e-apple-macos26.5',
                     '-mkernel', '-c', '-x', 'assembler', str(assembly), '-o', str(destination)],
@@ -105,6 +104,12 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
             (OUT / 'logs' / ('corecrypto-' + variant + '-' + name + '.log')).write_text(diagnostic)
             if result.returncode == 0:
                 audit_object(destination)
+                if ARCH == 'arm64e':
+                    from native_macho import macho
+                    image = macho(destination.read_bytes(), ARCH)
+                    if any(section['name'] == '__text' and section['size']
+                           for segment in image['segments'] for section in segment['sections']):
+                        raise ValueError(f'{relative}: provider text escaped its isolated section')
                 stamp.write_text(identity)
             return destination, result.returncode, diagnostic
 

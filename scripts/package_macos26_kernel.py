@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import tomllib
 
-from observe_macos26_kernel import identify, ROOT
+from observe_macos26_kernel import identify, ROOT, NATIVE_BOOT_ARGS
 from package_reference_xnu import vendor_dtbs
 
 
@@ -21,16 +21,36 @@ def main() -> None:
     parser.add_argument('--kernel-build', type=Path, required=True)
     parser.add_argument('--firmware-build', type=Path, required=True)
     parser.add_argument('--backup-dir', type=Path, required=True)
+    parser.add_argument('--qemu-observation', type=Path, required=True)
+    parser.add_argument('--early-kernel-experiment', action='store_true',
+                        help='explicitly package the known Image4 stop as an early hardware experiment')
     args = parser.parse_args()
     kernel, symbols, audit = identify(args.kernel_build.resolve())
+    observed = json.loads((args.qemu_observation / 'result.json').read_text())
+    panic = json.loads((args.qemu_observation / 'xnu-panic.json').read_text())
+    console = (args.qemu_observation / 'console.txt').read_text()
+    boot_args = NATIVE_BOOT_ARGS + ' -sheng-early-console -sheng-capture-handoff'
+    if (observed['kernel_sha256'] != audit['kernel_sha256'] or observed['uuid'] != audit['uuid']
+            or not observed.get('source_crypto_initialized') or observed.get('boot_args') != boot_args
+            or 'SHENG: early framebuffer console acquired' not in console):
+        raise ValueError('requires this exact kernel with working source crypto and the early console in QEMU')
+    if (not args.early_kernel_experiment or not panic.get('complete') or not panic.get('crc_matches')
+            or not panic.get('uuid_verified') or panic['kernel_uuid'] != audit['uuid']
+            or 'image4 interface not available' not in (args.qemu_observation / 'xnu-panic.txt').read_text()):
+        raise ValueError('only the explicit, recorded Image4 stop is admitted for the current hardware experiment')
     if '_sheng_log_buffer' not in symbols:
         raise ValueError('native hardware candidate requires the retained kernel logger')
     firmware = json.loads(args.firmware_build.read_text())
     patch = 'patches/UniXNU/0007-native-16k-bootstrap-congruence.patch'
     panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'
+    handoff_patch = 'patches/UniXNU/0012-native-handoff-log-addresses.patch'
+    arm64e_patch = 'patches/UniXNU/0011-native-arm64e-loader.patch'
     if (firmware.get('preflight_only') is not False or firmware.get('native_el1')
             or firmware['bootimg']['compression'] != 'none'
             or firmware.get('patches_sha256', {}).get(panic_patch) != hashlib.sha256((ROOT / panic_patch).read_bytes()).hexdigest()
+            or firmware.get('patches_sha256', {}).get(handoff_patch) != hashlib.sha256((ROOT / handoff_patch).read_bytes()).hexdigest()
+            or (audit['architecture'] == 'arm64e' and firmware.get('patches_sha256', {}).get(arm64e_patch)
+                != hashlib.sha256((ROOT / arm64e_patch).read_bytes()).hexdigest())
             or firmware.get('patches_sha256', {}).get(patch) != hashlib.sha256((ROOT / patch).read_bytes()).hexdigest()):
         raise ValueError('requires normal firmware with the native 32 MiB loader constraint')
     base = ROOT / next(name for name in firmware['artifacts'] if name.endswith('.img'))
@@ -69,7 +89,7 @@ def main() -> None:
             '[kits]\nautoload = false\n[[entry]]\nid = "native26"\n'
             'title = "SHENG macOS 26 - native kernel with RAM log"\n'
             'type = "xnu"\npath = "Payloads/kernel.macho"\n'
-            'args = "-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam"\n')
+            f'args = "{boot_args}"\n')
         content = sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
         mib = max(64, (content * 2 + (1 << 20) - 1) >> 20)
         if mib > 192:
@@ -95,6 +115,11 @@ def main() -> None:
         shutil.copy2(image, destination / image.name)
         shutil.copy2(files / 'kernel.macho.adt', destination / 'kernel.macho.adt')
         record = dict(container_sha256=digest, container_bytes=len(data), kernel=audit,
+                      purpose='Early native EL1 kernel experiment; macOS recovery is not ready',
+                      expected_stop='image4 interface not available', boot_args=boot_args,
+                      qemu_observation=str(args.qemu_observation.resolve()),
+                      source_crypto_post_passed=True, security_components_loaded=False,
+                      framebuffer_console_qemu_qualified=True, hardware_log_transport_qualified=False,
                       log_symbol_va=hex(symbols['_sheng_log_buffer']),
                       log_physical_address='actual DarwinBoot PA + log_symbol_va - kernel linked base',
                       bootstrap_block_bytes=33554432, owned_memory_bytes=0x20000000,
@@ -103,6 +128,15 @@ def main() -> None:
                       hardware_executed=False, userland_started=False,
                       storage_drivers_linked=False, partition_images_written=False)
         (destination / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
+        (destination / 'experiment.md').write_text(
+            '# sheng 原生内核早期实验\n\n'
+            f'内核 UUID：`{audit["uuid"]}`，架构：`{audit["architecture"]}`。\n\n'
+            '镜像只用于 RAM 启动，不执行 flash、分区或 Android 槽位切换。\n'
+            '预期到达 Image4 尚未注册的 panic；这不是恢复系统或桌面。\n\n'
+            '选择 UniXNU 后，交接页停留 10 秒。拍下 kernel pa 与 panic pa。\n'
+            '内核接管后应显示文本控制台，保存最后画面。\n'
+            '若需要导出 RAM 日志，先返回 fastboot；根据本次实际 PA 构建只读 reader。\n'
+            'RAM 跨重启保留和 USB reader 尚需实机验收；不得使用 QEMU 的 PA。\n')
         print(destination / image.name)
 
 
