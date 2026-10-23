@@ -76,3 +76,23 @@ EL0 程序可执行 PAC/AUT，内核负责密钥生命周期和特权状态；Ap
 来源：[Snapintosh USB NCM 启动与日志通道](https://github.com/Acelogic/Snapintosh/blob/main/README.md)、
 [统一控制台缓冲区](https://github.com/Acelogic/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/probes/xnuboot/telemetry.c)、
 [保留日志恢复](https://github.com/Acelogic/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/tools/recover-console-log.py)。
+
+首次 EL1 同步异常还在 `locore.s` 的两类 EL1 long vector 入口保存一次硬件 ELR/ESR/FAR 和来源栈，
+位置在依赖 current_thread 的原向量代码之前，避免早期 BRK 后的递归异常覆盖原因。
+不改变原异常处理方向，不在这里复位；panic_state=3 表示这份首次异常现场，后续 panic 不覆盖它。
+这段汇编和新增 reader 尚待目标构建及实机验收。
+
+原生只读 reader 的独立源码为 `probes/native_log_reader.c`，构建器为 `scripts/build_native_log_reader.py`。
+它按观察到的 DarwinBoot PA 和对应 `_sheng_log_buffer` 偏移计算范围，保留 96 KiB RAM，导出其中 82048 字节。
+源内核内建 UFS，因此 reader 的 DT 显式禁用 `/soc@0/ufshc@1d84000`，不只依赖 PID1 不打开块设备。
+USB 文件为 `NATIVLOG.BIN` 和 `STATUS.TXT`；`scripts/capture_native_log.py` 校验地址、长度和 CRC 后匹配内核 UUID。
+失败也保留原始快照。相同内核 UUID 本身不证明数据来自当前一次启动，捕获记录始终单独标记 freshness/retention 未验收。
+
+```sh
+python3 scripts/build_native_log_reader.py --kernel-build <Actions产物中的macos26-xnu目录> \
+  --kernel-physical-base <本次sheng屏幕实际显示的DarwinBoot内核PA> \
+  --boot-template <当前槽boot备份>
+python3 scripts/capture_native_log.py --reader-build <新reader的build.json> --output <新捕获目录>
+```
+
+这些工具只生成或读取候选产物，不自动重启、部署或刷写设备。

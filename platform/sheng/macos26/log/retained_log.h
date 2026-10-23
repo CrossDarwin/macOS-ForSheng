@@ -17,6 +17,9 @@ struct sheng_log_record {
     uint8_t prefix[SHENG_LOG_PREFIX], tail[SHENG_LOG_TAIL];
 };
 _Static_assert(offsetof(struct sheng_log_record, prefix) == 128, "log header ABI");
+_Static_assert(offsetof(struct sheng_log_record, panic_state) == 44, "exception state ABI");
+_Static_assert(offsetof(struct sheng_log_record, pc) == 56, "exception registers ABI");
+_Static_assert(offsetof(struct sheng_log_record, kernel_uuid) == 112, "kernel UUID ABI");
 struct sheng_log_record sheng_log_buffer __attribute__((aligned(16384))) = {
     .magic = {'S','H','N','L','O','G','0','1'}, .version = 1, .header_bytes = 128,
     .prefix_bytes = SHENG_LOG_PREFIX, .tail_bytes = SHENG_LOG_TAIL,
@@ -101,6 +104,8 @@ void sheng_log_panic(uint64_t caller, const char *message)
 #endif
         __atomic_store_n(&r->panic_state, 2, __ATOMIC_RELEASE);
         sheng_log_clean(r, 128);
+    }
+    {
         const char *prefix = "\nSHENG-LOG: panic: ";
         while (*prefix) sheng_log_putc(*prefix++);
         for (unsigned n = 0; message && message[n] && n < 511; n++)

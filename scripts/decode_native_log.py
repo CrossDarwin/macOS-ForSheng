@@ -20,7 +20,7 @@ def decode(data: bytes, expected_uuid: str) -> tuple[bytes, dict]:
     if fields[:5] != (b'SHNLOG01', 1, HEADER, PREFIX, TAIL):
         raise ValueError('unknown native log layout')
     total, dropped, writer, panic = fields[5:9]
-    if writer not in (0, 1) or panic not in (0, 1, 2):
+    if writer not in (0, 1) or panic not in (0, 1, 2, 3):
         raise ValueError('invalid native log state')
     identity = str(uuid.UUID(bytes=fields[-1])).upper()
     if identity != expected_uuid.upper():
@@ -43,12 +43,16 @@ def decode(data: bytes, expected_uuid: str) -> tuple[bytes, dict]:
         text += f'\n[... {dropped} console bytes dropped by busy writer ...]\n'.encode()
     names = ('physical_base', 'panic_caller', 'panic_sp', 'elr_el1', 'esr_el1',
              'far_el1', 'mpidr_el1', 'kernel_image_va')
+    if panic == 3:
+        names = ('physical_base', 'fault_pc', 'fault_sp', 'elr_el1', 'esr_el1',
+                 'far_el1', 'mpidr_el1', 'kernel_image_va')
     report = dict(uuid=identity, total_bytes=total, retained_bytes=prefix_len + kept,
                   omitted_bytes=omitted, busy_dropped_bytes=dropped,
                   writer_interrupted=bool(writer), panic_state=panic,
                   complete=not (omitted or dropped or writer),
                   registers={name: hex(value) for name, value in zip(names, fields[9:17])},
-                  register_boundary='panic caller and registers at capture hook; not necessarily the original fault state',
+                  register_boundary=('first EL1 synchronous exception before the normal vector prologue' if panic == 3 else
+                                     'panic caller and registers at capture hook; not necessarily the original fault state'),
                   warm_reboot_retention_qualified=False, hardware_transport_qualified=False)
     return text, report
 

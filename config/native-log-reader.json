@@ -1,0 +1,26 @@
+{
+  "release": "7.2.6-mac",
+  "source_commit": "42f3b40c702abbc37c3a04c95af008cd283aeaf3",
+  "bytes": 82048,
+  "assets": [
+    {
+      "filename": "boot_sheng_singleboot.img",
+      "bytes": 16719872,
+      "sha256": "255fde6b7880914732b49ee41d814c2d22c432d950cd22bfdf07ea14c0e8dec3",
+      "url": "https://github.com/ianchb/sm8550-mainline/releases/download/7.2.6-mac/boot_sheng_singleboot.img"
+    },
+    {
+      "filename": "linux-xiaomi-sheng.deb",
+      "bytes": 270977980,
+      "sha256": "25b71f836202dc524c60fefa12eb73d6e3baa25c0aaec8c2d899319026806fd2",
+      "url": "https://github.com/ianchb/sm8550-mainline/releases/download/7.2.6-mac/linux-xiaomi-sheng.deb"
+    },
+    {
+      "filename": "sm8550.config",
+      "bytes": 253381,
+      "sha256": "7013c8620f31cf5c8d2a23dc68a717b48e66669776b3f87e0ac0a6c857cd275f",
+      "url": "https://github.com/ianchb/sm8550-mainline/releases/download/7.2.6-mac/sm8550.config"
+    }
+  ],
+  "physical_base_source": "Observed DarwinBoot PA plus the matching native kernel symbol offset"
+}

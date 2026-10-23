@@ -1,0 +1,74 @@
+--- a/osfmk/arm64/locore.s
++++ b/osfmk/arm64/locore.s
+@@ -44,6 +44,51 @@
+ #include <arm/pmap.h>
+ #endif
+ 
++
++
++#if SHENG
++/* Capture the first EL1 sync exception before thread-dependent vector code. */
++.macro SHENG_FIRST_SYNC_LOG
++    stp x0, x1, [sp, #-16]!
++    stp x2, x3, [sp, #-16]!
++    adrp x0, EXT(sheng_log_buffer)@page
++    add x0, x0, EXT(sheng_log_buffer)@pageoff
++    add x1, x0, #44
++1:
++    ldaxr w2, [x1]
++    cbnz w2, 4f
++    mov w2, #1
++    stlxr w3, w2, [x1]
++    cbnz w3, 1b
++    mrs x2, ELR_EL1
++    str x2, [x0, #56]
++    str x2, [x0, #72]
++    mrs x2, SPSR_EL1
++    tbnz x2, #0, 2f
++    mrs x2, SP_EL0
++    b 3f
++2:
++    add x2, sp, #32
++3:
++    str x2, [x0, #64]
++    mrs x2, ESR_EL1
++    str x2, [x0, #80]
++    mrs x2, FAR_EL1
++    str x2, [x0, #88]
++    mrs x2, MPIDR_EL1
++    str x2, [x0, #96]
++    mov w2, #3
++    stlr w2, [x1]
++    dc cvac, x0
++    add x2, x0, #64
++    dc cvac, x2
++    dsb sy
++4:
++    clrex
++    ldp x2, x3, [sp], #16
++    ldp x0, x1, [sp], #16
++.endmacro
++#endif
+ 
+ // If __ARM_KERNEL_PROTECT__, eret is preceeded by an ISB before returning to userspace.
+ // Otherwise, use BIT_ISB_PENDING flag to track that we need to issue an isb before eret if needed.
+@@ -626,6 +671,9 @@
+ .endmacro
+ 
+ el1_sp0_synchronous_vector_long:
++#if SHENG
++	SHENG_FIRST_SYNC_LOG
++#endif
+ 	stp		x0, x1, [sp, #-16]!				// Save x0 and x1 to the exception stack
+ 	mrs		x1, ESR_EL1							// Get the exception syndrome
+ 	/* If the stack pointer is corrupt, it will manifest either as a data abort
+@@ -749,6 +797,9 @@
+ .endmacro
+ 
+ el1_sp1_synchronous_vector_long:
++#if SHENG
++	SHENG_FIRST_SYNC_LOG
++#endif
+ 	/*
+ 	 * Before making our first (potentially faulting) memory access, check if we
+ 	 * previously tried and failed to execute this vector. If we did, it's not
