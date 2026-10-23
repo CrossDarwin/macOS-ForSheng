@@ -112,10 +112,20 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
     namespace.write_text(''.join(f'#define {name[1:]} sheng_cc26_{name[1:]}\n' for name in collisions))
     archive = compile_variant('native', ['-include', str(namespace)])
     defined = names(archive, '-U')
-    missing = sorted(names(archive, '-u') - defined - kernel_names)
+    # XNU's canonical link materializes these aliases after archive compilation.
+    # Do not substitute an allocator or classify a real exported alias as missing.
+    exports = {}
+    for line in (xnu / 'config/IOKit.exports').read_text().splitlines():
+        if ':' in line:
+            public, target = (part.strip() for part in line.split(':', 1))
+            if public.startswith('_') and target in kernel_names:
+                exports[public] = target
+    required = names(archive, '-u') - defined
+    missing = sorted(required - kernel_names - exports.keys())
     duplicate = sorted(defined & kernel_names)
     report.update(archive_sha256=sha(archive), namespaced_globals=collisions,
                   missing_kernel_symbols=missing, duplicate_kernel_symbols=duplicate,
+                  kernel_export_aliases={name: exports[name] for name in sorted(required & exports.keys())},
                   # The public provider predates the sized digest/HMAC tail of this XNU table.
                   sized_digest_hmac_callbacks_implemented=False)
     save(record)
