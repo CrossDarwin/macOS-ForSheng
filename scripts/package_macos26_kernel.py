@@ -60,7 +60,7 @@ def main() -> None:
         shutil.copy2(kernel, files / 'kernel.macho')
         subprocess.run(['python3', ROOT / 'UniXNU-sheng/scripts/make-sheng-adt.py',
                         '--output', files / 'kernel.macho.adt', '--dram-size', '0x200000000',
-                        '--owned-memory-size', '0x20000000', '--cpu-regs', '0',
+                        '--owned-memory-size', '0x20000000', '--panic-log', '--cpu-regs', '0',
                         '--cpu-compatible', 'arm,cortex-a510', '--random-seed-bytes', '256'], check=True)
         (stage / 'unixnu.toml').write_text(
             'version = 1\n[boot]\ntimeout = 3\ndefault = "native26"\n'

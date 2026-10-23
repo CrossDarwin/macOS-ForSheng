@@ -1,0 +1,102 @@
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -184,7 +184,7 @@
+ 
+ STATIC
+ BOOLEAN
+-AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN ParentPath, UINTN *RamdiskOffset, UINTN *TrustCacheOffset, UINTN *AddonOffset, UINT64 *WindowSize, BOOLEAN *KeepPacked)
++AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN ParentPath, UINTN *RamdiskOffset, UINTN *TrustCacheOffset, UINTN *AddonOffset, UINTN *PanicOffset, UINT64 *WindowSize, BOOLEAN *KeepPacked)
+ {
+   UINT32 Properties;
+   UINT32 Children;
+@@ -195,6 +195,7 @@
+   UINTN  TrustCandidate;
+   UINTN  AddonCandidate;
+   UINTN  MemoryCandidate;
++  UINTN  RegCandidate;
+   CONST UINT8 *Name;
+   UINTN  NameLength;
+ 
+@@ -204,6 +205,7 @@
+   TrustCandidate = MAX_UINTN;
+   AddonCandidate = MAX_UINTN;
+   MemoryCandidate = MAX_UINTN;
++  RegCandidate = MAX_UINTN;
+   if ((Depth > 64) || (Size - *Offset < 8)) { return FALSE; }
+   Properties = U32 (Data + *Offset);
+   Children = U32 (Data + *Offset + 4);
+@@ -237,6 +239,10 @@
+       if ((AddonCandidate != MAX_UINTN) || (Length != 16)) { return FALSE; }
+       AddonCandidate = *Offset;
+     }
++    if ((Length == 16) && (AsciiStrCmp ((CONST CHAR8 *)(Data + *Offset - 36), "reg") == 0)) {
++      if (RegCandidate != MAX_UINTN) { return FALSE; }
++      RegCandidate = *Offset;
++    }
+     if (AsciiStrCmp ((CONST CHAR8 *)(Data + *Offset - 36), "darwinboot-memory-size") == 0) {
+       if ((MemoryCandidate != MAX_UINTN) || (Length != 8)) { return FALSE; }
+       MemoryCandidate = *Offset;
+@@ -249,6 +255,11 @@
+   if (Depth == 0) { Path = 0; }
+   if ((Depth == 1) && (ParentPath == 0) && (NameLength == 7) && (CompareMem (Name, "chosen", 7) == 0)) { Path = 1; }
+   if ((Depth == 2) && (ParentPath == 1) && (NameLength == 11) && (CompareMem (Name, "memory-map", 11) == 0)) { Path = 2; }
++  if ((Depth == 1) && (ParentPath == 0) && (NameLength == 5) && (CompareMem (Name, "pram", 5) == 0)) {
++    if ((*PanicOffset != MAX_UINTN) || (RegCandidate == MAX_UINTN) ||
++        (U64 (Data + RegCandidate) != 0) || (U64 (Data + RegCandidate + 8) != 0)) { return FALSE; }
++    *PanicOffset = RegCandidate;
++  }
+   if ((Path == 2) && (Candidate != MAX_UINTN)) {
+     if (*RamdiskOffset != MAX_UINTN) { return FALSE; }
+     *RamdiskOffset = Candidate;
+@@ -268,7 +279,7 @@
+   }
+   if (Children > (Size - *Offset) / 8) { return FALSE; }
+   for (Index = 0; Index < Children; Index++) {
+-    if (!AdtNode (Data, Size, Offset, Depth + 1, Path, RamdiskOffset, TrustCacheOffset, AddonOffset, WindowSize, KeepPacked)) { return FALSE; }
++    if (!AdtNode (Data, Size, Offset, Depth + 1, Path, RamdiskOffset, TrustCacheOffset, AddonOffset, PanicOffset, WindowSize, KeepPacked)) { return FALSE; }
+   }
+   return TRUE;
+ }
+@@ -492,6 +503,8 @@
+   UINT64                          TrustCacheAddress;
+   UINTN                           AddonOffset;
+   UINT64                          AddonAddress;
++  UINTN                           PanicOffset;
++  UINT64                          PanicAddress;
+   DARWIN_BOOT_ARGS                *Args;
+   EFI_MEMORY_DESCRIPTOR           *Map;
+   UINTN                           Capacity;
+@@ -553,9 +566,10 @@
+   RamdiskOffset = MAX_UINTN;
+   TrustCacheOffset = MAX_UINTN;
+   AddonOffset = MAX_UINTN;
++  PanicOffset = MAX_UINTN;
+   WindowSize = 0;
+   KeepPacked = FALSE;
+-  if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &WindowSize, &KeepPacked) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
++  if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &PanicOffset, &WindowSize, &KeepPacked) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
+   if (KeepPacked && (!RamdiskPacked || (RamdiskOffset == MAX_UINTN))) { Status = EFI_COMPROMISED_DATA; goto Fail; }
+   if (WindowSize == 0) { WindowSize = WINDOW_SIZE; }
+   if (Kernel.Base > MAX_UINT64 - WindowSize) { Status = EFI_LOAD_ERROR; goto Fail; }
+@@ -608,7 +622,8 @@
+   RamdiskBytes = ALIGN_VALUE (KeepPacked ? Request->RamdiskSize : RamdiskExpandedSize, EFI_PAGE_SIZE);
+   TrustCacheAddress = RamdiskAddress + RamdiskBytes;
+   AddonAddress = ALIGN_VALUE (TrustCacheAddress + TrustCacheSize, SIZE_16KB);
+-  Used = ALIGN_VALUE (AddonAddress + AddonSize, SIZE_16KB) - Address;
++  PanicAddress = ALIGN_VALUE (AddonAddress + AddonSize, SIZE_16KB);
++  Used = PanicAddress + ((PanicOffset != MAX_UINTN) ? SIZE_512KB : 0) - Address;
+   if (Used > WindowSize - BLOCK_SIZE) {
+     Print (L"DARWINBOOT: used %lu window %lu kernel %lu ramdisk %lu\n", (UINT64)Used, (UINT64)WindowSize, (UINT64)(Kernel.End - Kernel.Base), (UINT64)RamdiskBytes);
+     Status = EFI_BAD_BUFFER_SIZE;
+@@ -632,6 +647,11 @@
+   Args->DeviceTreeLength = (UINT32)TreeSize;
+   CopyMem (Args->CommandLine, CommandLine, sizeof (CommandLine));
+   CopyMem ((VOID *)(UINTN)TreeAddress, Tree, TreeSize);
++  if (PanicOffset != MAX_UINTN) {
++    WriteUnaligned64 ((UINT64 *)(UINTN)(TreeAddress + PanicOffset), PanicAddress);
++    WriteUnaligned64 ((UINT64 *)(UINTN)(TreeAddress + PanicOffset + 8), SIZE_512KB);
++    Print (L"DARWINBOOT: panic RAM PA=0x%lx size=0x%lx\n", PanicAddress, (UINT64)SIZE_512KB);
++  }
+   if (Request->Ramdisk != NULL) {
+     if (KeepPacked) { CopyMem ((VOID *)(UINTN)RamdiskAddress, Request->Ramdisk, Request->RamdiskSize); }
+     else { CopyRamdisk ((VOID *)(UINTN)RamdiskAddress, Request->Ramdisk, Request->RamdiskSize, RamdiskPacked); }

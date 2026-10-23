@@ -1,0 +1,26 @@
+--- a/scripts/make-sheng-adt.py
++++ b/scripts/make-sheng-adt.py
+@@ -74,6 +74,7 @@
+                         default=ROOT / 'build/sheng/boot/kernel.macho.adt')
+     parser.add_argument('--dram-size', type=lambda value: int(value, 0), required=True,
+                         help='Actual observed DRAM size, e.g. 0x230000000')
++    parser.add_argument('--panic-log', action='store_true', help='Request 512 KiB panic RAM inside the owned DarwinBoot window')
+     parser.add_argument('--owned-memory-size', type=lambda value: int(value, 0), default=None,
+                         help='Explicit DarwinBoot contiguous window request, 256 MiB..8 GiB in 2 MiB steps')
+     parser.add_argument('--root-match-volume-uuid', default=None,
+@@ -139,6 +140,7 @@
+         ('#size-cells', struct.pack('<I', 2)),
+     ], [
+         node('chosen', [('random-seed', os.urandom(args.random_seed_bytes)),
++                    *([('embedded-panic-log-size', struct.pack('<I', 0x80000))] if args.panic_log else []),
+                         # Without these XNU never publishes IOPlatformUUID and gethostuuid() blocks forever
+                         # for callers (configd) that pass a zero timeout.
+                         *([('unique-chip-id', struct.pack('<Q', args.unique_chip_id)), ('chip-id', struct.pack('<I', args.chip_id))]
+@@ -177,6 +179,7 @@
+                                  ([('GpuAddon', bytes(16))] if args.gpu_addon else [])),
+               # Read by the original AppleImage4 at start-up; present and empty here.
+               node('manifest-properties')]),
++        *([node('pram', [('reg', bytes(16))])] if args.panic_log else []),
+         node('cpus', children=cpus),
+         *([node('psci', [('compatible', b'arm,psci-1.0\0'), ('method', args.psci_method.encode() + b'\0')])] if len(cpus) > 1 else []),
+         # Suspend/resume is not implemented for this board. Use the original

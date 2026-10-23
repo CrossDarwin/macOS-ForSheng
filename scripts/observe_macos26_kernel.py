@@ -75,6 +75,8 @@ def main() -> None:
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seed-bytes', type=int, choices=(64, 256), default=256,
                         help='64 is the explicit insufficient-entropy panic experiment')
+    parser.add_argument('--capture-panic-buffer', action='store_true',
+                        help='save the owned 512 KiB XNU panic region through its actual gPanicBase pointer')
     parser.add_argument('--let-vector-log', action='store_true',
                         help='allow the kernel exception hook to retain the first fault before a bounded stop')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
@@ -109,7 +111,7 @@ def main() -> None:
         'args = "-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam"\n')
     subprocess.run([sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
                     '--output', payload / 'kernel.macho.adt', '--dram-size', '0x40000000',
-                    '--owned-memory-size', '0x20000000', '--armvirt', '--armcpu',
+                    '--owned-memory-size', '0x20000000', '--panic-log', '--armvirt', '--armcpu',
                     '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                     '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
                     '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)], check=True)
@@ -130,7 +132,9 @@ def main() -> None:
     command += ['--read-memory', instruction_request]
     for name, count in (('_physmap_base', 8), ('_physmap_end', 8), ('_gPhysBase', 8),
                         ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
-                        ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152)):
+                        ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
+                        ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
+                        ('_gPanicBase', 8), ('_gPanicSize', 4)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
     log_requests = []
@@ -142,6 +146,15 @@ def main() -> None:
             log_requests.append(request)
             command += ['--read-memory', request]
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
+    panic_requests = []
+    if args.capture_panic_buffer:
+        if loader.get('native_panic_region_bytes') != 524288 or '_gPanicBase' not in addresses:
+            raise ValueError('panic capture requires the loader-owned 512 KiB panic region')
+        for offset in range(0, 524288, 4096):
+            request = f'{addresses["_gPanicBase"]:x}:{offset:x}:1000'
+            panic_requests.append(request)
+            command += ['--read-indirect', request]
+    (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
     with (args.output / 'observer.log').open('w') as log:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
@@ -155,6 +168,19 @@ def main() -> None:
             text, console = b'', dict(decoded=False, error=str(error))
         (args.output / 'console.txt').write_bytes(text)
         (args.output / 'console.json').write_text(json.dumps(console, indent=2) + '\n')
+    if panic_requests:
+        pieces = [snapshot['indirect_memory'][key] for key in panic_requests]
+        if all('bytes' in piece and not piece['bytes'].startswith('E') for piece in pieces):
+            raw = b''.join(bytes.fromhex(piece['bytes']) for piece in pieces)
+            if len(raw) != 524288:
+                raise ValueError('incomplete XNU panic region capture')
+            (args.output / 'xnu-panic.bin').write_bytes(raw)
+            info = dict(bytes=len(raw), virtual_base=pieces[0]['pointer'],
+                        kernel_uuid=record['uuid'], magic=raw[:4].hex(),
+                        read_only=True, decoded=False)
+        else:
+            info = dict(unavailable='gPanicBase not initialized or snapshot read failed')
+        (args.output / 'xnu-panic.json').write_text(json.dumps(info, indent=2) + '\n')
     regs = {name: int(value, 16) for name, value in snapshot['system_registers'].items()}
     tcr = regs['TCR_EL1']
     kernel_data = kernel.read_bytes()

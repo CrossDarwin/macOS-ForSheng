@@ -1,0 +1,26 @@
+--- a/scripts/qemu-entry/make-dt.py
++++ b/scripts/qemu-entry/make-dt.py
+@@ -47,6 +47,7 @@
+ 
+ parser = argparse.ArgumentParser(description=__doc__)
+ parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[2] / 'build/xnu-entry/qemu-test.adt')
++parser.add_argument('--panic-log', action='store_true', help='Request 512 KiB panic RAM inside the owned DarwinBoot window')
+ parser.add_argument('--owned-memory-size', type=lambda value: int(value, 0), help='Request a real contiguous DarwinBoot allocation through chosen/darwinboot-memory-size; 256 MiB to 4 GiB in 2 MiB steps')
+ parser.add_argument('--dram-size', type=lambda value: int(value, 0), default=0x20000000)
+ parser.add_argument('--qemu-accel', choices=['tcg', 'hvf'], default='tcg', help='Offline CPU description; HVF uses the actual host counter frequency and a generic ARM CPU identity')
+@@ -146,6 +147,7 @@
+                           *([('#address-cells', struct.pack('<I', 2)), ('#size-cells', struct.pack('<I', 2))] if virtio_nodes else []),
+                           *([('compatible', args.platform_compatible.encode() + b'\0')] if args.armvirt else [])], [
+     node('chosen', [('random-seed', os.urandom(args.random_seed_bytes)),
++                    *([('embedded-panic-log-size', struct.pack('<I', 0x80000))] if args.panic_log else []),
+                     # This fixture's writable Data lives only in the owned
+                     # RAMDisk. Publish its actual nonpersistent lifetime via
+                     # XNU's standard hw.ephemeral_storage device-tree input.
+@@ -162,6 +164,7 @@
+                     [*([('RAMDisk', bytes(16))] if args.ramdisk or args.data_ramdisk else []),
+                      *([('TrustCache', bytes(16))] if args.trust_cache else [])]),
+                      *([node('manifest-properties')] if args.armvirt else [])]),
++    *([node('pram', [('reg', bytes(16))])] if args.panic_log else []),
+     node('cpus', children=[cpu, *[node('cpu%d' % index, [('state', b'waiting\0'), ('reg', struct.pack('<I', index)),
+                     ('device_type', b'cpu\0'), ('compatible', b'arm,cortex-a710\0' if args.qemu_accel == 'tcg' else b'arm,armv8\0'),
+                     ('timebase-frequency', struct.pack('<I', timebase))]) for index in range(1, args.smp)]]),
