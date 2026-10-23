@@ -21,11 +21,37 @@
     ldp x19,x20,[sp],#96
 .endm
 
+// x13为首格像素地址，x14为行跨度；只使用调用者临时寄存器
+// 绿色格子在每次控制寄存器切换后直接写入显示内存
+.macro mmu_mark number
+    cbz x13,.Lmark_done\@
+    add x16,x13,#(\number * 128)
+    mov x15,#12
+    mov w9,#0xff00
+.Lmark_row\@:
+    add x17,x16,#96
+.Lmark_pixel\@:
+    stp w9,w9,[x16]
+    dc cvac,x16
+    add x16,x16,#8
+    cmp x16,x17
+    b.lo .Lmark_pixel\@
+    sub x16,x16,#96
+    add x16,x16,x14
+    subs x15,x15,#1
+    b.ne .Lmark_row\@
+    dsb sy
+.Lmark_done\@:
+.endm
+
 // x0为16KiB对齐的双解释页表，x1接收四次PAR，x2为TCR基值
 // 执行区必须为2GiB至64GiB的恒等映射，调用方先确认地址并清理页表缓存
 .global ShengEl1GranuleProbe
 ShengEl1GranuleProbe:
     save_frame
+    mov x13,x3
+    mov x14,x4
+    mmu_mark 0
     sub sp,sp,#16
     mrs x9,pan
     str x9,[sp]
@@ -43,6 +69,7 @@ ShengEl1GranuleProbe:
     adr x9,ShengEl1ProbeVectors
     msr vbar_el1,x9
     isb
+    mmu_mark 1
     mov x9,#1
     str x9,[x26,#56]
 
@@ -54,6 +81,7 @@ ShengEl1GranuleProbe:
     bic x9,x19,#1
     msr sctlr_el1,x9
     isb
+    mmu_mark 2
     msr ttbr0_el1,x25
     mov x9,#0xff
     msr mair_el1,x9
@@ -61,15 +89,18 @@ ShengEl1GranuleProbe:
     tlbi vmalle1
     dsb sy
     isb
+    mmu_mark 3
     bic x9,x19,#(1<<19)
     orr x9,x9,#1
     msr sctlr_el1,x9
     isb
+    mmu_mark 4
     mov x10,#0x1000
     at s1e1r,x10
     isb
     mrs x9,par_el1
     str x9,[x26]
+    mmu_mark 5
     mov x9,#2
     str x9,[x26,#56]
 
@@ -84,6 +115,7 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26,#8]
+    mmu_mark 6
     mov x9,#3
     str x9,[x26,#56]
 
@@ -102,6 +134,7 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26,#16]
+    mmu_mark 7
     mov x9,#4
     str x9,[x26,#56]
 #ifdef SHENG_GRANULE_INJECT_FAULT
@@ -112,6 +145,7 @@ ShengEl1GranuleProbe:
     dsb sy
     msr sctlr_el1,x9
     isb
+    mmu_mark 8
 #ifndef SHENG_GRANULE_FORCE_4K
     orr x9,x27,#(2<<14)
 #else
@@ -121,14 +155,17 @@ ShengEl1GranuleProbe:
     tlbi vmalle1
     dsb sy
     isb
+    mmu_mark 9
     bic x9,x19,#(1<<19)
     orr x9,x9,#1
     msr sctlr_el1,x9
     isb
+    mmu_mark 10
     at s1e1r,x10
     isb
     mrs x9,par_el1
     str x9,[x26,#24]
+    mmu_mark 11
     mov x9,#5
     str x9,[x26,#56]
     mov x0,#0
@@ -146,14 +183,17 @@ ShengEl1GranuleProbe:
     dsb sy
     msr sctlr_el1,x9
     isb
+    mmu_mark 12
     msr ttbr0_el1,x21
     msr tcr_el1,x20
     msr mair_el1,x22
     tlbi vmalle1
     dsb sy
     isb
+    mmu_mark 13
     msr sctlr_el1,x19
     isb
+    mmu_mark 14
     cbz x0,1f
     stp x10,x11,[x26,#32]
     str x12,[x26,#48]
@@ -162,6 +202,7 @@ ShengEl1GranuleProbe:
     msr par_el1,x24
     ldr x9,[sp]
     msr pan,x9
+    mmu_mark 15
     msr daif,x23
     add sp,sp,#16
     restore_frame

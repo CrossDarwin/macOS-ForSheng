@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 // 执行真实EL1探针，保留4K负对照，不能替代sheng实机结果
 typedef unsigned long u64;
-extern u64 ShengEl1GranuleProbe(u64 *, u64 *, u64);
+extern u64 ShengEl1GranuleProbe(u64 *, u64 *, u64, u64, u64);
 extern u64 ShengEl1PauthProbe(u64 *);
 static u64 original[2048] __attribute__((aligned(16384)));
 static u64 trial[2048] __attribute__((aligned(16384)));
 static u64 results[8], signatures[10];
+static unsigned progress[12][512];
 
 static u64 rd_sctlr(void)
 { u64 v; __asm__ volatile("mrs %0,sctlr_el1" : "=r"(v)); return v; }
@@ -40,7 +41,20 @@ void qemu_main(void)
     __asm__ volatile("msr daifset,#15; msr mair_el1,%0; msr ttbr0_el1,%1; msr tcr_el1,%2;"
                      "dsb sy; tlbi vmalle1; dsb sy; isb; msr sctlr_el1,%3; isb"
                      ::"r"(0xffUL),"r"(original),"r"(tcr),"r"(control):"memory");
-    u64 status=ShengEl1GranuleProbe(trial,results,tcr);
+    u64 status=ShengEl1GranuleProbe(trial,results,tcr,(u64)progress,sizeof(progress[0]));
+    for(unsigned stage=0;stage<16;stage++) {
+        unsigned expected=0xff00;
+#ifdef SHENG_GRANULE_INJECT_FAULT
+        if(stage>=8 && stage<=11) expected=0;
+#endif
+        for(unsigned row=0;row<12;row++) {
+            for(unsigned column=0;column<32;column++) {
+                if(progress[row][stage*32+column]!=(column<24 ? expected : 0)) {
+                    print("FAIL framebuffer checkpoint\n");finish(9);
+                }
+            }
+        }
+    }
 #ifdef SHENG_GRANULE_INJECT_FAULT
     if(status!=1 || results[7]!=4 || (results[4]>>26)!=0) {
         print("FAIL EL1 exception recovery\n");finish(7);

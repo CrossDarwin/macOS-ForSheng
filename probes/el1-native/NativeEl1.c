@@ -5,8 +5,10 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Protocol/SimpleTextIn.h>
+#include <Protocol/GraphicsOutput.h>
 
-extern UINT64 ShengEl1GranuleProbe (UINT64 *Table, UINT64 *Output, UINT64 Tcr);
+extern UINT64 ShengEl1GranuleProbe (UINT64 *Table, UINT64 *Output, UINT64 Tcr,
+                                   UINTN Progress, UINTN Stride);
 extern VOID ShengEl1GranuleProbeEnd (VOID);
 extern UINT64 ShengEl1PauthProbe (UINT64 *Output);
 
@@ -101,6 +103,75 @@ IdentityMapped (UINTN Start, UINTN Bytes)
   return TRUE;
 }
 
+// 标签在固件映射下绘制，汇编只填对应的绿色格子，不调用固件服务
+STATIC EFI_STATUS
+PrepareProgress (UINTN *Progress, UINTN *Stride)
+{
+  STATIC CONST UINT8 Font[16][7] = {
+    {14,17,19,21,25,17,14}, {4,12,4,4,4,4,14},
+    {14,17,1,2,4,8,31}, {30,1,1,14,1,1,30},
+    {2,6,10,18,31,2,2}, {31,16,16,30,1,1,30},
+    {14,16,16,30,17,17,14}, {31,1,2,4,8,8,8},
+    {14,17,17,14,17,17,14}, {14,17,17,15,1,1,14},
+    {14,17,17,31,17,17,17}, {30,17,17,30,17,17,30},
+    {14,17,16,16,16,17,14}, {30,17,17,17,17,17,30},
+    {31,16,16,30,16,16,31}, {31,16,16,30,16,16,16}
+  };
+  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
+  EFI_STATUS Status;
+  UINTN Start, Span, X, Y, Digit, Row, Col, Dx, Dy;
+  volatile UINT32 *Pixels;
+
+  Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **) &Gop);
+  if (EFI_ERROR (Status) || Gop->Mode == NULL || Gop->Mode->Info == NULL) {
+    return EFI_UNSUPPORTED;
+  }
+  Info = Gop->Mode->Info;
+  if ((Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
+       Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor) ||
+      Info->HorizontalResolution < 512 || Info->VerticalResolution < 128 ||
+      Info->PixelsPerScanLine < Info->HorizontalResolution) {
+    return EFI_UNSUPPORTED;
+  }
+  *Stride = (UINTN) Info->PixelsPerScanLine * 4;
+  X = (Info->HorizontalResolution - 512) / 2;
+  Y = Info->VerticalResolution / 2;
+  Span = 63 * *Stride + 512 * 4;
+  if (Y * *Stride + X * 4 + Span > Gop->Mode->FrameBufferSize) {
+    return EFI_UNSUPPORTED;
+  }
+  Start = (UINTN) Gop->Mode->FrameBufferBase + Y * *Stride + X * 4;
+  if (!IdentityMapped (Start, Span)) {
+    return EFI_UNSUPPORTED;
+  }
+  for (Row = 0; Row < 64; Row++) {
+    Pixels = (volatile UINT32 *) (Start + Row * *Stride);
+    for (Col = 0; Col < 512; Col++) {
+      Pixels[Col] = 0;
+    }
+  }
+  for (Digit = 0; Digit < 16; Digit++) {
+    for (Row = 0; Row < 7; Row++) {
+      for (Col = 0; Col < 5; Col++) {
+        if (!(Font[Digit][Row] & (1U << (4 - Col)))) {
+          continue;
+        }
+        for (Dy = 0; Dy < 4; Dy++) {
+          Pixels = (volatile UINT32 *) (Start + (Row * 4 + Dy) * *Stride);
+          for (Dx = 0; Dx < 4; Dx++) {
+            Pixels[Digit * 32 + Col * 4 + Dx] = 0x00ffffff;
+          }
+        }
+      }
+    }
+  }
+  WriteBackDataCacheRange ((VOID *) Start, Span);
+  *Progress = Start + 36 * *Stride;
+  Print (L"SHENG-EL1: checkpoints 0-F, green means executed\r\n");
+  return EFI_SUCCESS;
+}
+
 EFI_STATUS EFIAPI
 UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
@@ -113,6 +184,7 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   UINT64 PauthFlags = 0;
   UINT64 Tcr;
   UINTN Index;
+  UINTN Progress, Stride;
   BOOLEAN Restored;
   BOOLEAN Granule;
 
@@ -157,6 +229,13 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         ((Mmfr0 & 15) > 5 ? 5ULL << 32 : (Mmfr0 & 15) << 32);
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1"
                     : "=r" (BeforeTcr), "=r" (BeforeTtbr), "=r" (BeforeMair));
+  Print (L"SHENG-EL1: firmware TCR=%lx TTBR0=%lx MAIR=%lx\r\n",
+         BeforeTcr, BeforeTtbr, BeforeMair);
+  if (EFI_ERROR (PrepareProgress (&Progress, &Stride))) {
+    Print (L"SHENG-EL1: refused - framebuffer checkpoints unavailable\r\n");
+    FreeAlignedPages (Table, 4);
+    return Finish (EFI_UNSUPPORTED);
+  }
   Print (L"SHENG-EL1: testing page walks at EL1, MMFR0=0x%lx\r\n", Mmfr0);
   if (!Pause (L"Press a key to run the MMU probe")) {
     FreeAlignedPages (Table, 4);
@@ -164,7 +243,7 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   }
   Print (L"SHENG-EL1: MMU probe starting\r\n");
   gBS->Stall (200000);
-  ProbeStatus = ShengEl1GranuleProbe (Table, Result, Tcr);
+  ProbeStatus = ShengEl1GranuleProbe (Table, Result, Tcr, Progress, Stride);
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1; mrs %3, sctlr_el1"
                     : "=r" (AfterTcr), "=r" (AfterTtbr), "=r" (AfterMair), "=r" (AfterSctlr));
   Restored = BeforeTcr == AfterTcr && BeforeTtbr == AfterTtbr &&
