@@ -6,6 +6,7 @@
 | --- | --- |
 | UniXNU、Snapintosh、q1n1、依赖与两套 Mesa | 已固定提交并获取，补丁保存在本项目 |
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
+| 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -188,7 +189,7 @@ QEMU 与实机均通过该检查点；用户确认彩色条后约 3 秒自动复
 macOS 26.5 KDK 验证新增独立的 `apple26` 手动 Actions 目标，仍在 `xcode-27` 上执行。
 下载后核对固定字节数和 SHA-256，再以 macOS `pkgutil --check-signature` 验证 Apple 签名。
 从同一包中分别检查 M1/T8103、Neo/T8140 的内核与配对 DWARF，UUID 必须与 25F71 IPSW 相符。
-Actions 39925158581 已启动；尚不把待完成的远端验证记作通过。28 项本地检查通过。
+Actions 39925158581 成功，原始签名日志和配对 UUID 报告已下载并再次核对。28 项本地检查通过。
 
 固定 macOS 26 源码的独立补丁上下文检查覆盖上游 55 份补丁，35 份可直接通过 `git apply --check`，20 份需要逐项处理。
 这是每份补丁相对原始源码的检查，不是完整补丁栈应用、编译或 ABI 验证。
@@ -196,3 +197,8 @@ Actions 39925158581 已启动；尚不把待完成的远端验证记作通过。
 原有非 Apple pmap 字段重命名修复对应的字段在新版本已有不同布局，不重复移植旧修复。
 缓存维护别名、monitor 启用条件、SART 及分散到新文件的 pmap 路径需要按 12377.121.6 的实际实现迁移。
 原始报告位于 `out/macos26-transfer/upstream-patch-contexts.json`，未改动固定的 macOS 26 源码树。
+
+25F71 KDK 实际验证结果：Apple 包签名通过，M1/T8103 UUID `DA4C776A-B10A-38B6-997B-BD66671C5D52`、
+Neo/T8140 UUID `6F5E696D-EDA7-3AA0-91DC-24B13CF58148` 均与各自 IPSW 内核及 KDK DWARF 一致。
+这建立了配对调试输入，不等于私有 IOKit ABI 或 sheng 硬件适配已通过。
+[验证工作流](https://github.com/Jelly10086/macOS-ForSheng/actions/runs/39925158581)。
