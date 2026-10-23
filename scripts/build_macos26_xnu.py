@@ -94,12 +94,19 @@ def prepare() -> dict:
     if capture('git', '-C', str(source), 'rev-parse', 'HEAD') != identities['sources/macos26/xnu']:
         raise ValueError('refuse to reset a different existing source worktree')
     previous = OUT / 'build.json'
+    applied = {}
     if previous.exists():
         previous_record = json.loads(previous.read_text())
         current_diff = subprocess.check_output(['git', '-C', source, 'diff', 'HEAD', '--binary'])
         if hashlib.sha256(current_diff).hexdigest() != previous_record['source_diff_sha256']:
             raise ValueError('isolated source has unrecorded changes; preserve it for inspection')
+        applied = previous_record['patches']
     for patch in PATCHES:
+        identity = str(patch.relative_to(ROOT))
+        if identity in applied:
+            if sha(patch) != applied[identity]:
+                raise ValueError(f'previously applied patch changed: {identity}')
+            continue
         reverse = subprocess.run(['git', '-C', source, 'apply', '--reverse', '--check', patch],
                                  capture_output=True)
         if reverse.returncode:
