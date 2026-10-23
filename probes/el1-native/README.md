@@ -2,6 +2,27 @@
 
 用于推进 macOS 26 原生路线的两个未确认条件，不加载 XNU 或系统卷。
 
+36 位 TTBR1 遍历及启动核 EL1 PAC 切换已实机通过，原实验代码保留用于对照。
+当前 EFI 入口为 `Native47.c`，只执行新增的 47 位指令取指实验。
+它复用 `layout47.h` 的页表构造与 `layout47.S` 的执行和恢复代码，QEMU 使用同样输入和汇编。
+独占 8 个 16K 页，分别承载三级页表、RX 代码及不可执行的 RW 数据。
+在 `0xffff800000004000` 与 SHENG 链接地址 `0xfffffe0007004000` 调用同一物理代码，
+回传实际 PC，并经 `0xfffffe0009008000` 写入两个不同数据标记。
+同时检查代码写入被拒绝、未映射窗口翻译失败，以及原固件控制寄存器恢复。
+QEMU 另以真实未定义指令和 PXN 取指错误确认异常现场可恢复。
+这不是 XNU 启动，也没有执行 arm64e 用户空间。
+
+47 位实验的绿色标记：0/1 进入并安装向量，2 安装 TTBR1，3 启用窗口，
+4/5/6 为低端代码、高端代码、数据翻译，7 为写代码负对照，8/9 为两处实际代码返回，
+A 为数据读取，B 为未映射负对照，C-F 为状态恢复和返回。异常可跳到 C-F。
+完整通过要求屏幕 `walks/execute/controls/firmware-restored` 均为 PASS。
+
+```sh
+python3 scripts/test_el1_native.py --layout47 --clang /path/to/clang --qemu /path/to/qemu-system-aarch64
+```
+
+以下为已通过的 36 位实验及其历史标记，不对应当前 47 位入口。
+
 `native.S` 由 UEFI 应用和 QEMU 控制共同调用。页表实验借用 Snapintosh 的
 `probes/tgran16.c` 区分方法：4K 有效、4K 空叶、4K 区分地址和 16K 区分地址。
 此处在 EL1 执行，不能直接采用上游修改 EL1 寄存器的 EL2 调用环境。

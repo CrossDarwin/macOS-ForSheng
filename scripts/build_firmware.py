@@ -140,7 +140,8 @@ def main():
     if args.native_el1:
         record['native_el1_sources_sha256'] = {
             name: hashlib.sha256((ROOT/'probes/el1-native'/name).read_bytes()).hexdigest()
-            for name in ('NativeEl1.c', 'native.S')}
+            for name in ('NativeEl1.c', 'NativeEl1.h', 'NativeEl1.inf', 'native.S',
+                         'Native47.c', 'layout47.h', 'layout47.S')}
     record['patches_sha256'] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                 for p in sorted((ROOT/'patches').glob('*/*.patch'))}
     record['vendor_archive_sha256'] = json.loads(manifest.read_text())['archive_sha256']

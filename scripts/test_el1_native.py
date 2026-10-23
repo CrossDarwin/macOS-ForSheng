@@ -14,9 +14,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--clang', type=Path, required=True)
     p.add_argument('--qemu', type=Path, required=True)
+    p.add_argument('--layout47', action='store_true', help='execute the 47-bit instruction-fetch probe instead')
     args = p.parse_args()
     source = ROOT / 'probes/el1-native'
-    out = ROOT / 'out/el1-native-qemu'
+    out = ROOT / ('out/el1-layout47-qemu' if args.layout47 else 'out/el1-native-qemu')
     out.mkdir(parents=True, exist_ok=True)
     linker = out / 'probe.ld'
     linker.write_text('ENTRY(_start)\nSECTIONS { . = 0x80080000; .text : { *(.text*) } '
@@ -27,15 +28,20 @@ def main():
     if libraries.is_dir():
         env['LD_LIBRARY_PATH'] = str(libraries) + ':' + env.get('LD_LIBRARY_PATH', '')
     records = []
-    for name, define in (('native-16k', None), ('fallback-4k', 'SHENG_GRANULE_FORCE_4K'),
-                         ('exception-recovery', 'SHENG_GRANULE_INJECT_FAULT')):
+    cases = (('layout47-execute', None), ('layout47-undefined', 'SHENG_LAYOUT47_INJECT_FAULT'),
+             ('layout47-execute-never', 'SHENG_LAYOUT47_DENY_EXEC')) if args.layout47 else (
+             ('native-16k', None), ('fallback-4k', 'SHENG_GRANULE_FORCE_4K'),
+             ('exception-recovery', 'SHENG_GRANULE_INJECT_FAULT'))
+    for name, define in cases:
         binary = out / (name + '.elf')
         command = [str(args.clang), '--target=aarch64-none-elf', '-march=armv8.3-a',
                    '-ffreestanding', '-fno-builtin', '-mgeneral-regs-only', '-O2', '-nostdlib',
                    '-fuse-ld=lld', '-Wl,-T,' + str(linker), '-o', str(binary)]
         if define:
             command += ['-D' + define + '=1']
-        command += [str(source / name) for name in ('qemu-entry.S', 'qemu.c', 'native.S')]
+        files = ('qemu-entry.S', 'qemu_layout47.c', 'layout47.S') if args.layout47 else (
+                 'qemu-entry.S', 'qemu.c', 'native.S')
+        command += [str(source / name) for name in files]
         subprocess.run(command, check=True, timeout=60)
         command = [str(args.qemu), '-M', 'virt,virtualization=off', '-cpu', 'max', '-m', '3G',
                    '-nodefaults', '-display', 'none', '-serial', 'none', '-monitor', 'none',
@@ -51,7 +57,9 @@ def main():
         print(log, end='', flush=True)
         records.append(dict(case=name, returncode=result.returncode, output=log))
         (out / 'results.json').write_text(json.dumps(dict(cases=records, sheng_hardware_executed=False), indent=2)+'\n')
-        if result.returncode or 'PASS PAC IA IB DA DB GA switch and restore' not in log:
+        expected = 'PASS layout47 execution controls and firmware restore' if args.layout47 else (
+                   'PASS PAC IA IB DA DB GA switch and restore')
+        if result.returncode or expected not in log:
             raise RuntimeError(f'{name}: the actual EL1 probe did not complete')
 
 

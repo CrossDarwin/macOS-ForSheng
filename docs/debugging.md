@@ -34,7 +34,8 @@ fastboot 由 ABL 提供，ADB 由 Android 提供，两者都不是 XNU KDP 的�
 
 arm64e 是包含指针认证约定的 ABI，不是仅内核态的一组指令。
 EL0 程序可执行 PAC/AUT，内核负责密钥生命周期和特权状态；Apple 专有密钥行为另行处理。
-本项目 Android EL0 的 PAC 往返已有实机证据，EL1 密钥库切换仍需独立实测。
+本项目 Android EL0 的 PAC 往返已有实机证据；启动核 EL1 五类密钥库切换和恢复也已实测通过（flags=0x7fff）。
+两项实验均不证明 Apple 的密钥派生和 XNU 任务生命周期已接通。
 后续兼容同时覆盖用户态签名指针、dyld fixup、进程/线程切换、异常进入和用户返回。
 不能只在内核替换指令，或通过放行 arm64e subtype 代替密钥语义实现。
 

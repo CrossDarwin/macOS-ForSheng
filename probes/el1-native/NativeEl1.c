@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include <Uefi.h>
+#include "NativeEl1.h"
 #include <Library/CacheMaintenanceLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -12,8 +12,8 @@ extern UINT64 ShengEl1GranuleProbe (UINT64 *Table, UINT64 *Output, UINT64 Tcr,
 extern VOID ShengEl1GranuleProbeEnd (VOID);
 extern UINT64 ShengEl1PauthProbe (UINT64 *Output);
 
-STATIC BOOLEAN
-Pause (CONST CHAR16 *Message)
+BOOLEAN
+ShengProbePause (CONST CHAR16 *Message)
 {
   EFI_INPUT_KEY Key;
   EFI_HANDLE *Handles;
@@ -66,16 +66,16 @@ Pause (CONST CHAR16 *Message)
   }
 }
 
-STATIC EFI_STATUS
-Finish (EFI_STATUS Result)
+EFI_STATUS
+ShengProbeFinish (EFI_STATUS Result)
 {
   Print (L"SHENG-EL1: status=%r\r\n", Result);
-  Pause (L"Press a key to return to the boot menu");
+  ShengProbePause (L"Press a key to return to the boot menu");
   return Result;
 }
 
-STATIC BOOLEAN
-IdentityMapped (UINTN Start, UINTN Bytes)
+BOOLEAN
+ShengProbeIdentityMapped (UINTN Start, UINTN Bytes)
 {
   UINT64 SavedPar;
   UINT64 Par;
@@ -104,8 +104,8 @@ IdentityMapped (UINTN Start, UINTN Bytes)
 }
 
 // 标签在固件映射下绘制，汇编只填对应的绿色格子，不调用固件服务
-STATIC EFI_STATUS
-PrepareProgress (UINTN *Progress, UINTN *Stride)
+EFI_STATUS
+ShengProbePrepareProgress (UINTN *Progress, UINTN *Stride)
 {
   STATIC CONST UINT8 Font[16][7] = {
     {14,17,19,21,25,17,14}, {4,12,4,4,4,4,14},
@@ -142,7 +142,7 @@ PrepareProgress (UINTN *Progress, UINTN *Stride)
     return EFI_UNSUPPORTED;
   }
   Start = (UINTN) Gop->Mode->FrameBufferBase + Y * *Stride + X * 4;
-  if (!IdentityMapped (Start, Span)) {
+  if (!ShengProbeIdentityMapped (Start, Span)) {
     return EFI_UNSUPPORTED;
   }
   for (Row = 0; Row < 64; Row++) {
@@ -173,7 +173,7 @@ PrepareProgress (UINTN *Progress, UINTN *Stride)
 }
 
 EFI_STATUS EFIAPI
-UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
+ShengGranuleMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
   UINT64 El, Mmfr0, Isar1, Isar2, Sp, Sctlr, SpSel;
   UINT64 BeforeTcr, BeforeTtbr, BeforeMair, AfterTcr, AfterTtbr, AfterMair, AfterSctlr;
@@ -196,7 +196,7 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   Print (L"SHENG-EL1: application entered, EL=%lu\r\n", El >> 2);
   if (El != 4) {
     Print (L"SHENG-EL1: requires EL1, CurrentEL=0x%lx\r\n", El);
-    return Finish (EFI_UNSUPPORTED);
+    return ShengProbeFinish (EFI_UNSUPPORTED);
   }
   __asm__ volatile ("mrs %0, id_aa64mmfr0_el1" : "=r" (Mmfr0));
   __asm__ volatile ("mrs %0, id_aa64isar1_el1" : "=r" (Isar1));
@@ -205,7 +205,7 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   Print (L"SHENG-EL1: SCTLR=%lx SP=%lx PC=%lx\r\n", Sctlr, Sp, (UINT64) (UINTN) ShengEl1GranuleProbe);
   if (!(Sctlr & 1)) {
     Print (L"SHENG-EL1: refused - firmware MMU is off\r\n");
-    return Finish (EFI_UNSUPPORTED);
+    return ShengProbeFinish (EFI_UNSUPPORTED);
   }
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1;"
                     "mrs %3, ttbr1_el1; mrs %4, spsel"
@@ -213,7 +213,7 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
                       "=r" (BeforeTtbr1), "=r" (SpSel));
   if (!(BeforeTcr & (1ULL << 23)) || (BeforeTcr & (1ULL << 22)) || SpSel != 1) {
     Print (L"SHENG-EL1: refused - requires unused TTBR1, TTBR0 ASID and SP_EL1\r\n");
-    return Finish (EFI_UNSUPPORTED);
+    return ShengProbeFinish (EFI_UNSUPPORTED);
   }
   for (Index = 0; Index < 8; Index++) {
     if (((BeforeMair >> (Index * 8)) & 255) == 255) {
@@ -222,21 +222,21 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   }
   if (Index == 8) {
     Print (L"SHENG-EL1: refused - firmware lacks normal WB MAIR attribute\r\n");
-    return Finish (EFI_UNSUPPORTED);
+    return ShengProbeFinish (EFI_UNSUPPORTED);
   }
   Leaf = 0x701 | ((UINT64) Index << 2);
   Table = AllocateAlignedPages (4, 16384);
   if (Table == NULL) {
-    return Finish (EFI_OUT_OF_RESOURCES);
+    return ShengProbeFinish (EFI_OUT_OF_RESOURCES);
   }
-  if (!IdentityMapped ((UINTN) ShengEl1GranuleProbe,
+  if (!ShengProbeIdentityMapped ((UINTN) ShengEl1GranuleProbe,
                        (UINTN) ShengEl1GranuleProbeEnd - (UINTN) ShengEl1GranuleProbe) ||
-      !IdentityMapped ((UINTN) Table, 16384) ||
-      !IdentityMapped ((UINTN) Result, sizeof (Result)) ||
-      Sp < 256 || !IdentityMapped (Sp - 256, 256)) {
+      !ShengProbeIdentityMapped ((UINTN) Table, 16384) ||
+      !ShengProbeIdentityMapped ((UINTN) Result, sizeof (Result)) ||
+      Sp < 256 || !ShengProbeIdentityMapped (Sp - 256, 256)) {
     Print (L"SHENG-EL1: refused - execution or buffers lack the required identity mapping\r\n");
     FreeAlignedPages (Table, 4);
-    return Finish (EFI_UNSUPPORTED);
+    return ShengProbeFinish (EFI_UNSUPPORTED);
   }
   for (Index = 0; Index < 2048; Index++) {
     Table[Index] = 0;
@@ -248,15 +248,15 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   Tcr |= (2ULL << 30) | (3ULL << 28) | (1ULL << 26) | (1ULL << 24) | (28ULL << 16);
   Print (L"SHENG-EL1: firmware TCR=%lx TTBR0=%lx MAIR=%lx\r\n",
          BeforeTcr, BeforeTtbr, BeforeMair);
-  if (EFI_ERROR (PrepareProgress (&Progress, &Stride))) {
+  if (EFI_ERROR (ShengProbePrepareProgress (&Progress, &Stride))) {
     Print (L"SHENG-EL1: refused - framebuffer checkpoints unavailable\r\n");
     FreeAlignedPages (Table, 4);
-    return Finish (EFI_UNSUPPORTED);
+    return ShengProbeFinish (EFI_UNSUPPORTED);
   }
   Print (L"SHENG-EL1: TTBR1 scratch walk, firmware MMU stays on, MMFR0=0x%lx\r\n", Mmfr0);
-  if (!Pause (L"Press a key to run the MMU probe")) {
+  if (!ShengProbePause (L"Press a key to run the MMU probe")) {
     FreeAlignedPages (Table, 4);
-    return Finish (EFI_DEVICE_ERROR);
+    return ShengProbeFinish (EFI_DEVICE_ERROR);
   }
   Print (L"SHENG-EL1: MMU probe starting\r\n");
   gBS->Stall (200000);
@@ -278,12 +278,12 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
            Result[7], Result[4], Result[5], Result[6]);
   }
   if (!Restored || ProbeStatus) {
-    return Finish (EFI_DEVICE_ERROR);
+    return ShengProbeFinish (EFI_DEVICE_ERROR);
   }
   if (((Isar1 >> 4) & 255) != 0 &&
       (((Isar1 >> 24) & 255) != 0 || ((Isar2 >> 8) & 15) != 0)) {
-    if (!Pause (L"Press a key to run the PAC probe")) {
-      return Finish (EFI_DEVICE_ERROR);
+    if (!ShengProbePause (L"Press a key to run the PAC probe")) {
+      return ShengProbeFinish (EFI_DEVICE_ERROR);
     }
     Print (L"SHENG-EL1: PAC probe starting\r\n");
     gBS->Stall (200000);
@@ -294,5 +294,5 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     Print (L"SHENG-EL1: PAC skipped - address/generic authentication not advertised\r\n");
   }
   Print (L"SHENG-EL1: boot CPU only; 47-bit layout and XNU task switching remain pending\r\n");
-  return Finish (Granule && PauthFlags == 0x7fff ? EFI_SUCCESS : EFI_UNSUPPORTED);
+  return ShengProbeFinish (Granule && PauthFlags == 0x7fff ? EFI_SUCCESS : EFI_UNSUPPORTED);
 }

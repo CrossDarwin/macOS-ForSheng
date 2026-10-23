@@ -9,7 +9,9 @@
 
 [Sources]
   NativeEl1.c
+  Native47.c
   native.S
+  layout47.S
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -20,6 +22,7 @@
   UefiLib
   MemoryAllocationLib
   CacheMaintenanceLib
+  BaseMemoryLib
 
 [Protocols]
   gEfiSimpleTextInProtocolGuid
