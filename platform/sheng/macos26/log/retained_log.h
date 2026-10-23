@@ -27,6 +27,7 @@ struct sheng_log_record sheng_log_buffer __attribute__((aligned(16384))) = {
 volatile uint32_t sheng_bootstrap_capture_enabled = 1;
 uint64_t sheng_bootstrap_fb_l2[2048] __attribute__((aligned(16384)));
 uint64_t sheng_bootstrap_fb_trace_ready;
+volatile uint64_t sheng_bootstrap_c_stage = UINT64_MAX;
 
 void sheng_bootstrap_capture_end(void)
 {

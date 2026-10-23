@@ -1,0 +1,109 @@
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -353,6 +353,13 @@
+  *		Function:		Runs on the boot CPU, once, on entry from iBoot.
+  */
+ 
++#if SHENG
++#include <arm64/sheng_c_trace.h>
++#define SHENG_C_TRACE(stage) sheng_bootstrap_c_trace(args, stage)
++#else
++#define SHENG_C_TRACE(stage) ((void)0)
++#endif
++
+ __startup_func
+ void
+ arm_init(
+@@ -365,12 +372,16 @@
+ 	DTEntry chosen = NULL;
+ 	unsigned int dt_entry_size = 0;
+ 
++	SHENG_C_TRACE(0);
+ 	arm_slide_rebase_and_sign_image();
++	SHENG_C_TRACE(1);
+ #if SHENG
+ 	sheng_log_begin(args->physBase, args->virtBase, &_mh_execute_header);
++	SHENG_C_TRACE(2);
+ #endif
+ 
+ 	arm_static_if_init(args);
++	SHENG_C_TRACE(3);
+ 
+ 	/* If kernel integrity is supported, use a constant copy of the boot args. */
+ 	const_boot_args = *args;
+@@ -381,6 +392,7 @@
+ #endif /* APPLEVIRTUALPLATFORM */
+ 
+ 	cpu_data_init(&BootCpuData);
++	SHENG_C_TRACE(4);
+ #if defined(HAS_APPLE_PAC)
+ 	/* bootstrap cpu process dependent key for kernel has been loaded by start.s */
+ 	BootCpuData.rop_key = ml_default_rop_pid();
+@@ -388,6 +400,7 @@
+ #endif /* defined(HAS_APPLE_PAC) */
+ 
+ 	PE_init_platform(FALSE, args); /* Get platform expert set up */
++	SHENG_C_TRACE(5);
+ 
+ #if __arm64__
+ 	configure_timer_apple_regs();
+@@ -396,6 +409,7 @@
+ 
+ 	configure_misc_apple_boot_args();
+ 	configure_misc_apple_regs(true);
++	SHENG_C_TRACE(6);
+ 
+ #if HAS_UPSI_FAILURE_INJECTION
+ 	/* UPSI (Universal Panic and Stall Injection) Logic
+@@ -471,6 +485,7 @@
+ #endif
+ 
+ 	ml_parse_cpu_topology();
++	SHENG_C_TRACE(7);
+ 
+ 
+ 	boot_cpu_id = ml_get_boot_cpu_number();
+@@ -501,12 +516,16 @@
+ 	 * preemption level is not really meaningful for the bootstrap thread.
+ 	 */
+ 	thread->machine.preemption_count = 0;
++	SHENG_C_TRACE(8);
+ 	cpu_bootstrap();
++	SHENG_C_TRACE(9);
+ 
+ 	rtclock_early_init();
++	SHENG_C_TRACE(10);
+ 
+ 	kernel_debug_string_early("kernel_startup_bootstrap");
+ 	kernel_startup_bootstrap();
++	SHENG_C_TRACE(11);
+ 
+ 	/*
+ 	 * Initialize the timer callout world
+@@ -514,8 +533,10 @@
+ 	timer_call_init();
+ 
+ 	cpu_init();
++	SHENG_C_TRACE(12);
+ 
+ 	processor_bootstrap();
++	SHENG_C_TRACE(13);
+ 
+ 	if (PE_parse_boot_argn("maxmem", &maxmem, sizeof(maxmem))) {
+ 		xmaxmem = (uint64_t) maxmem * (1024 * 1024);
+@@ -562,6 +583,7 @@
+ 	 * the actual DRAM base address and size as reported by iBoot through the
+ 	 * device tree.
+ 	 */
++	SHENG_C_TRACE(14);
+ 	unsigned long const *dram_base;
+ 	unsigned long const *dram_size;
+ 
+@@ -581,6 +603,7 @@
+ 	gDramSize = *dram_size;
+ 	pmap_first_pnum = (ppnum_t)atop(gDramBase);
+ 
++	SHENG_C_TRACE(15);
+ 	arm_vm_init(xmaxmem, args);
+ 
+ 	if (debug_boot_arg) {

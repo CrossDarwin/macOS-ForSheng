@@ -89,3 +89,26 @@ python3 scripts/observe_native_bootstrap.py \
   --qemu out/qemu-root/usr/bin/qemu-system-aarch64 \
   --output out/native-bootstrap-high-pa-39987628332
 ```
+
+0029在同一行增加早期C阶段条。汇编阶段仍为绿色，进入C后先清成灰色，已执行的C阶段改为青色。这只记录到`arm_vm_init`调用前；其后不访问临时identity framebuffer映射。
+
+| C字符 | 已完成的执行点 |
+|---|---|
+| 0 | `arm_init`函数序言之后、指针重定位之前 |
+| 1 | `arm_slide_rebase_and_sign_image`返回 |
+| 2 | 保留日志初始化返回 |
+| 3 | `arm_static_if_init`返回 |
+| 4 | 启动参数复制及`cpu_data_init`返回 |
+| 5 | `PE_init_platform(FALSE)`返回 |
+| 6 | 早期CPU寄存器与超时配置返回 |
+| 7 | CPU拓扑解析返回 |
+| 8 | 启动线程及当前线程设置完成 |
+| 9 | `cpu_bootstrap`返回 |
+| A | `rtclock_early_init`返回 |
+| B | `kernel_startup_bootstrap`返回 |
+| C | 定时器调用和`cpu_init`返回 |
+| D | `processor_bootstrap`返回 |
+| E | 内存启动参数和早期特性配置完成 |
+| F | DRAM设备树读取完成，即将调用`arm_vm_init` |
+
+`sheng_bootstrap_c_stage`独立记录最后C阶段，不改写原汇编阶段记录。显示要求原临时映射就绪；800×600 QEMU仍只记录阶段值。助手函数强制内联，在重定位之前不调用运行时函数。ARM64E对象定向编译已确认无调用指令，完整目标编译和运行结果另行记录。
