@@ -98,7 +98,7 @@ def main() -> None:
     shutil.copy2(inputs / 'loader/BOOTAA64.EFI', esp / 'EFI/BOOT/BOOTAA64.EFI')
     loader = json.loads(args.loader_build.read_text())
     loader_path = ROOT / loader['file']
-    if loader.get('bootstrap_block_bytes') != 33554432 or hashlib.sha256(loader_path.read_bytes()).hexdigest() != loader['sha256']:
+    if loader.get('native_panic_region_bytes') != 524288 or loader.get('bootstrap_block_bytes') != 33554432 or hashlib.sha256(loader_path.read_bytes()).hexdigest() != loader['sha256']:
         raise ValueError('native kernel needs the built 32 MiB-congruent DarwinBoot loader')
     shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
     record['loader_sha256'] = loader['sha256']
@@ -182,6 +182,17 @@ def main() -> None:
         (args.output / 'xnu-panic.json').write_text(json.dumps(info, indent=2) + '\n')
     regs = {name: int(value, 16) for name, value in snapshot['system_registers'].items()}
     tcr = regs['TCR_EL1']
+    observed_globals = {}
+    for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
+                        ('_gPanicBase', 8), ('_gPanicSize', 4)):
+        if name in addresses:
+            key = f'{addresses[name]:x}:{width:x}'
+            observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
+    record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    record['source_crypto_initialized'] = (observed_globals.get('_sheng_corecrypto_status') == 0
+                                          and observed_globals.get('_prng_ready') == 1
+                                          and bool(observed_globals.get('_g_crypto_funcs')))
+    record['full_component_crypto_abi_qualified'] = False
     kernel_data = kernel.read_bytes()
     kernel_image = macho(kernel_data)
     instruction_at = backed_offset(kernel_image['segments'], checkpoint, 16, len(kernel_data))

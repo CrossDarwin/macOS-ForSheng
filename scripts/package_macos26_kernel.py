@@ -27,8 +27,10 @@ def main() -> None:
         raise ValueError('native hardware candidate requires the retained kernel logger')
     firmware = json.loads(args.firmware_build.read_text())
     patch = 'patches/UniXNU/0007-native-16k-bootstrap-congruence.patch'
+    panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'
     if (firmware.get('preflight_only') is not False or firmware.get('native_el1')
             or firmware['bootimg']['compression'] != 'none'
+            or firmware.get('patches_sha256', {}).get(panic_patch) != hashlib.sha256((ROOT / panic_patch).read_bytes()).hexdigest()
             or firmware.get('patches_sha256', {}).get(patch) != hashlib.sha256((ROOT / patch).read_bytes()).hexdigest()):
         raise ValueError('requires normal firmware with the native 32 MiB loader constraint')
     base = ROOT / next(name for name in firmware['artifacts'] if name.endswith('.img'))
@@ -96,6 +98,7 @@ def main() -> None:
                       log_symbol_va=hex(symbols['_sheng_log_buffer']),
                       log_physical_address='actual DarwinBoot PA + log_symbol_va - kernel linked base',
                       bootstrap_block_bytes=33554432, owned_memory_bytes=0x20000000,
+                      native_panic_region_bytes=524288,
                       firmware_sha256=firmware['sha256'], temporary_ram_boot=True,
                       hardware_executed=False, userland_started=False,
                       storage_drivers_linked=False, partition_images_written=False)
