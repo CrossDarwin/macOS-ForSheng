@@ -38,3 +38,17 @@ python3 scripts/test_native_early_exception.py \
 ```
 
 独立 QEMU 测试已通过；完整 XNU 目标编译、真实内核启动与 sheng 实机结果分别记录。
+
+`scripts/observe_native_bootstrap.py`补充实际链接内核的高物理地址观察。
+使用sheng照片中的kernel PA `0x881004000`与boot_args PA `0x882A00000`，执行原始启动汇编。
+通过GDB在`arm_init`第一条指令前停止，同时核对实际指令、启动参数和控制寄存器。
+该观察不经过UEFI，不提供设备树或framebuffer，不执行C初始化，也不模拟Gunyah或sheng设备。
+QEMU配置34 GiB稀疏客体RAM，仅为覆盖该物理地址；XNU收到的owned window仍是512 MiB。
+
+```sh
+python3 scripts/observe_native_bootstrap.py \
+  --kernel-build private/ci/macos26-arm64e-kernel-39987628332 \
+  --clang /home/rinnrei/Project/uwuAOSP/prebuilts/clang/host/linux-x86/clang-r596125/bin/clang \
+  --qemu out/qemu-root/usr/bin/qemu-system-aarch64 \
+  --output out/native-bootstrap-high-pa-39987628332
+```

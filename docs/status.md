@@ -525,3 +525,9 @@ kernel PA=0x881004000、panic PA=0x882A04000；入口ESR为0不能用来排除�
 新增0025延后高位VBAR安装，并使保留的低位向量在MMU开启时转入无栈物理恢复路径。
 定向QEMU实际破坏TTBR1并令SP=0后仍捕获取指异常：XNU=3、ELR/FAR=0xffff800040000000、ESR=0x86000005。
 该结果确认诊断覆盖扩大，不证明这就是sheng当前停顿的原因；新完整内核尚待构建。
+
+同一75EEE56A内核另按实机kernel PA=0x881004000、boot_args PA=0x882A00000进行QEMU原始启动观察。
+实际到达arm_init第一条PACIBSP指令前，指令字节与启动参数均匹配；SCTLR=0xFC54793D，TCR=0x800226511A511。
+TTBR0=0x8811C8000、TTBR1=0x8811CC000，未发生异常。
+说明该高物理地址可由本版启动页表处理；不模拟UEFI入口状态、framebuffer或Gunyah，不能据此排除固件相关问题。
+新增scripts/observe_native_bootstrap.py保存这项有边界的实际内核观察，临时flat映像运行结束后删除。
