@@ -106,7 +106,8 @@ def main() -> None:
     manifest.write_text(json.dumps(record, indent=2) + '\n')
     print(json.dumps({key: record[key] for key in ('xcode', 'macos_sdk', 'iphoneos_sdk', 'clang')}, indent=2), flush=True)
     # This is the older iOS 17 source reference; its SDK need not share macOS's version number.
-    if (not record['xcode'].startswith('Xcode 27\n') or record['macos_sdk'] != '27.0'
+    xcode_major = record['xcode'].splitlines()[0].removeprefix('Xcode ').split('.')[0]
+    if (xcode_major != '27' or record['macos_sdk'] != '27.0'
             or int(record['iphoneos_sdk'].split('.')[0]) < 17):
         raise ValueError(f'unqualified reference toolchain: Xcode={record["xcode"]!r}, '
                          f'macOS SDK={record["macos_sdk"]}, iPhoneOS SDK={record["iphoneos_sdk"]}')
@@ -114,6 +115,8 @@ def main() -> None:
     binary = ctx.tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf'
     if not binary.is_file():
         raise ValueError('kernel builder did not produce the expected source Mach-O')
+    subprocess.run([sys.executable, ctx.tree / 'scripts/audit-xnu-kernel.py', binary], check=True)
+    shutil.copy2(ctx.tree / 'build/xnu/kernel-audit.json', output / 'kernel-audit.json')
     shutil.copy2(binary, output / 'kernel.macho')
     record.update(built=True, kernel_sha256=sha(binary), kernel_bytes=binary.stat().st_size,
                   kernel_file='kernel.macho')

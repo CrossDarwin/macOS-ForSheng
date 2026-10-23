@@ -123,6 +123,19 @@ jobs:
       - run: python3 scripts/apply_patches.py
       - name: Install source kernel build tools
         run: brew install cmake ninja unifdef llvm lld
+      - name: Record the actual reference toolchain identity
+        id: reference-toolchain
+        run: |
+          mkdir -p out/reference-xnu
+          { xcodebuild -version; xcrun clang --version; xcrun --sdk macosx --show-sdk-version; xcrun --sdk iphoneos --show-sdk-version; } > out/reference-xnu/toolchain.txt
+          cat out/reference-xnu/toolchain.txt
+          echo "identity=$(shasum -a 256 out/reference-xnu/toolchain.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out/reference-xnu/work/sheng/tree/.cache/
+            out/reference-xnu/work/sheng/tree/build/
+          key: reference-xnu-${{ runner.os }}-${{ runner.arch }}-${{ steps.reference-toolchain.outputs.identity }}-${{ hashFiles('sources.lock.json', 'patches/**', 'config/reference-xnu*') }}
       - name: Build EL1 reference only
         run: python3 scripts/build_reference_xnu.py -j 4
       - uses: actions/upload-artifact@v4
@@ -133,6 +146,8 @@ jobs:
             out/reference-xnu/kernel.macho
             out/reference-xnu/build.json
             out/reference-xnu/restored-headers.json
+            out/reference-xnu/kernel-audit.json
+            out/reference-xnu/toolchain.txt
             out/reference-xnu/work/sheng/logs/
           if-no-files-found: warn
           retention-days: 7
