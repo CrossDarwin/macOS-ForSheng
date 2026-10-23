@@ -1,0 +1,24 @@
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -699,6 +699,9 @@
+   DEBUG ((DEBUG_ERROR, "kernel   va 0x%lx  pa 0x%lx\n", Kernel.Base, Address));
+   DEBUG ((DEBUG_ERROR, "entry    pa 0x%lx\n", Address + Kernel.Entry - Kernel.Base));
+   DEBUG ((DEBUG_ERROR, "args     pa 0x%lx  window 0x%lx bytes\n", ArgsAddress, (UINT64)WindowSize));
++  if (PanicOffset != MAX_UINTN) {
++    DEBUG ((DEBUG_ERROR, "panic    pa 0x%lx  bytes 0x%lx\n", PanicAddress, (UINT64)SIZE_512KB));
++  }
+   DEBUG ((DEBUG_ERROR, "video    base 0x%lx  %lux%lu  row %lu bytes  %lu bpp\n", Video[0], Video[3], Video[4], Video[2], Video[5]));
+   DEBUG ((DEBUG_ERROR, "entry words %08x %08x %08x %08x\n",
+           ReadUnaligned32 ((CONST UINT32 *)(UINTN)(Address + Kernel.Entry - Kernel.Base)),
+@@ -710,6 +713,11 @@
+           READ_SYSREG (id_aa64mmfr0_el1) & 0xF, (((READ_SYSREG (id_aa64mmfr0_el1) >> 28) & 0xF) == 0xF) ? "NOT supported" : "supported"));
+   DEBUG ((DEBUG_ERROR, "ID_AA64PFR0_EL1  0x%lx\n", READ_SYSREG (id_aa64pfr0_el1)));
+   DEBUG ((DEBUG_ERROR, "\nExiting boot services. A green bar across the top\nmeans the kernel entry code ran.\n"));
++  // Capture the actual load and panic addresses before the kernel owns video.
++  if (AsciiStrStr (CommandLine, "-sheng-capture-handoff") != NULL) {
++    Print (L"DARWINBOOT: capture handoff addresses - starting in 10 seconds\n");
++    gBS->Stall (10000000);
++  }
+   for (Attempt = 0; Attempt < 3; Attempt++) {
+     MapSize = Capacity;
+     Status = gBS->GetMemoryMap (&MapSize, Map, &Key, &Stride, &Version);

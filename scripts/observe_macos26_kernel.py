@@ -80,6 +80,8 @@ def main() -> None:
                         help='save the owned 512 KiB XNU panic region through its actual gPanicBase pointer')
     parser.add_argument('--let-vector-log', action='store_true',
                         help='allow the kernel exception hook to retain the first fault before a bounded stop')
+    parser.add_argument('--capture-screen', action='store_true', help='save the actual QEMU framebuffer')
+    parser.add_argument('--handoff-pause', action='store_true', help='exercise the ten-second hardware handoff capture window')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot'), default='arm_init')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
@@ -106,12 +108,18 @@ def main() -> None:
     shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
     record['loader_sha256'] = loader['sha256']
     shutil.copy2(kernel, payload / 'kernel.macho')
+    boot_args = '-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam'
+    if args.handoff_pause:
+        if not loader.get('handoff_panic_address_visible'):
+            raise ValueError('handoff capture needs the loader with visible panic PA')
+        boot_args += ' -sheng-capture-handoff'
+    record['boot_args'] = boot_args
     (esp / 'EFI/UniXNU/unixnu.toml').write_text(
         'version = 1\n[boot]\ntimeout = 1\ndefault = "native26"\n'
         '[kits]\nautoload = false\n[[driver]]\npath = "Payloads/DarwinBoot.efi"\n'
         '[[entry]]\nid = "native26"\ntitle = "Native SHENG macOS 26 - kernel entry"\n'
         'type = "xnu"\npath = "Payloads/kernel.macho"\n'
-        'args = "-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam"\n')
+        f'args = "{boot_args}"\n')
     subprocess.run([sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
                     '--output', payload / 'kernel.macho.adt', '--dram-size', '0x40000000',
                     '--owned-memory-size', '0x20000000', '--panic-log', '--armvirt', '--armcpu',
@@ -125,6 +133,8 @@ def main() -> None:
                '--system-registers', '--qemu-ramfb']
     if not args.let_vector_log:
         command += ['--also-stop', hex(addresses['_panic'])]
+    if args.capture_screen:
+        command += ['--capture-screen']
     (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
     vector_base = addresses['_ExceptionVectorsBase']
     if not args.let_vector_log:

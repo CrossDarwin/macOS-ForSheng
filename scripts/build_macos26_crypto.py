@@ -5,6 +5,7 @@ import concurrent.futures
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 
 from build_macos26_xnu import ROOT, OUT, ARCH, audit_object, capture, run, save, sha
@@ -80,17 +81,32 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
             destination = object_dir / (name + '.o')
             identity = hashlib.sha256((sha(path) + json.dumps(full_command)
                                        + report['source_revision']
+                                       + ('kernel-assembly-text-v1' if ARCH == 'arm64e' else '')
                                        + (sha(work / 'namespace.h') if extra else '')).encode()).hexdigest()
             stamp = destination.with_suffix('.identity')
             if destination.exists() and stamp.exists() and stamp.read_text() == identity:
                 return destination, 0, ''
-            result = subprocess.run([*full_command, '-c', str(path), '-o', str(destination)],
+            assembly = destination.with_suffix('.s')
+            result = subprocess.run([*full_command, '-S' if ARCH == 'arm64e' else '-c', str(path),
+                                     '-o', str(assembly if ARCH == 'arm64e' else destination)],
                                     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            (OUT / 'logs' / ('corecrypto-' + variant + '-' + name + '.log')).write_text(result.stdout)
+            diagnostic = result.stdout
+            if result.returncode == 0 and ARCH == 'arm64e':
+                # Keep compiler-emitted kernel PAC metadata; a user-ABI ld -r discards these objects.
+                text, renamed = re.subn(r'(\.section\s+)__TEXT,__text(?=[,\s])',
+                    r'\1__TEXT_EXEC,__cc26_text', assembly.read_text())
+                if not renamed:
+                    raise ValueError(f'{relative}: compiler emitted no standard text section')
+                assembly.write_text(text)
+                result = subprocess.run(['xcrun', 'clang', '-target', 'arm64e-apple-macos26.5',
+                    '-mkernel', '-c', '-x', 'assembler', str(assembly), '-o', str(destination)],
+                    env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                diagnostic += result.stdout
+            (OUT / 'logs' / ('corecrypto-' + variant + '-' + name + '.log')).write_text(diagnostic)
             if result.returncode == 0:
                 audit_object(destination)
                 stamp.write_text(identity)
-            return destination, result.returncode, result.stdout
+            return destination, result.returncode, diagnostic
 
         print(f'Running - corecrypto {variant} ({len(sources)} C files)', flush=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
@@ -133,6 +149,11 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
     save(record)
     if missing or duplicate:
         raise ValueError(f'corecrypto external link contract: missing={missing}, duplicate={duplicate}')
+    if ARCH == 'arm64e':
+        report['integrity_scope'] = '__TEXT_EXEC,__cc26_text (compiler-emitted kernel ABI objects)'
+        report['kernel_object_archive'] = str(archive.relative_to(OUT))
+        save(record)
+        return archive
     relocated = work / 'corecrypto-native.o'
     run(['xcrun', 'ld', '-r', '-arch', ARCH, '-platform_version', 'macos', '26.5', '27.0',
          '-all_load', archive, '-rename_section', '__TEXT', '__text', '__TEXT_EXEC', '__cc26_text',
