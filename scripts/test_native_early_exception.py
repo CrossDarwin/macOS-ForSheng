@@ -108,6 +108,9 @@ try:
   print(bytes.fromhex(result[1:]).decode(errors='replace'));result=receive()
  assert result=='OK',result
  raw=screen.read_bytes();assert len(raw)==640*640*4
+ for stage in range(16):
+  offset=568*2560+(224+24*stage)*4
+  assert struct.unpack_from('<I',raw,offset)[0]==(0xff00ff00 if stage<=12 else 0xff303030)
  Image.frombytes('RGBX',(640,640),raw,'raw','BGRX').convert('RGB').save(p/'screen.png')
  # Exercise the shared vector hook while executing high VA with TTBR0 disabled.
  assert packet(f'z0,{halt:x},4')=='OK'

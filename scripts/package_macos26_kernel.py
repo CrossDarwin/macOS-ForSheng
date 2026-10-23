@@ -42,6 +42,10 @@ def main() -> None:
         raise ValueError('native hardware candidate requires the retained kernel logger')
     if '_sheng_mmu_sync_fault' in symbols and not observed.get('bootstrap_diagnostic_disarmed'):
         raise ValueError('requires this MMU-on diagnostic to disarm after console setup in QEMU')
+    native_build = json.loads((kernel.parent / 'build.json').read_text())
+    if (native_build.get('bootstrap_trace_source_sha256') and
+            observed.get('early_exception', {}).get('bootstrap_stage') != '0xc'):
+        raise ValueError('requires this kernel to complete the pre-MMU stage strip in QEMU')
     firmware = json.loads(args.firmware_build.read_text())
     patch = 'patches/UniXNU/0007-native-16k-bootstrap-congruence.patch'
     panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'

@@ -18,6 +18,8 @@ Lsheng_early_enter:
 	str x0, [x19, #160]
 	adr x0, Lsheng_mmu_off_fault
 	str x0, [x19, #168]
+	mov x0, #-1
+	str x0, [x19, #184]
 	mov x0, #1
 	str x0, [x19]
 	b Lsheng_early_capture
@@ -189,6 +191,15 @@ Lsheng_early_pixel_rows:
 	mov x1, #12
 	mov w3, #0x3030
 	movk w3, #0xff30, lsl #16
+	ldr x2, [x19, #184]
+	cmp x2, #16
+	b.hs 3f
+	sub x4, x28, #8
+	cmp x4, x2
+	b.hi 3f
+	mov w3, #0xff00
+	movk w3, #0xff00, lsl #16
+3:
 1:
 	stp w3, w3, [x0]
 	stp w3, w3, [x0, #8]
