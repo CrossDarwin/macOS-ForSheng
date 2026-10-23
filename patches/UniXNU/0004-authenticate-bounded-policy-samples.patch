@@ -1,5 +1,5 @@
 diff --git a/scripts/build-verified-root-probe.py b/scripts/build-verified-root-probe.py
-index 6f7ca93..51abc0d 100644
+index 6f7ca93..1a8ba45 100644
 --- a/scripts/build-verified-root-probe.py
 +++ b/scripts/build-verified-root-probe.py
 @@ -27,7 +27,6 @@ out = ROOT / (('build/verified-root-os-xnu' if args.component == 'os' else 'buil
@@ -49,3 +49,23 @@ index 6f7ca93..51abc0d 100644
  assembly = out / 'inputs.S'
  assembly.write_text('''// Generated ignored crypto inputs; never a boot-root authorization.
  .section __DATA_CONST,__const
+@@ -133,6 +133,19 @@ for source in (ROOT / 'kits/VerifiedRoot/src/verified_root.c', ROOT / 'kits/Veri
+             index += 1
+         elif value in ('-MF', '-MJ'):
+             index += 1
++        elif value == '-I':
++            include = Path(compile_args[index + 1])
++            if not include.is_absolute():
++                include = Path(record['directory']) / include
++            if include.is_dir():
++                command += [value, compile_args[index + 1]]
++            index += 1
++        elif value.startswith('-I') and len(value) > 2:
++            include = Path(value[2:])
++            if not include.is_absolute():
++                include = Path(record['directory']) / include
++            if include.is_dir():
++                command.append(value)
+         elif value not in ('-MD', '-MP'):
+             command.append(value)
+         index += 1

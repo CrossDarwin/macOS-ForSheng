@@ -1,0 +1,15 @@
+diff --git a/package/audit-adreno-platform.py b/package/audit-adreno-platform.py
+index 0e8a020..8b9b364 100644
+--- a/package/audit-adreno-platform.py
++++ b/package/audit-adreno-platform.py
+@@ -6,8 +6,8 @@ from pathlib import Path
+ import re
+ import subprocess
+
+-ROOT = Path(__file__).resolve().parents[2]
+-pins = json.loads((ROOT / 'docs/adreno-inputs.json').read_text())
++ROOT = Path(__file__).absolute().parents[2]
++pins = json.loads((ROOT / 'scripts/data/adreno-inputs.json').read_text())
+ tree = ROOT / '.cache/linux-dts'
+ for name, expected in pins['board']['sha256'].items():
+     path = tree / name

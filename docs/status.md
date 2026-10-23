@@ -105,6 +105,15 @@ SystemOS 原始 APFS 为 3303014400 字节，SHA-256 为
 完整构建在真实编译记录生成后执行存储 ABI 审计及 VerifiedRoot/VirtIO 归档编译，再运行原有 19 步。
 输入不匹配、运行记录超时、ABI 不一致或归档缺失均使构建失败。
 
+`scripts/observe_sheng_abi.py --firmware <QEMU AArch64 UEFI FD>` 可从固定源码内核和原版输入重新生成候选，
+再通过实际 UEFI/DarwinBoot 重放存储、Legacy 两项只读观察。独立重放已通过，
+`out/sheng-abi-replay/verification.json` 保留各次 ADT、配置和原始调试记录的哈希。
+
+NativeAdreno 所需三份固件已按上游字节数、Git blob 和 SHA-256 固定值获取。
+固定 DTS 的 39 个源文件闭包已编译；GMU 寄存器、RSC/PDC 顺序、OPP 和 BCM 参数头由现有上游脚本生成。
+修正了包内资源审计脚本沿符号链接定位到源码仓库而非组装树的问题，并使用实际的 `scripts/data` 清单。
+这些是构建输入和源码分析结果，未观测真实 GMU 执行，也未验证 Adreno 加速。
+
 尚无 launchd 或 macOS 用户空间运行结果。
 该阶段不带系统用户空间，也不链接 UFS 写入后端。QEMU 的合成交接已通过，但不能替代真机结果。
 在解决系统启动路线、完成用户数据备份与恢复验证之前，不实施 96 GiB 分区变更。

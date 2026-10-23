@@ -96,6 +96,10 @@ def stage(tree: Path) -> dict:
 
 def build(tree: Path, env: dict | None = None) -> None:
     commands = [
+        ['fetch-adreno-inputs.py'],
+        ['fetch-sheng-dts.py'],
+        ['prepare-sheng-gmu.py'],
+        ['prepare-sheng-gmu-votes.py'],
         ['audit-storage-interface.py', '--candidate', 'build/native-prelink/native-owner-ufs-rootauth3-candidate.macho'],
         ['audit-amfi-pmgr-contract.py'],
         ['audit-mobile-graphics-legacy.py'],

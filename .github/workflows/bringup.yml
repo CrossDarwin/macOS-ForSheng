@@ -122,7 +122,7 @@ jobs:
       - run: python3 scripts/sources.py fetch --group feeds
       - run: python3 scripts/apply_patches.py
       - name: Install source kernel build tools
-        run: brew install cmake ninja unifdef llvm lld
+        run: brew install cmake ninja unifdef llvm lld dtc
       - name: Record the actual reference toolchain identity
         id: reference-toolchain
         run: |
