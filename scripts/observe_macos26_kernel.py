@@ -217,7 +217,7 @@ def main() -> None:
         values = struct.unpack('<24Q', raw)
         names = ('state', 'elr', 'esr', 'far', 'spsr', 'sctlr', 'tcr', 'ttbr0',
                  'ttbr1', 'mair', 'sp', 'mpidr', 'boot_args', 'lr', 'x22', 'x23', 'x24', 'x25',
-                 'kernel_va', 'kernel_pa', 'bootstrap_ttbr0', 'physical_fault_entry', 'original_boot_args', 'reserved')
+                 'kernel_va', 'kernel_pa', 'bootstrap_ttbr0', 'physical_fault_entry', 'original_boot_args', 'bootstrap_stage')
         record['early_exception'] = {name: hex(value) for name, value in zip(names, values)}
         (args.output / 'early-exception.bin').write_bytes(raw)
     record['source_crypto_initialized'] = (observed_globals.get('_sheng_corecrypto_status') == 0

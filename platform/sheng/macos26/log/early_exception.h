@@ -96,7 +96,7 @@ Lsheng_early_draw:
 	mov x0, #112
 	madd x0, x0, x22, x21
 	add x0, x0, #64
-	mov x1, #448
+	mov x1, #496
 	mov w5, #0xff000000
 Lsheng_early_clear_row:
 	mov x2, #152
@@ -113,13 +113,20 @@ Lsheng_early_clear_pixels:
 	adr x24, Lsheng_early_labels
 	mov x26, #0
 Lsheng_early_row:
-	/* 十行，每行八字符标签和十六个十六进制数字 */
+	/* 前十行为寄存器，末行为阶段条标签 */
 	mov x0, #40
 	madd x0, x26, x0, xzr
 	add x0, x0, #128
 	madd x27, x0, x22, x21
 	add x27, x27, #128
 	ldr x18, [x19, x26, lsl #3]
+	cmp x26, #10
+	b.ne 1f
+	mov x18, #0xcdef
+	movk x18, #0x89ab, lsl #16
+	movk x18, #0x4567, lsl #32
+	movk x18, #0x0123, lsl #48
+1:
 	mov x28, #0
 Lsheng_early_char:
 	cmp x28, #8
@@ -173,12 +180,29 @@ Lsheng_early_pixel_rows:
 	add x2, x2, #1
 	cmp x2, #7
 	b.lo Lsheng_early_glyph_row
+	cmp x26, #10
+	b.ne 2f
+	cmp x28, #8
+	b.lo 2f
+	mov x0, #40
+	madd x0, x0, x22, x27
+	mov x1, #12
+	mov w3, #0x3030
+	movk w3, #0xff30, lsl #16
+1:
+	stp w3, w3, [x0]
+	stp w3, w3, [x0, #8]
+	str w3, [x0, #16]
+	add x0, x0, x22
+	subs x1, x1, #1
+	b.ne 1b
+2:
 	add x27, x27, #96
 	add x28, x28, #1
 	cmp x28, #24
 	b.lo Lsheng_early_char
 	add x26, x26, #1
-	cmp x26, #10
+	cmp x26, #11
 	b.lo Lsheng_early_row
 	dsb sy
 Lsheng_early_finish:
@@ -258,7 +282,7 @@ Lsheng_mmu_off_fault:
 	b Lsheng_early_draw
 
 Lsheng_early_labels:
-	.ascii "XNU     ELR     ESR     FAR     SPSR    SCTLR   TCR     TTBR0   TTBR1   MAIR    "
+	.ascii "XNU     ELR     ESR     FAR     SPSR    SCTLR   TCR     TTBR0   TTBR1   MAIR    STAGES  "
 Lsheng_early_font:
 	/* 0-9、A-Z、空格，每字符七行五列 */
 	.byte 14,17,19,21,25,17,14

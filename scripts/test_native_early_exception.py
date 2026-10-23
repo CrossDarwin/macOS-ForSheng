@@ -76,6 +76,11 @@ try:
  assert packet('c').startswith(('T05','S05'))
  record=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record'],192))
  assert record[0]==1 and record[12]==symbols['boot_args']
+ assert record[23]==12
+ for stage in range(16):
+  pixel=0x41000000+568*2560+(224+24*stage)*4
+  expected=0xff00ff00 if stage<=12 else 0xff303030
+  assert struct.unpack('<I',memory(pixel,4))[0]==expected
  assert packet(f'z0,{symbols["after_entry"]:x},4')=='OK'
  # The vector page is copied during XNU CPU bootstrap; verify PC-relative code remains valid.
  copy=0x40300000;delta=copy-symbols['LowExceptionVectorBase']
@@ -149,6 +154,7 @@ try:
  result={'entry_returned':True,'relocated_vector_fault_captured':True,
          'mmu_on_fault_captured':True,'disabled_gate_uses_original_dispatch':True,
          'first_translation_fault_without_stack_captured':True,
+         'bootstrap_stage_strip_captured':True,
          'status':mmu[0],'elr':hex(mmu[1]),'esr':hex(mmu[2]),'far':hex(mmu[3]),
          'captured_sctlr':hex(mmu[5]),'captured_tcr':hex(mmu[6]),'captured_ttbr0':hex(mmu[7]),
          'record':hex(symbols['sheng_early_exception_record']),

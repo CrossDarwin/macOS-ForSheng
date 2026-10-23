@@ -1,0 +1,113 @@
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -37,6 +37,7 @@
+ #include <arm64/tunables/tunables.s>
+ #endif
+ #include <arm64/exception_asm.h>
++#include <arm64/sheng_bootstrap_trace.h>
+ 
+ #if __ARM_KERNEL_PROTECT__
+ #include <arm/pmap.h>
+@@ -501,6 +504,8 @@
+ #if SHENG
+ 	isb
+ 	bl Lsheng_early_enter
++	SHENG_BOOTSTRAP_TRACE 0
++
+ 	// Hardware debug unlock can trap to firmware EL2. Native early boot
+ 	// uses neither hardware breakpoints nor watchpoints, so leave it alone.
+ #endif
+@@ -512,6 +517,8 @@
+ 	ldr		x24, [x20, BA_MEM_SIZE]				// Get the physical memory size
+ 	adrp	x25, EXT(bootstrap_pagetables)@page	// Get the start of the page tables
+ 	ldr		x26, [x20, BA_BOOT_FLAGS]			// Get the kernel boot flags
++
++	SHENG_BOOTSTRAP_TRACE 1
+ 
+ 	// Clear the registers that will be used to store the userspace thread pointer and CPU number.
+ 	// We may not actually be booting from ordinal CPU 0, so this register will be updated
+@@ -547,6 +554,8 @@
+ 	add		lr, lr, EXT(arm_init)@pageoff
+ 	add		lr, lr, x22							// Convert to KVA
+ 	sub		lr, lr, x23
++
++	SHENG_BOOTSTRAP_TRACE 2
+ 
+ 	/*
+ 	 * Set up the bootstrap page tables with a single block entry for the V=P
+@@ -568,6 +577,8 @@
+ 	str		x0, [x1], #(1 << TTE_SHIFT)			//   Invalidate and advance
+ 	subs	x2, x2, #1							//   entries--
+ 	b.ne	Linvalidate_bootstrap				// } while (entries != 0)
++	SHENG_BOOTSTRAP_TRACE 3
++
+ 
+ 	/*
+ 	 * In order to reclaim memory on targets where TZ0 (or some other entity)
+@@ -641,10 +652,14 @@
+ 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
+ 	/* create_bootstrap_mapping(vbase, pbase, num_ents, L1 table, freeptr) */
+ 	create_bootstrap_mapping x0,  x4,  x5, x1, x2, x6, x10, x11, x12, x13
++	SHENG_BOOTSTRAP_TRACE 4
++
+ 
+ 	/* Setup the KVA bootstrap mapping */
+ 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
+ 	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
++	SHENG_BOOTSTRAP_TRACE 5
++
+ 
+ 	b Lbootstrap_tables_ready
+ Lbootstrap_tables_exhausted:
+@@ -684,7 +699,11 @@
+ 
+ 	// Set the translation control register.
+ 	MOV64	x1, TCR_EL1_BOOT
++	SHENG_BOOTSTRAP_TRACE 6
++
+ 	MSR_TCR_EL1_X1
++	SHENG_BOOTSTRAP_TRACE 7
++
+ 
+ 
+ 	/* Set up translation table base registers.
+@@ -700,9 +719,12 @@
+ 	mov		x19, lr
+ 	bl		EXT(set_mmu_ttb)
+ 	mov		lr, x19
++	SHENG_BOOTSTRAP_TRACE 8
++
+ 	add		x0, x25, PGBYTES
+ 	and		x0, x0, #(TTBR_BADDR_MASK)
+ 	MSR_TTBR1_EL1_X0
++	SHENG_BOOTSTRAP_TRACE 9
+ 
+ 	// Set up MAIR attr0 for normal memory, attr1 for device memory
+ 	mov		x0, xzr
+@@ -733,6 +755,8 @@
+ 	orr		x0, x0, x1
+ #endif /* HAS_FEAT_XS */
+ 	msr		MAIR_EL1, x0
++	SHENG_BOOTSTRAP_TRACE 10
++
+ 	isb
+ 	tlbi	vmalle1
+ 	dsb		ish
+@@ -745,6 +769,8 @@
+ 	tlbi	vmalle1
+ 	ic		iallu
+ #endif
++	SHENG_BOOTSTRAP_TRACE 11
++
+ 
+ 	/* If x21 is not 0, then this is either the start_cpu path or
+ 	 * the resume_idle_cpu path.  cpu_ttep should already be
+@@ -786,6 +812,8 @@
+ 
+ 	// Enable caches, MMU, ROP and JOP
+ 	MOV64   x0, SCTLR_EL1_DEFAULT
++	SHENG_BOOTSTRAP_TRACE 12
++
+ 	MSR_SCTLR_EL1_X0
+ 	isb		sy
+ #if SHENG

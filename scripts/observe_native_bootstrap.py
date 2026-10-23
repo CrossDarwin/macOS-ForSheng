@@ -175,6 +175,11 @@ def main() -> None:
                             expected = data[offset:offset + 4].hex()
                     reached = result['entry_instruction'] == expected and core[0] == va + args_pa - base
                     result['instruction_and_args_match'] = reached
+                    if json.loads((kernel.parent / 'build.json').read_text()).get('bootstrap_trace_source_sha256'):
+                        stage = int.from_bytes(bytes.fromhex(request(
+                            f'm{symbols["_sheng_early_exception_record"]+184:x},8')), 'little')
+                        result['bootstrap_stage'] = hex(stage)
+                        reached = reached and stage == 12
                 (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
                 print(json.dumps(result), flush=True)
                 if not reached:

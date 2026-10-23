@@ -10,7 +10,9 @@
 #define BA_VIDEO_WIDTH 64
 #define BA_VIDEO_HEIGHT 72
 #define BA_VIDEO_DEPTH 80
+#define SHENG 1
 #include "../../platform/sheng/macos26/log/bootstrap_sync.h"
+#include "../../platform/sheng/macos26/log/bootstrap_trace.h"
 .text
 .global _start
 _start:
@@ -23,6 +25,9 @@ _start:
  msr vbar_el1, x0
  isb
  bl Lsheng_early_enter
+ .irp stage,0,1,2,3,4,5,6,7,8,9,10,11,12
+ SHENG_BOOTSTRAP_TRACE \stage
+ .endr
 .global after_entry
 after_entry:
  brk #0x123

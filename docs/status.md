@@ -549,3 +549,10 @@ ESR_EL2=0，说明跳过早期硬件调试解锁能绕开此已复现限制；�
 Android基线sheng / _a / boot_completed=1，随后a槽可启动检查通过，单次RAM临时启动返回Booting OKAY。
 实机结果待用户观察，记录位于private/experiments/20261024-native-arm64e/skip-debug-unlock，不把ABL确认记作内核运行证据。
 被替代的94f5fa42部署镜像和已完成QEMU的ESP暂存已删除，保留有效Android恢复备份及配套诊断。
+
+81b73787实机照片与用户回传仍为XNU=1，未捕获状态2/3，跳过OSLAR没有得到新的实机进展。
+不能将该结果归因于OSLAR或Gunyah。用户返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1。
+新增0027在同一内核保留0–C阶段条，覆盖入口页返回、参数/栈、两组启动映射和TCR/TTBR/MAIR写入，直到SCTLR写入前。
+阶段条只用于定位，不增加重复能力探针；C格通过也不证明MMU开启。
+相同汇编头在QEMU执行后，实际像素0–C为绿色、D–F为灰色，最后阶段记录12；低位复制向量和MMU开启故障捕获仍通过。
+完整内核目标构建及实际启动结果待完成。
