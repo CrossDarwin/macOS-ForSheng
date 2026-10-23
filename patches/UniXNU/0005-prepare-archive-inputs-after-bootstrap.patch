@@ -1,0 +1,21 @@
+diff --git a/scripts/unixnu/kernel.py b/scripts/unixnu/kernel.py
+index 65e52bc..78bbc45 100644
+--- a/scripts/unixnu/kernel.py
++++ b/scripts/unixnu/kernel.py
+@@ -68,7 +68,7 @@ def build_archives(ctx, env):
+             raise Error(f'{key}: {value} not found; no builder makes it, supply the archive')
+
+
+-def build(ctx, modules):
++def build(ctx, modules, prepare_archives=None):
+     log('kernel: XNU')
+     for name in ('git', 'make', 'clang', 'cmake', 'ninja', 'unifdef'):
+         tool(name, 'brew install ' + name)
+@@ -98,5 +98,7 @@ def build(ctx, modules):
+         log('kernel: prepare storage headers')
+         run(['python3', ctx.tree / 'scripts/prepare-storage-headers.py'], cwd=ctx.tree, env=env,
+             log_file=ctx.logs / 'storage-headers.log')
++    if prepare_archives is not None:
++        prepare_archives(ctx, env)
+     build_archives(ctx, env)
+     run(['bash', script], cwd=ctx.tree, env=env, log_file=ctx.logs / 'kernel.log')

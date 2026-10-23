@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Build the pinned UniXNU EL1 reference in a separate tree; never prelink or deploy it."""
+"""Build isolated UniXNU references or the complete pinned upstream sheng kernel."""
 import argparse
 import hashlib
 import json
@@ -160,7 +160,21 @@ def main() -> None:
             or int(record['iphoneos_sdk'].split('.')[0]) < 17):
         raise ValueError(f'unqualified reference toolchain: Xcode={record["xcode"]!r}, '
                          f'macOS SDK={record["macos_sdk"]}, iPhoneOS SDK={record["iphoneos_sdk"]}')
-    kernel.build(ctx, modules)
+    if args.upstream_sheng:
+        from stage_sheng_dependencies import stage, build as build_dependencies
+        dependencies = stage(ctx.tree)
+        record['reconstructed_inputs'] = dependencies
+        manifest.write_text(json.dumps(record, indent=2) + '\n')
+        os.environ['UNIXNU_KERNELCACHE'] = str(
+            ctx.tree / '.cache/firmware/kernelcache.macho/kernelcache.release.ipad7.decompressed')
+
+        def prepare_archives(context, environment):
+            environment['PATH'] = kernel.toolchain_path()
+            build_dependencies(context.tree, environment)
+
+        kernel.build(ctx, modules, prepare_archives=prepare_archives)
+    else:
+        kernel.build(ctx, modules)
     binary = ctx.tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf'
     if not binary.is_file():
         raise ValueError('kernel builder did not produce the expected source Mach-O')

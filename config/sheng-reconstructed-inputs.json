@@ -1,0 +1,11 @@
+{
+  "repository": "Jelly10086/macOS-ForSheng",
+  "release": "sheng-build-inputs-21H461-v1",
+  "asset": "sheng-21H461-v1.tar.gz",
+  "bytes": 102355069,
+  "sha256": "5486c48606cb5ee7bb50acdebc562d85bba5ad01966f1c671a34e7d5b2e9da99",
+  "inventory_sha256": "c3f2daf55eca30805ee61ec017435458bf5dc3caf0714ce9f9da45414f418ef4",
+  "original_kernelcache_sha256": "f18b4df865405f2a287b84977d7aca745e056d656d9fc9df1662970ce2969de7",
+  "candidate_sha256": "c4053ab8e48659b6a55f2bf7d685b2a8258cdf8fbcdc4640efae2a29b3130c30",
+  "purpose": "Reconstructed upstream iPadOS17 ABI/policy build inputs; no macOS userland qualification"
+}

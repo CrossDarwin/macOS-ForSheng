@@ -1,0 +1,31 @@
+diff --git a/tests/check.py b/tests/check.py
+index 275d81a..5620cd6 100644
+--- a/tests/check.py
++++ b/tests/check.py
+@@ -6,6 +6,8 @@ import importlib.util
+ import io
+ import json
+ import os
++import platform
++import shutil
+ from pathlib import Path
+ import subprocess
+ import uuid
+@@ -36,10 +38,14 @@ data = bytes((i * 23 + i // 4096) & 255 for i in range(4096 * 3 + 512))
+ record = manifest.make(io.BytesIO(data), len(data), keys / 'owner.pem', keys / 'owner-public.pem',
+                        uuid.UUID('01e286f1-f4dd-4b2f-99d9-4973337fc788'), 7, out / 'signed')
+ library = out / 'verified-root.dylib'
+-subprocess.run(['xcrun', 'clang', '-std=c11', '-Wall', '-Wextra', '-Werror', '-dynamiclib',
++compiler = ['xcrun', 'clang'] if platform.system() == 'Darwin' else [os.environ.get('CC', 'cc')]
++shared = ['-dynamiclib'] if platform.system() == 'Darwin' else ['-shared', '-fPIC']
++subprocess.run([*compiler, '-std=c11', '-Wall', '-Wextra', '-Werror', *shared,
+                 '-I', ROOT / 'include', '-I', args.openssl_prefix / 'include', ROOT / 'src/verified_root.c',
+                 ROOT / 'tests/openssl_provider.c', '-L', args.openssl_prefix / 'lib', '-lcrypto', '-o', library], check=True)
+-sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
+-subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.0', '-isysroot', sdk,
++cross = ['xcrun', 'clang'] if platform.system() == 'Darwin' else [shutil.which('clang') or 'clang']
++sysroot = (['-isysroot', subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()]
++           if platform.system() == 'Darwin' else [])
++subprocess.run([*cross, '-target', 'arm64-apple-ios17.0', *sysroot,
+                 '-std=c11', '-ffreestanding', '-Wall', '-Wextra', '-Werror', '-I', ROOT / 'include',
+                 '-c', ROOT / 'src/verified_root.c', '-o', out / 'verified-root-arm64.o'], check=True)

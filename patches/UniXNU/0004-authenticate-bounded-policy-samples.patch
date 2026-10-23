@@ -1,0 +1,51 @@
+diff --git a/scripts/build-verified-root-probe.py b/scripts/build-verified-root-probe.py
+index 6f7ca93..51abc0d 100644
+--- a/scripts/build-verified-root-probe.py
++++ b/scripts/build-verified-root-probe.py
+@@ -27,7 +27,6 @@ out = ROOT / (('build/verified-root-os-xnu' if args.component == 'os' else 'buil
+ out.mkdir(parents=True, exist_ok=True)
+ policy_dir = ROOT / ('build/verified-root-' + args.component)
+ metadata = json.loads((policy_dir / 'verification.json').read_text())
+-image = ROOT / '.cache/firmware/target-volumes/044-76034-038.dmg'
+ manifest = policy_dir / 'manifest.bin'
+ key = policy_dir / 'trusted-key.bin'
+ expected_digest = ('e5634d04a8ac35f024845f583394e0a35deb26a04cb0c00286a8674e25a9a4f2' if args.component == 'os' else
+@@ -54,22 +53,23 @@ if args.negative_volume_uuid:
+     manifest = out / 'wrong-uuid-manifest.bin'
+     manifest.write_bytes(header + signature + envelope[544:])
+ indices = [0, 1, metadata['blocks_verified'] // 2, metadata['blocks_verified'] - 1]
++lengths = [min(4096, metadata['image_bytes'] - index * 4096) for index in indices]
++if metadata['actual_sample_indices'] != indices or metadata['actual_sample_lengths'] != lengths:
++    raise SystemExit('Require exact sample positions and actual final block extent')
++if lengths != ([4096, 4096, 4096, 1536] if args.component == 'os' else [4096] * 4):
++    raise SystemExit('Original image sample extents changed')
++selected = (policy_dir / 'original-samples.bin').read_bytes()
++if len(selected) != 4 * 4096 or hashlib.sha256(selected).hexdigest() != metadata['sample_sha256']:
++    raise SystemExit('Require the bounded actually verified original sample bytes')
++envelope = (policy_dir / 'manifest.bin').read_bytes()
++for offset, (index, length) in enumerate(zip(indices, lengths)):
++    block = selected[offset * 4096:offset * 4096 + length]
++    if hashlib.sha256(block).digest() != envelope[544 + index * 32:544 + (index + 1) * 32]:
++        raise SystemExit('Original sample disagrees with the authenticated complete hash table')
++    if selected[offset * 4096 + length:(offset + 1) * 4096] != bytes(4096 - length):
++        raise SystemExit('Require deterministic zero padding beyond the actual final block')
+ samples = out / 'original-samples.bin'
+-lengths = [4096] * 4
+-if args.component == 'os':
+-    indices = metadata['actual_sample_indices']
+-    lengths = metadata['actual_sample_lengths']
+-    if lengths != [4096, 4096, 4096, 1536]:
+-        raise SystemExit('Expected the actual original OS final block length')
+-    samples.write_bytes((policy_dir / 'original-samples.bin').read_bytes())
+-else:
+-    with image.open('rb') as stream, samples.open('wb') as selected:
+-        for index in indices:
+-            stream.seek(index * 4096)
+-            data = stream.read(4096)
+-            if len(data) != 4096:
+-                raise SystemExit('Require full original sample blocks')
+-            selected.write(data)
++samples.write_bytes(selected)
+ assembly = out / 'inputs.S'
+ assembly.write_text('''// Generated ignored crypto inputs; never a boot-root authorization.
+ .section __DATA_CONST,__const

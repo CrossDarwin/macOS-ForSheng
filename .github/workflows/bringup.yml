@@ -130,7 +130,8 @@ jobs:
           { xcodebuild -version; xcrun clang --version; xcrun --sdk macosx --show-sdk-version; xcrun --sdk iphoneos --show-sdk-version; } > out/reference-xnu/toolchain.txt
           cat out/reference-xnu/toolchain.txt
           echo "identity=$(shasum -a 256 out/reference-xnu/toolchain.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: kernel-cache
         with:
           path: |
             out/reference-xnu/work/sheng/tree/.cache/
@@ -140,9 +141,16 @@ jobs:
             out/sheng-abi-bootstrap/work/sheng/tree/.cache/
             out/sheng-abi-bootstrap/work/sheng/tree/build/
           key: xnu-${{ inputs.target }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.reference-toolchain.outputs.identity }}-${{ hashFiles('sources.lock.json', 'patches/**', 'config/reference-xnu*', 'config/sheng*', 'scripts/build_reference_xnu.py') }}
+      - name: Cache pinned reconstructed private inputs
+        if: inputs.target == 'sheng-xnu'
+        uses: actions/cache@v4
+        with:
+          path: private/build-inputs/*.tar.gz
+          key: sheng-inputs-${{ hashFiles('config/sheng-reconstructed-inputs.json') }}
       - name: Build the selected sheng baseline
         env:
           SHENG_BUILD_TARGET: ${{ inputs.target }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$SHENG_BUILD_TARGET" = sheng-xnu ]; then
             python3 scripts/build_reference_xnu.py --upstream-sheng -j 4
@@ -151,6 +159,18 @@ jobs:
           else
             python3 scripts/build_reference_xnu.py -j 4
           fi
+      - name: Preserve source build reuse after a failed dependency
+        if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            out/reference-xnu/work/sheng/tree/.cache/
+            out/reference-xnu/work/sheng/tree/build/
+            out/sheng-xnu/work/sheng/tree/.cache/
+            out/sheng-xnu/work/sheng/tree/build/
+            out/sheng-abi-bootstrap/work/sheng/tree/.cache/
+            out/sheng-abi-bootstrap/work/sheng/tree/build/
+          key: ${{ steps.kernel-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -167,6 +187,14 @@ jobs:
             out/sheng-xnu/kernel-audit.json
             out/sheng-xnu/restored-headers.json
             out/sheng-xnu/work/sheng/logs/
+            out/sheng-xnu/work/sheng/tree/build/reconstructed*.json
+            out/sheng-xnu/work/sheng/tree/build/reconstructed*.log
+            out/sheng-xnu/work/sheng/tree/build/storage-abi/*.json
+            out/sheng-xnu/work/sheng/tree/build/storage-abi/*.log
+            out/sheng-xnu/work/sheng/tree/build/display-analysis/*.json
+            out/sheng-xnu/work/sheng/tree/build/amfi-pmgr-contract/*.json
+            out/sheng-xnu/work/sheng/tree/build/verified-root-os-xnu-bundle/*.json
+            out/sheng-xnu/work/sheng/tree/build/verified-root-os-xnu-bundle/*.log
             out/sheng-abi-bootstrap/kernel.macho
             out/sheng-abi-bootstrap/build.json
             out/sheng-abi-bootstrap/kernel-audit.json

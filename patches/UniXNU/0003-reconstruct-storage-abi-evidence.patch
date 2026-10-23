@@ -1,0 +1,63 @@
+diff --git a/scripts/audit-storage-interface.py b/scripts/audit-storage-interface.py
+index b26b81d..b655edd 100644
+--- a/scripts/audit-storage-interface.py
++++ b/scripts/audit-storage-interface.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Qualify original ordinary-ARM64 block-storage ABI using public Darwin 23 source."""
++import argparse
+ import hashlib
+ import json
+ from pathlib import Path
+@@ -12,6 +13,11 @@ import sys
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT / 'kits/NativePrelink'))
+ import native_prelink as np
++parser = argparse.ArgumentParser(description=__doc__)
++parser.add_argument('--candidate', type=Path, default=ROOT / 'build/native-prelink/native-apfs-load-positive.macho')
++parser.add_argument('--snapshot', type=Path, default=ROOT / 'build/darwinboot-storage-native-metadata/gdb-stop.json')
++parser.add_argument('--runtime-plan', type=Path, help='write only an unqualified capture plan; does not produce an ABI audit')
++args = parser.parse_args()
+ source = ROOT / 'refer/IOStorageFamily'
+ revision = subprocess.check_output(['git', '-C', source, 'rev-parse', 'HEAD'], text=True).strip()
+ if revision != 'e45fbe30a7879e0b16e26dddb78538f1b00e0bff':
+@@ -91,7 +97,7 @@ for at in range(vtable + 16, end, 8):
+         break
+     methods.append(relocations[at])
+ require(len(methods) == 190 and methods.count('___cxa_pure_virtual') == 14, 'Public iOS class dispatch shape changed')
+-kernel_path = ROOT / 'build/native-prelink/native-apfs-load-positive.macho'
++kernel_path = args.candidate
+ kernel = kernel_path.read_bytes()
+ plan = json.loads(kernel_path.with_suffix('.json').read_text())
+ require(hashlib.sha256(kernel).hexdigest() == plan['candidate_sha256'] and
+@@ -177,13 +183,26 @@ if immediate & 0x100000:
+     immediate -= 0x200000
+ meta = (function & ~4095) + immediate * 4096 + (add >> 10 & 4095)
+ service_meta = by_name['__ZN9IOService10gMetaClassE']
+-d = json.loads((ROOT / 'build/darwinboot-storage-native-metadata/gdb-stop.json').read_text())
++metaclass_object = ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/libkern/DEVELOPMENT/OSMetaClass.cpo'
++metaclass_dwarf = subprocess.check_output(['xcrun', 'dwarfdump', '--name=OSMetaClass', '--show-children', metaclass_object], text=True)
++layout = {}
++for member in metaclass_dwarf.split('DW_TAG_member')[1:]:
++    name = re.search(r'DW_AT_name\s+\("([^\"]+)"\)', member)
++    position = re.search(r'DW_AT_data_member_location\s+\((0x[0-9a-f]+)\)', member)
++    if name and position and name[1] in ('superClassLink', 'className', 'classSize'):
++        layout[name[1]] = int(position[1], 16)
++require(layout == dict(superClassLink=16, className=24, classSize=32), 'Compiled metaclass ABI changed')
++if args.runtime_plan:
++    args.runtime_plan.parent.mkdir(parents=True, exist_ok=True)
++    args.runtime_plan.write_text(json.dumps(dict(candidate_sha256=plan['candidate_sha256'],
++        memory=[f'{meta:x}:50', f'{service_meta:x}:50'], compiled_metaclass_offsets=layout,
++        runtime_qualified=False), indent=2) + '\n')
++    print('PLAN ONLY: capture actual original storage/service metadata before completing the ABI audit')
++    raise SystemExit(0)
++d = json.loads(args.snapshot.read_text())
+ require(d['kernel_sha256'] == plan['candidate_sha256'] and not d['bounded_timeout_interrupted'], 'Wrong or incomplete live storage metadata observation')
+ actual = bytes.fromhex(d['memory'][f'{meta:x}:50'])
+ service = bytes.fromhex(d['memory'][f'{service_meta:x}:50'])
+-# The companion AES audit derives these member offsets from actual OSMetaClass DWARF.
+-layout = json.loads((ROOT / 'build/image4-ignition/aes-interface-audit.json').read_text())['compiled_metaclass_offsets']
+-require(layout == dict(superClassLink=16, className=24, classSize=32), 'Compiled metaclass ABI changed')
+ require(struct.unpack_from('<Q', actual, layout['superClassLink'])[0] == service_meta and
+         struct.unpack_from('<I', actual, layout['classSize'])[0] == 0x90 and
+         struct.unpack_from('<I', service, layout['classSize'])[0] == 0x88, 'Live block-storage class/parent ABI mismatch')

@@ -5,7 +5,8 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECKOUTS = {'ShengPreflight': ROOT / 'UniXNU-sheng/drivers/ShengPreflight'}
+CHECKOUTS = {'ShengPreflight': ROOT / 'UniXNU-sheng/drivers/ShengPreflight',
+             'VerifiedRoot': ROOT / 'UniXNU/kits/VerifiedRoot'}
 for directory in sorted((ROOT / 'patches').iterdir()):
     if not directory.is_dir():
         continue
