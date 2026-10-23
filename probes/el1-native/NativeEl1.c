@@ -8,7 +8,7 @@
 #include <Protocol/GraphicsOutput.h>
 
 extern UINT64 ShengEl1GranuleProbe (UINT64 *Table, UINT64 *Output, UINT64 Tcr,
-                                   UINTN Progress, UINTN Stride);
+                                   UINTN Progress, UINTN Stride, UINT64 Leaf);
 extern VOID ShengEl1GranuleProbeEnd (VOID);
 extern UINT64 ShengEl1PauthProbe (UINT64 *Output);
 
@@ -175,14 +175,15 @@ PrepareProgress (UINTN *Progress, UINTN *Stride)
 EFI_STATUS EFIAPI
 UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
-  UINT64 El, Mmfr0, Isar1, Isar2, Sp, Sctlr;
+  UINT64 El, Mmfr0, Isar1, Isar2, Sp, Sctlr, SpSel;
   UINT64 BeforeTcr, BeforeTtbr, BeforeMair, AfterTcr, AfterTtbr, AfterMair, AfterSctlr;
+  UINT64 BeforeTtbr1, AfterTtbr1;
   UINT64 *Table;
   UINT64 Result[8] = { 0 };
   UINT64 ProbeStatus;
   UINT64 Signatures[10] = { 0 };
   UINT64 PauthFlags = 0;
-  UINT64 Tcr;
+  UINT64 Tcr, Leaf;
   UINTN Index;
   UINTN Progress, Stride;
   BOOLEAN Restored;
@@ -206,6 +207,24 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     Print (L"SHENG-EL1: refused - firmware MMU is off\r\n");
     return Finish (EFI_UNSUPPORTED);
   }
+  __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1;"
+                    "mrs %3, ttbr1_el1; mrs %4, spsel"
+                    : "=r" (BeforeTcr), "=r" (BeforeTtbr), "=r" (BeforeMair),
+                      "=r" (BeforeTtbr1), "=r" (SpSel));
+  if (!(BeforeTcr & (1ULL << 23)) || (BeforeTcr & (1ULL << 22)) || SpSel != 1) {
+    Print (L"SHENG-EL1: refused - requires unused TTBR1, TTBR0 ASID and SP_EL1\r\n");
+    return Finish (EFI_UNSUPPORTED);
+  }
+  for (Index = 0; Index < 8; Index++) {
+    if (((BeforeMair >> (Index * 8)) & 255) == 255) {
+      break;
+    }
+  }
+  if (Index == 8) {
+    Print (L"SHENG-EL1: refused - firmware lacks normal WB MAIR attribute\r\n");
+    return Finish (EFI_UNSUPPORTED);
+  }
+  Leaf = 0x701 | ((UINT64) Index << 2);
   Table = AllocateAlignedPages (4, 16384);
   if (Table == NULL) {
     return Finish (EFI_OUT_OF_RESOURCES);
@@ -219,17 +238,14 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     FreeAlignedPages (Table, 4);
     return Finish (EFI_UNSUPPORTED);
   }
-  // 两种硬件解释均覆盖执行区，低地址仅作为AT的区分样本
   for (Index = 0; Index < 2048; Index++) {
-    Table[Index] = Index < 2 ? 0 :
-      (((UINT64) Index << (Index < 64 ? 30 : 25)) | 0x701);
+    Table[Index] = 0;
   }
   WriteBackDataCacheRange (Table, 16384);
-  // 与现有ArmMmuLib一致，禁用TTBR1遍历时仍保留有效的TG1编码
-  Tcr = 28 | (1ULL << 8) | (1ULL << 10) | (3ULL << 12) | (1ULL << 23) | (2ULL << 30) |
-        ((Mmfr0 & 15) > 5 ? 5ULL << 32 : (Mmfr0 & 15) << 32);
-  __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1"
-                    : "=r" (BeforeTcr), "=r" (BeforeTtbr), "=r" (BeforeMair));
+  // 只调整原本禁用的高地址窗口，TTBR0、TG0和IPS保留固件值
+  Tcr = BeforeTcr & ~((3ULL << 30) | (3ULL << 28) | (3ULL << 26) |
+                      (3ULL << 24) | (1ULL << 23) | (63ULL << 16));
+  Tcr |= (2ULL << 30) | (3ULL << 28) | (1ULL << 26) | (1ULL << 24) | (28ULL << 16);
   Print (L"SHENG-EL1: firmware TCR=%lx TTBR0=%lx MAIR=%lx\r\n",
          BeforeTcr, BeforeTtbr, BeforeMair);
   if (EFI_ERROR (PrepareProgress (&Progress, &Stride))) {
@@ -237,18 +253,19 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     FreeAlignedPages (Table, 4);
     return Finish (EFI_UNSUPPORTED);
   }
-  Print (L"SHENG-EL1: testing page walks at EL1, MMFR0=0x%lx\r\n", Mmfr0);
+  Print (L"SHENG-EL1: TTBR1 scratch walk, firmware MMU stays on, MMFR0=0x%lx\r\n", Mmfr0);
   if (!Pause (L"Press a key to run the MMU probe")) {
     FreeAlignedPages (Table, 4);
     return Finish (EFI_DEVICE_ERROR);
   }
   Print (L"SHENG-EL1: MMU probe starting\r\n");
   gBS->Stall (200000);
-  ProbeStatus = ShengEl1GranuleProbe (Table, Result, Tcr, Progress, Stride);
+  ProbeStatus = ShengEl1GranuleProbe (Table, Result, Tcr, Progress, Stride, Leaf);
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1; mrs %3, sctlr_el1"
                     : "=r" (AfterTcr), "=r" (AfterTtbr), "=r" (AfterMair), "=r" (AfterSctlr));
+  __asm__ volatile ("mrs %0, ttbr1_el1" : "=r" (AfterTtbr1));
   Restored = BeforeTcr == AfterTcr && BeforeTtbr == AfterTtbr &&
-             BeforeMair == AfterMair && Sctlr == AfterSctlr;
+             BeforeTtbr1 == AfterTtbr1 && BeforeMair == AfterMair && Sctlr == AfterSctlr;
   Granule = !(Result[0] & 1) && (Result[0] & 0x0000fffffffff000ULL) == 0x1000 &&
             (Result[1] & 1) && (Result[2] & 1) && !(Result[3] & 1) &&
             (Result[3] & 0x0000fffffffff000ULL) == 0x4001000;

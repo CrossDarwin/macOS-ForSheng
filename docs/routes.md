@@ -64,3 +64,24 @@ A16 已记录的成功启动没有使用它。当前没有 sheng 的 Gunyah 支�
 目前未定义 HAS_APPLE_PAC 的 SHENG 会报告 ARMv8，并拒绝 arm64e 二进制；不能只修改 subtype 放行或直接定义 Apple PAC。
 参考 Snapintosh 的密钥域和切换语义，采用适合 EL1 的实现；其需要 HCR_EL2 的汇编不直接搬入。
 只有这些条件成立，才继续恢复卷、launchd 和新版驱动集合；不以旧内核继续增加检查点或把归档成功当作系统启动。
+
+## 社区与高通固件入口补充（2026-10-23）
+
+重新检索时发现高通自己的开源固件已有另一条 EL2 入口，不能把上述 slbounce 边界扩大成所有高通设备均无法退出 Gunyah。
+EDK2 `KodiakHelper.S` 在早期 PEI 阶段调用 TrustZone：服务 ID `0x02000121`、参数 ID `0x23`，退出参数为 1。
+其说明包括退出 Gunyah并清理 SMMU 配置；它改变当前执行环境，不能在普通 UEFI 应用中照抄后返回。
+高通 U-Boot 的对应实现也放在 `start.S` 配置 EL 寄存器之前，PR #64 修正了本来已处于 EL2 时的分支。
+
+这证明部分高通固件提供该机制，不证明 sheng 的量产 TrustZone 实现支持它。
+目前未在 sheng 调用该服务，也未获得其可用性查询结果。
+后续先按 Qualcomm SCM 的 INFO/IS_CALL_AVAIL 契约区分“服务存在”与“实际允许退出”，再决定是否制作独立早期入口。
+即使取得 EL2，CPU0 已测 NV=0 仍与 Snapintosh 当前 NV2 后端不匹配；两项条件分别处理。
+
+来源：[EDK2 早期入口](https://github.com/tianocore/edk2-platforms/blob/master/Silicon/Qualcomm/KodiakPkg/Library/KodiakLib/KodiakHelper.S)、
+[服务参数](https://github.com/tianocore/edk2-platforms/blob/master/Silicon/Qualcomm/KodiakPkg/Library/KodiakLib/KodiakHelper.h)、
+[U-Boot 原始讨论](https://lists.u-boot-project.org/pipermail/u-boot/2026-May/618654.html)、
+[高通修正 PR](https://github.com/qualcomm-linux/u-boot/pull/64)、
+[SCM 可用性查询](https://github.com/torvalds/linux/blob/v6.12/drivers/firmware/qcom/qcom_scm.c#L318)。
+
+当前原生探针改为闲置 TTBR1 高地址窗口的真实页表遍历，保留 UEFI 的 TTBR0/TG0、MAIR 和 SCTLR。
+这是解决 MMU 关闭阶段显示干扰的实验设计，不是已经证明 sheng 可执行 16K 内核代码。

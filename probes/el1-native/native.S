@@ -45,8 +45,8 @@
 .Lmark_done\@:
 .endm
 
-// x0为16KiB对齐的双解释页表，x1接收四次PAR，x2为TCR基值
-// 执行区必须为2GiB至64GiB的恒等映射，调用方先确认地址并清理页表缓存
+// x0为16KiB对齐的临时页表，x1接收结果，x2为保留固件TTBR0配置的TCR
+// x3/x4为显示标记，x5为使用现有MAIR的叶描述符；仅操作原本禁用的TTBR1
 .global ShengEl1GranuleProbe
 ShengEl1GranuleProbe:
     save_frame
@@ -59,9 +59,10 @@ ShengEl1GranuleProbe:
     mov x25,x0
     mov x26,x1
     mov x27,x2
+    mov x29,x5
     mrs x19,sctlr_el1
     mrs x20,tcr_el1
-    mrs x21,ttbr0_el1
+    mrs x21,ttbr1_el1
     mrs x22,mair_el1
     mrs x23,daif
     mrs x24,par_el1
@@ -74,43 +75,30 @@ ShengEl1GranuleProbe:
     mov x9,#1
     str x9,[x26,#56]
 
-    // 4K有效控制，后续执行始终由表内的恒等映射覆盖
-    mov x9,#0x741
-    stp x9,xzr,[x25]
+    // 固件TTBR0和MAIR始终保留，临时表只被高地址AT指令访问
+    stp x29,xzr,[x25]
     dc cvac,x25
-    dsb sy
-    bic x9,x19,#1
-    msr sctlr_el1,x9
+    dsb ish
+    msr ttbr1_el1,x25
     isb
     mmu_mark 2
-    msr ttbr0_el1,x25
-    mmu_mark 3,0xffffff
-    mov x9,#0xff
-    msr mair_el1,x9
-    mmu_mark 3,0x808080
     msr tcr_el1,x27
     isb
-    mmu_mark 3,0xff00ff
     tlbi vmalle1
-    mmu_mark 3,0xff
-    dsb sy
+    dsb ish
     isb
     mmu_mark 3
-    bic x9,x19,#(1<<19)
-    orr x9,x9,#1
-    msr sctlr_el1,x9
-    isb
-    mmu_mark 4
     mov x10,#0x1000
+    movk x10,#0xfff0,lsl #32
+    movk x10,#0xffff,lsl #48
     at s1e1r,x10
     isb
     mrs x9,par_el1
     str x9,[x26]
-    mmu_mark 5
+    mmu_mark 4
     mov x9,#2
     str x9,[x26,#56]
 
-    // 空表控制仅移除低地址叶子，不移除探针执行区
     str xzr,[x25]
     dc cvac,x25
     dsb ishst
@@ -121,58 +109,59 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26,#8]
-    mmu_mark 6
+    mmu_mark 5
     mov x9,#3
     str x9,[x26,#56]
 
-    // 与Snapintosh相同的区分地址：16K索引1，4K索引0
-    mov x9,#0x741
-    movk x9,#0x400,lsl #16
+    // 高地址低36位为0x2001000，16K索引1，4K索引0
+    orr x9,x29,#0x4000000
     str x9,[x25,#8]
     dc cvac,x25
     dsb ishst
     tlbi vmalle1
     dsb ish
     isb
-    mov x10,#0x1000
     movk x10,#0x200,lsl #16
     at s1e1r,x10
     isb
     mrs x9,par_el1
     str x9,[x26,#16]
-    mmu_mark 7
+    mmu_mark 6
     mov x9,#4
     str x9,[x26,#56]
 #ifdef SHENG_GRANULE_INJECT_FAULT
     .inst 0
 #endif
 
-    bic x9,x19,#1
-    dsb sy
-    msr sctlr_el1,x9
-    isb
-    mmu_mark 8
-#ifndef SHENG_GRANULE_FORCE_4K
-    orr x9,x27,#(2<<14)
-#else
-    mov x9,x27
-#endif
+    // 先禁用并清除临时高地址翻译，再更改TG1，不改动执行区的TG0
+    orr x9,x27,#(1<<23)
     msr tcr_el1,x9
     isb
     tlbi vmalle1
-    dsb sy
+    dsb ish
+    isb
+    mmu_mark 7
+    mrs x9,tcr_el1
+#ifndef SHENG_GRANULE_FORCE_4K
+    bic x9,x9,#(3<<30)
+    orr x9,x9,#(1<<30)
+#endif
+    msr tcr_el1,x9
+    isb
+    mmu_mark 8
+    mrs x9,tcr_el1
+    bic x9,x9,#(1<<23)
+    msr tcr_el1,x9
+    isb
+    tlbi vmalle1
+    dsb ish
     isb
     mmu_mark 9
-    bic x9,x19,#(1<<19)
-    orr x9,x9,#1
-    msr sctlr_el1,x9
-    isb
-    mmu_mark 10
     at s1e1r,x10
     isb
     mrs x9,par_el1
     str x9,[x26,#24]
-    mmu_mark 11
+    mmu_mark 10
     mov x9,#5
     str x9,[x26,#56]
     mov x0,#0
@@ -184,24 +173,24 @@ ShengEl1GranuleProbe:
     mrs x12,elr_el1
     mov x0,#1
 
-    // 两种页表解释都能执行本段，所以4K回退仍能恢复固件
 .Lgranule_restore:
-    bic x9,x19,#1
-    dsb sy
-    msr sctlr_el1,x9
-    isb
-    mmu_mark 12
-    msr ttbr0_el1,x21
-    msr tcr_el1,x20
-    msr mair_el1,x22
+    mrs x9,tcr_el1
+    orr x9,x9,#(1<<23)
+    msr tcr_el1,x9
     isb
     tlbi vmalle1
-    dsb sy
+    dsb ish
+    isb
+    mmu_mark 11
+    msr ttbr1_el1,x21
+    isb
+    mmu_mark 12
+    msr tcr_el1,x20
+    isb
+    tlbi vmalle1
+    dsb ish
     isb
     mmu_mark 13
-    msr sctlr_el1,x19
-    isb
-    mmu_mark 14
     cbz x0,1f
     stp x10,x11,[x26,#32]
     str x12,[x26,#48]
@@ -210,6 +199,7 @@ ShengEl1GranuleProbe:
     msr par_el1,x24
     ldr x9,[sp]
     msr pan,x9
+    mmu_mark 14
     mmu_mark 15
     msr daif,x23
     add sp,sp,#16

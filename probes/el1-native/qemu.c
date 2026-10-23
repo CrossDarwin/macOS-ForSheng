@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // 执行真实EL1探针，保留4K负对照，不能替代sheng实机结果
 typedef unsigned long u64;
-extern u64 ShengEl1GranuleProbe(u64 *, u64 *, u64, u64, u64);
+extern u64 ShengEl1GranuleProbe(u64 *, u64 *, u64, u64, u64, u64);
 extern u64 ShengEl1PauthProbe(u64 *);
 static u64 original[2048] __attribute__((aligned(16384)));
 static u64 trial[2048] __attribute__((aligned(16384)));
@@ -33,19 +33,22 @@ void qemu_main(void)
     u64 el; __asm__ volatile("mrs %0,CurrentEL" : "=r"(el));
     if(el!=4) {print("FAIL EL1 entry\n");finish(1);}
     for(u64 i=0;i<2048;i++) {
-        u64 leaf=i<2 ? 0 : (i<<(i<64 ? 30 : 25))|0x701;
-        original[i]=trial[i]=leaf;
+        u64 leaf=i<2 ? 0 : (i<<(i<64 ? 30 : 25))|0x70d;
+        original[i]=leaf;
+        trial[i]=0;
     }
     const u64 tcr=28UL|(1UL<<8)|(1UL<<10)|(3UL<<12)|(1UL<<23)|(2UL<<30)|(5UL<<32);
-    u64 control=(rd_sctlr()|1)&~(1UL<<19);
-    __asm__ volatile("msr daifset,#15; msr mair_el1,%0; msr ttbr0_el1,%1; msr tcr_el1,%2;"
+    u64 control=(rd_sctlr()|1|4|(1UL<<12))&~(1UL<<19);
+    __asm__ volatile("msr daifset,#15; msr mair_el1,%0; msr ttbr0_el1,%1; msr ttbr1_el1,%1; msr tcr_el1,%2;"
                      "dsb sy; tlbi vmalle1; dsb sy; isb; msr sctlr_el1,%3; isb"
-                     ::"r"(0xffUL),"r"(original),"r"(tcr),"r"(control):"memory");
-    u64 status=ShengEl1GranuleProbe(trial,results,tcr,(u64)progress,sizeof(progress[0]));
+                     ::"r"(0xffbb4400UL),"r"(original),"r"(tcr),"r"(control):"memory");
+    u64 scratch=(tcr & ~((3UL<<30)|(3UL<<28)|(3UL<<26)|(3UL<<24)|(1UL<<23)|(63UL<<16))) |
+                (2UL<<30)|(3UL<<28)|(1UL<<26)|(1UL<<24)|(28UL<<16);
+    u64 status=ShengEl1GranuleProbe(trial,results,scratch,(u64)progress,sizeof(progress[0]),0x70d);
     for(unsigned stage=0;stage<16;stage++) {
         unsigned expected=0xff00;
 #ifdef SHENG_GRANULE_INJECT_FAULT
-        if(stage>=8 && stage<=11) expected=0;
+        if(stage>=7 && stage<=10) expected=0;
 #endif
         for(unsigned row=0;row<12;row++) {
             for(unsigned column=0;column<32;column++) {
@@ -76,10 +79,11 @@ void qemu_main(void)
     print("PASS native 16K walk\n");
 #endif
 #endif
-    u64 back_tcr,back_root,back_mair;
-    __asm__ volatile("mrs %0,tcr_el1; mrs %1,ttbr0_el1; mrs %2,mair_el1"
-                     :"=r"(back_tcr),"=r"(back_root),"=r"(back_mair));
-    if(back_tcr!=tcr || back_root!=(u64)original || back_mair!=0xff || rd_sctlr()!=control) {
+    u64 back_tcr,back_root,back_mair,back_upper;
+    __asm__ volatile("mrs %0,tcr_el1; mrs %1,ttbr0_el1; mrs %2,mair_el1; mrs %3,ttbr1_el1"
+                     :"=r"(back_tcr),"=r"(back_root),"=r"(back_mair),"=r"(back_upper));
+    if(back_tcr!=tcr || back_root!=(u64)original || back_upper!=(u64)original ||
+       back_mair!=0xffbb4400 || rd_sctlr()!=control) {
         print("FAIL MMU state restore\n");finish(5);
     }
     if(ShengEl1PauthProbe(signatures)!=0x7fff) {
