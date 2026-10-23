@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Download the pinned Apple IPSW and check both its hash and J700 identity."""
+"""Download a pinned Apple IPSW and verify its hash and board identity."""
 import argparse
 import hashlib
 import json
@@ -31,7 +31,7 @@ def verify(path, guest, kind='ipsw'):
         raise ValueError('IPSW build differs from target')
     if not any(x.get('Info', {}).get('DeviceClass') == guest['device_class']
                for x in manifest['BuildIdentities']):
-        raise ValueError('J700 identity is absent')
+        raise ValueError(f'{guest["device_class"]} identity is absent')
     print(f'PASS IPSW {guest["build"]} {digest}')
 
 
@@ -40,9 +40,10 @@ def main():
     parser.add_argument('--verify-only', action='store_true')
     parser.add_argument('--kind', choices=('ipsw', 'kdk'), default='ipsw')
     parser.add_argument('--jobs', type=int, choices=range(1, 17), default=4)
+    parser.add_argument('--config', type=Path, default=ROOT / 'config/guest.json')
     parser.add_argument('--directory', type=Path, default=ROOT / 'private/apple')
     args = parser.parse_args()
-    guest = json.loads((ROOT / 'config/guest.json').read_text())
+    guest = json.loads(args.config.read_text())
     spec = guest[args.kind]
     args.directory.mkdir(parents=True, exist_ok=True)
     path = args.directory / spec['filename']

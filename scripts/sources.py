@@ -59,9 +59,10 @@ def verify(entry):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('fetch', 'verify'))
-    parser.add_argument('--group', choices=('core', 'feeds', 'graphics', 'all'), default='core')
+    parser.add_argument('--group', choices=('core', 'feeds', 'graphics', 'macos26', 'all'), default='core')
+    parser.add_argument('--lock', type=Path, default=ROOT / 'sources.lock.json')
     args = parser.parse_args()
-    entries = json.loads((ROOT / 'sources.lock.json').read_text())['sources']
+    entries = json.loads(args.lock.read_text())['sources']
     for entry in entries:
         if args.group == 'all' or entry['group'] == args.group:
             (fetch if args.action == 'fetch' else verify)(entry)
