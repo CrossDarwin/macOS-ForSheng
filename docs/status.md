@@ -184,3 +184,15 @@ QEMU 实测新的调用前复位路径通过，BSD 已执行 VFS 框架、事件
 载荷内核为 `9ef56570f6e8d0f0eab1ec15c6764df4b06e2b829ba87c4236d04866ca7e63d8`。
 QEMU 与实机均通过该检查点；用户确认彩色条后约 3 秒自动复位。Android 已恢复完成，槽 _a。
 硬件参考内核至此已执行到根设备选择前，不再增加旧用户空间启动实验。macOS 26.5 的源码迁移与 ABI 验证单独推进。
+
+macOS 26.5 KDK 验证新增独立的 `apple26` 手动 Actions 目标，仍在 `xcode-27` 上执行。
+下载后核对固定字节数和 SHA-256，再以 macOS `pkgutil --check-signature` 验证 Apple 签名。
+从同一包中分别检查 M1/T8103、Neo/T8140 的内核与配对 DWARF，UUID 必须与 25F71 IPSW 相符。
+Actions 39925158581 已启动；尚不把待完成的远端验证记作通过。28 项本地检查通过。
+
+固定 macOS 26 源码的独立补丁上下文检查覆盖上游 55 份补丁，35 份可直接通过 `git apply --check`，20 份需要逐项处理。
+这是每份补丁相对原始源码的检查，不是完整补丁栈应用、编译或 ABI 验证。
+该版已无 BCM2837 平台头和 MASTER 配置；`source-machine-layer`、架构定时器入口、SMP、4K 用户空间与启动进度补丁不能原样套用。
+原有非 Apple pmap 字段重命名修复对应的字段在新版本已有不同布局，不重复移植旧修复。
+缓存维护别名、monitor 启用条件、SART 及分散到新文件的 pmap 路径需要按 12377.121.6 的实际实现迁移。
+原始报告位于 `out/macos26-transfer/upstream-patch-contexts.json`，未改动固定的 macOS 26 源码树。
