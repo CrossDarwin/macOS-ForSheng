@@ -14,7 +14,8 @@
 | 上游 EL2 监控层 | 本地及 xcode-27 Actions 编译通过，仍为 A16 构建基线 |
 | 完整 sheng UEFI | 本地构建及 FV 检查通过；fastboot 临时启动成功，菜单和探针输出已由照片及视频确认 |
 | 设备备份 | 六个 LUN 主备 GPT、16 个引导分区已读取并校验，userdata 未备份 |
-| 完整上游 sheng 配置 | 35 项与上游字节一致，19 个归档步骤全部保留；原版输入、实际 QEMU ABI 记录和 VerifiedRoot 策略已重建，完整归档构建待验 |
+| 完整上游 sheng 配置 | 35 项与上游字节一致，19 步及两个外部归档、预链接全部通过，Actions 39919525158 成功 |
+| 完整内核 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
 | macOS 实机启动 / 双系统 | 未实现；未刷写分区镜像或调整分区；当前进行临时启动实验，槽 a |
@@ -92,7 +93,12 @@ Actions 39909466130 产物源码内核 SHA-256 为
 原版 PMGR 指令和 Legacy 358 槽静态审计已通过。Actions 39912573333 的实际 macOS 编译进一步通过存储审计：
 190 个方法槽、176 个内核绑定、14 个纯虚槽和实际元类大小均一致；注解对象未链接或执行。
 该次构建停在 VerifiedRoot 编译记录包含的不存在 libsa include 目录，已过滤失效目录；
-完整配置与原版指令保持不变，后续编译仍待验。
+完整配置与原版指令保持不变。Actions 39917142035 已完成两个外部归档编译及原有前 13 个步骤，
+随后补齐了 BootProgress 使用的固定 UEFI 字体路径。Actions 39918233188 已通过前 18 个步骤，
+最后一个 Legacy 步骤的 HID 子构建仍在寻找旧的未提供候选。现已显式传入同一原版组件载体，
+原版 IOHIDFamily 哈希、207 个槽、构造/析构导入和调用约束的静态检查通过。
+Actions 39919525158 进一步完成 HID 编译、最后一个 Legacy 归档及完整内核链接、审计和原版组件预链接。
+固定 Novatek 触摸固件已取回并核对 SHA-256，245760 字节；不再接受空触摸固件继续完整构建。
 
 OS 完整虚拟介质由 UDIF 六段原始内容还原，6077580800 字节，SHA-256 与上游固定值
 `e5634d04a8ac35f024845f583394e0a35deb26a04cb0c00286a8674e25a9a4f2` 一致。
@@ -116,6 +122,26 @@ NativeAdreno 所需三份固件已按上游字节数、Git blob 和 SHA-256 固�
 固定 DTS 的 39 个源文件闭包已编译；GMU 寄存器、RSC/PDC 顺序、OPP 和 BCM 参数头由现有上游脚本生成。
 修正了包内资源审计脚本沿符号链接定位到源码仓库而非组装树的问题，并使用实际的 `scripts/data` 清单。
 这些是构建输入和源码分析结果，未观测真实 GMU 执行，也未验证 Adreno 加速。
+
+完整配置产物已下载，GitHub ZIP 的 SHA-256 为
+`cdaf43b6d6663636545508cac93b31189f51f1422c82461bedc5c889002ad0b0`，与 API 提供的摘要一致。
+预链接内核为 126423040 字节，SHA-256 为
+`272bbde4e72dc7ad6d2a5066c1ee622e367bb32f525bd92e9ae8e2dbd270acac`。
+源码内核审计摘要为 `a8fa6115fabc42e1a8b1b28ce3acc034eee5382b46113d60a20a44ea54ed8d63`。
+本地产物再次核对完整配置、19 步归档、外部归档完成标记及最终内核哈希。
+
+该完整内核在 QEMU TCG/Cortex-A710、实际 UEFI/DarwinBoot 中停在 `bsd_init` 的
+`0xfffffff00bd10008`，不是超时中断。已观察到虚拟内存、控制台、machine_startup 和 C++ 初始化，
+实际 TCR 为原生 4 KiB 页表。记录位于 `out/sheng-full-qemu/verification.json`。
+
+新的实机探针保留完整配置及全部已链接驱动，只在载荷副本插入控制台返回后的 3 秒复位检查点。
+其入口在 IOKit/存储驱动初始化之前，尚不尝试挂载任何系统卷。
+封装器拒绝将临时 ABI 内核冒充完整 sheng 产物，且对预链接内核再次核对源审计的实际初始 TCR。
+FAT 与 Android 容器往返校验通过，镜像为 163241984 字节，SHA-256 为
+`f7bd670c709b882ee3961f30dc841990a56326d3bc8b665bab538a16a6e350be`。
+部署前 ADB 实测 Android boot_completed=1、槽 _a；随后 fastboot 核对 sheng、解锁、活动槽及下载容量。
+`fastboot boot` 返回 Sending OKAY、Booting OKAY；已请求观察彩色条后是否复位，实机结果待回报。
+未执行 flash 或 repartition。27 项离线测试通过。
 
 尚无 launchd 或 macOS 用户空间运行结果。
 该阶段不带系统用户空间，也不链接 UFS 写入后端。QEMU 的合成交接已通过，但不能替代真机结果。

@@ -88,6 +88,8 @@ def vendor_dtbs(path: Path) -> bytes:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kernel-build', type=Path, required=True, help='verified Actions artifact directory')
+    parser.add_argument('--upstream-sheng', action='store_true',
+                        help='package the complete pinned upstream configuration for an early hardware probe')
     parser.add_argument('--firmware-build', type=Path, required=True, help='normal firmware build.json, not the preflight image')
     parser.add_argument('--boot-template', type=Path, required=True, help='verified current-slot boot image backup')
     parser.add_argument('--vendor-boot-template', type=Path, required=True,
@@ -107,16 +109,44 @@ def main() -> None:
             raise ValueError(f'{path.name}: backup manifest verification failed')
     build = json.loads((args.kernel_build / 'build.json').read_text())
     original = args.kernel_build / 'kernel.macho'
+    expected_config = ROOT / ('config/sheng_defconfig' if args.upstream_sheng else 'config/reference-xnu_defconfig')
     if (not build.get('built') or build.get('xnu') != '10063.141.1'
             or build.get('kernel_sha256') != sha(original)
-            or build.get('defconfig_sha256') != sha(ROOT / 'config/reference-xnu_defconfig')
-            or build.get('config', {}).get('XNU_NATIVE_UFS')):
+            or build.get('defconfig_sha256') != sha(expected_config)
+            or build.get('original_abi_bootstrap_only')
+            or (not args.upstream_sheng and build.get('config', {}).get('XNU_NATIVE_UFS'))):
         raise ValueError('reference build provenance or kernel hash mismatch')
+    if args.upstream_sheng:
+        baseline = json.loads((ROOT / 'config/sheng-baseline.json').read_text())
+        if (not build.get('full_upstream_sheng_config') or not build.get('prelinked')
+                or build.get('upstream_board_sha256') != baseline['board_sha256']
+                or build.get('upstream_defconfig_sha256') != baseline['defconfig_sha256']
+                or build.get('archives') != baseline['archives']):
+            raise ValueError('requires every pinned upstream sheng option and archive')
+        if not args.mmu_reset_delay or args.reset_after != '_PE_create_console':
+            raise ValueError('first complete-config hardware test must reset after PE_create_console, before IOKit')
     audit = audit_kernel(original)
     translation = json.loads((args.kernel_build / 'kernel-audit.json').read_text())
-    if (translation.get('sha256') != audit['sha256']
+    translation_hash = build.get('source_kernel_sha256') if args.upstream_sheng else audit['sha256']
+    if (translation.get('sha256') != translation_hash
             or translation.get('tg0_bytes') != 4096 or translation.get('tg1_bytes') != 4096):
         raise ValueError('reference lacks a matching 4 KiB translation audit')
+    if args.upstream_sheng:
+        from observe_sheng_abi import symbols
+        sysreg = symbols(original)['_sysreg_restore']
+        data = original.read_bytes()
+        cursor = 32
+        actual_tcr = None
+        for _ in range(struct.unpack_from('<I', data, 16)[0]):
+            command, size = struct.unpack_from('<II', data, cursor)
+            if command == 0x19:
+                address, _, offset, length = struct.unpack_from('<4Q', data, cursor + 24)
+                if address <= sysreg and sysreg + 8 <= address + length:
+                    actual_tcr = struct.unpack_from('<Q', data, offset + sysreg - address)[0]
+            cursor += size
+        if actual_tcr is None or actual_tcr != int(translation['initial_tcr'], 16):
+            raise ValueError('prelinked kernel initial TCR differs from its source audit')
+        audit['initial_tcr'] = hex(actual_tcr)
     firmware = json.loads(args.firmware_build.read_text())
     if firmware.get('preflight_only') is not False or not firmware['entry_audit']['registrar_pcd_checked']:
         raise ValueError('requires the audited normal UniXNU firmware entry')
@@ -136,7 +166,7 @@ def main() -> None:
     if not os_version:
         raise ValueError('current-slot OS metadata is missing')
     config = tomllib.loads((ROOT / 'uefi-sheng/Resources/Configs/sheng.toml').read_text())['boot_image']
-    out = ROOT / 'out/reference-boot'
+    out = ROOT / ('out/sheng-upstream-boot' if args.upstream_sheng else 'out/reference-boot')
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='stage-', dir=out) as temporary:
         work = Path(temporary)
@@ -153,19 +183,22 @@ def main() -> None:
             probe += ['--reset-after', args.reset_after]
         subprocess.run(probe, env=env, check=True)
         adt = files / 'kernel.macho.adt'
+        owned_memory = 0x40000000 if args.upstream_sheng else 0x20000000
         subprocess.run(['python3', DEVICE / 'scripts/make-sheng-adt.py', '--output', adt,
-                        '--dram-size', '0x200000000', '--owned-memory-size', '0x20000000',
+                        '--dram-size', '0x200000000', '--owned-memory-size', hex(owned_memory),
                         '--cpu-regs', '0', '--cpu-compatible', 'arm,cortex-a510'], check=True)
         (stage / 'EFI/UniXNU/unixnu.toml').write_text(
             'version = 1\n[boot]\ntimeout = 3\ndefault = "el1-reference"\n[kits]\nautoload = false\n'
-            '[[entry]]\nid = "el1-reference"\ntitle = "EL1 XNU reference - no OS image"\n'
+            '[[entry]]\nid = "el1-reference"\ntitle = "EL1 XNU ' +
+            ('full sheng' if args.upstream_sheng else 'reference') + ' - no OS image"\n'
             'type = "xnu"\npath = "Payloads/kernel.macho"\n'
             'args = "-v debug=0x100 keepsyms=1 cpus=1"\n')
         for path in [stage, *stage.rglob('*')]:
             os.utime(path, (315532800, 315532800))
         fat = work / 'payload.img'
         content = sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
-        mib = max(64, ((content * 2 + (1 << 20) - 1) >> 20))
+        budget = content + max(16 << 20, content // 4) if args.upstream_sheng else content * 2
+        mib = max(64, ((budget + (1 << 20) - 1) >> 20))
         if mib > 192:
             raise ValueError('reference payload exceeds the bounded RAM image size')
         subprocess.run(['mformat', '-C', '-F', '-T', str(mib * 2048), '-v', 'SHENGREF',
@@ -213,9 +246,12 @@ def main() -> None:
                   'post_mmu_reset_delay_seconds': args.mmu_reset_delay,
                   'reset_after_arm_init_call': args.reset_after,
                   'panic_screen_enabled': args.mmu_reset_delay is None,
-                  'owned_memory_bytes': 0x20000000, 'container_sha256': sha(image),
+                  'owned_memory_bytes': owned_memory, 'container_sha256': sha(image),
                   'container_bytes': image.stat().st_size, 'hardware_executed': False,
-                  'persistent_storage_drivers_linked': False, 'partition_images_written': False}
+                  'full_upstream_sheng_config': args.upstream_sheng,
+                  'persistent_storage_drivers_linked': args.upstream_sheng,
+                  'stop_before_iokit': args.upstream_sheng,
+                  'partition_images_written': False}
         destination = out / record['container_sha256']
         destination.mkdir(exist_ok=False)
         shutil.copy2(image, destination / image.name)

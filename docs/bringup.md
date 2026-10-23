@@ -126,6 +126,34 @@ python3 scripts/build_reference_xnu.py --upstream-sheng -j 4
 `out/sheng-xnu/build.json` 记录当前已观察到的缺项；这不是已经完成的全量依赖审计。
 这些输入不能用空归档、未验证地址或关闭相关选项替代。
 
+已重建的私有输入由 `config/sheng-reconstructed-inputs.json` 固定整个归档及文件清单的哈希。
+完整构建自动下载该私有缓存，需要具备本仓库读取权限的 `gh` 登录；Actions 使用当前仓库的只读 token。
+缓存包括原版组件、实际 QEMU 观察记录、完整签名哈希表及公开信任锚，不包括所有者私钥。
+编译记录生成后，仍会重新编译存储注解对象、执行全部 ABI 审计，并从源码编译两个外部归档。
+
+在 Linux 上重新生成两卷策略：
+
+```sh
+PATH=/path/to/llvm/bin:$PATH python3 scripts/rebuild_sheng_policies.py --openssl-prefix /usr
+```
+
+此步骤需要 `7z`、OpenSSL 开发库以及支持 ARM64 Mach-O 的 clang。
+它从完整原始映像读取 APFS UUID，以实际 C 验证器验证 RSA3072 签名和每个块。
+OS 的 UDIF 先还原完整磁盘，包含主备 GPT；SystemOS 使用原始 APFS 字节。
+新所有者密钥会改变签名和缓存哈希，不能把新输入冒充现有固定归档。
+
+重新观察固定 ABI 候选，不连接设备：
+
+```sh
+python3 scripts/observe_sheng_abi.py --output out/sheng-abi-replay-new \
+  --firmware /path/to/qemu/share/qemu/edk2-aarch64-code.fd
+```
+
+要求 QEMU 支持 Cortex-A710、GICv3 和实际 UEFI 启动。已验证版本为 10.2.1。
+脚本重新预链接并核对候选字节，实际停在 `bsd_init` 读取存储元类，
+再跟踪 Legacy 元类构造函数返回。超时、错误候选、错误父类/大小或非 4 KiB 页表均拒绝。
+此结果只证明相应 QEMU ABI 观察，不能代替实机启动或 macOS 用户空间兼容性。
+
 ## 构建与状态
 
 GitHub Actions 只接受手动触发。`check` 运行输入拒绝测试；`preflight` 构建 EFI；
