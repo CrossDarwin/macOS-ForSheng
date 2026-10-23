@@ -556,3 +556,11 @@ Android基线sheng / _a / boot_completed=1，随后a槽可启动检查通过，�
 阶段条只用于定位，不增加重复能力探针；C格通过也不证明MMU开启。
 相同汇编头在QEMU执行后，实际像素0–C为绿色、D–F为灰色，最后阶段记录12；低位复制向量和MMU开启故障捕获仍通过。
 完整内核目标构建及实际启动结果待完成。
+
+阶段条异常页重绘会依据保留的最后阶段恢复绿色格，不清除已执行的历史；尚未标记使用UINT64_MAX。
+旧构建39995936219已取消，修正版Actions 39996227603（2cbf178）成功，UUID 788CD617-EF82-3D2C-8055-DD0BCBF6DC2E。
+同版实际内核在实机物理地址及EL2调试陷入限制下记录到C并到达arm_init第一条指令。
+完整UEFI QEMU启动记录到C，完成corecrypto POST、控制台及完整Image4缺失panic，CRC/UUID匹配，尚未进入BSD。
+候选fc15ef51eab369ccc52ab49d57ab471b71730150138b4063980c4bcd7fd09069已封装。
+实机Android基线sheng / _a / boot_completed=1，部署时a槽可启动，单次RAM临时启动收到Booting OKAY；阶段条结果待回传。
+被替代的81b73787部署镜像和已完成QEMU的ESP暂存已删除，实验记录保存在private/experiments/20261024-native-arm64e/bootstrap-stage-strip。
