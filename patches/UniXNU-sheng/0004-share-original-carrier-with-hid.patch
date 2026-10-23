@@ -1,0 +1,13 @@
+diff --git a/scripts/build-native-legacy-display.py b/scripts/build-native-legacy-display.py
+index 8552e52..923bab0 100644
+--- a/scripts/build-native-legacy-display.py
++++ b/scripts/build-native-legacy-display.py
+@@ -265,7 +265,7 @@ for src in touch_c:
+ run([llvm/'llvm-objcopy','--remove-section=__DATA,__mod_init_func','--globalize-symbol=__GLOBAL__sub_I_AppleARMBacklight.cpp',
+      backlight_class_obj,backlight_class_late])
+ archive=OUT/'libNativeLegacyDisplay.late.a';archive.unlink(missing_ok=True)
+-print(run(['python3',ROOT/'scripts/build-native-hid-input.py'],text=True),end='')
++print(run(['python3',ROOT/'scripts/build-native-hid-input.py','--candidate',candidate],text=True),end='')
+ hid_dir=ROOT/'build/native-hid-input'
+ print(run(['python3',ROOT/'scripts/build-arm-driver.py','NativeKeyStoreEvents'],text=True),end='')
+ keyevents=ROOT/'build/native-keystore-events'

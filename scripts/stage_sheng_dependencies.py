@@ -96,6 +96,7 @@ def stage(tree: Path) -> dict:
 
 def build(tree: Path, env: dict | None = None) -> None:
     commands = [
+        ['extract-files.py', '--device', str(ROOT / 'UniXNU-sheng')],
         ['fetch-adreno-inputs.py'],
         ['fetch-sheng-dts.py'],
         ['prepare-sheng-gmu.py'],

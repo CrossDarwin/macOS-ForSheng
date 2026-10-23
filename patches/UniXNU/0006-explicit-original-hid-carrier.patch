@@ -1,0 +1,24 @@
+diff --git a/scripts/build-native-hid-input.py b/scripts/build-native-hid-input.py
+index f8c95e0..84c8052 100644
+--- a/scripts/build-native-hid-input.py
++++ b/scripts/build-native-hid-input.py
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env python3
+ """Qualify an owned offline HID source against the unchanged target IOHIDDevice."""
+-import hashlib,json,struct,subprocess,sys
++import argparse,hashlib,json,struct,subprocess,sys
+ from pathlib import Path
+ ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'build/native-hid-input';OUT.mkdir(exist_ok=True)
+ sys.path.insert(0,str(ROOT/'kits/NativePrelink'))
+@@ -14,7 +14,10 @@ def require(value,why):
+ # instruction hash; every instruction/ABI check below still runs against it.
+ V9_SHA='df5d6ebda4d0cb2faea663e6bb393e6e12fcf9f52a197ffd58e6f75274a076ab'
+ HID_TEXT_SHA='7e4c5104814f2e773d5be13d092dec53ee44ba5a61a81264b229780406e86b72'
+-p=ROOT/'build/native-prelink/native-owner-ufs-cpu-desktop-v9-hid-init-candidate.macho'
++parser=argparse.ArgumentParser(description=__doc__)
++parser.add_argument('--candidate',type=Path,help='Use an explicitly qualified carrier; all original instruction checks still apply')
++args=parser.parse_args()
++p=args.candidate or ROOT/'build/native-prelink/native-owner-ufs-cpu-desktop-v9-hid-init-candidate.macho'
+ if not p.exists():
+     later=sorted((ROOT/'build/native-prelink').glob('native-owner-ufs-cpu-desktop-*-candidate.macho'),key=lambda f:f.stat().st_mtime)
+     require(later,'No reference candidate available')

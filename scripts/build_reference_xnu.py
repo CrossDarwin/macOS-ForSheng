@@ -180,6 +180,10 @@ def main() -> None:
             build_dependencies(context.tree, environment)
 
         kernel.build(ctx, modules, prepare_archives=prepare_archives)
+        record['reconstructed_inputs'] = json.loads(
+            (ctx.tree / 'build/reconstructed-inputs.json').read_text())
+        if not record['reconstructed_inputs']['archives_built']:
+            raise ValueError('reconstructed external archives did not complete')
     else:
         kernel.build(ctx, modules)
     binary = ctx.tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf'
