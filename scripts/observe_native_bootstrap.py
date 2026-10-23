@@ -37,8 +37,13 @@ def main() -> None:
     kernel, symbols, identity = identify(args.kernel_build.resolve())
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    base, args_pa, window = 0x881004000, 0x882a00000, 0x20000000
+    base, window = 0x881004000, 0x20000000
     va = 0xfffffe0007004000
+    # Match DarwinBoot's ALIGN_VALUE(Address + Kernel.End - Kernel.Base, SIZE_16KB).
+    end = max(segment['va'] + segment['size'] for segment in identity['segments'] if segment['size'])
+    args_pa = (base + end - va + 16383) & ~16383
+    if args_pa + 0x100000 > base + window:
+        raise ValueError('kernel and bootstrap inputs exceed the owned window')
     data = kernel.read_bytes()
     flat = out / 'kernel-flat.bin'
     with flat.open('wb') as stream:
@@ -130,7 +135,8 @@ def main() -> None:
                     request(None)
                 registers = bytes.fromhex(request('g'))
                 core = struct.unpack('<33Q', registers[:264])
-                result = dict(uuid=identity['uuid'], kernel_pa=hex(base), boot_args_pa=hex(args_pa),
+                result = dict(uuid=identity['uuid'], kernel_sha256=identity['kernel_sha256'],
+                              kernel_pa=hex(base), boot_args_pa=hex(args_pa),
                               pc=hex(core[32]), sp=hex(core[31]), x0=hex(core[0]),
                               el2_debug_trap_policy_enabled=args.trap_debug_unlock,
                               timed_out=timed_out, hardware_executed=False, c_initialization_executed=False)

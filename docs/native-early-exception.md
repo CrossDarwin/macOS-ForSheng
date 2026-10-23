@@ -74,11 +74,12 @@ python3 scripts/test_native_early_exception.py \
 独立 QEMU 测试已通过；完整 XNU 目标编译、真实内核启动与 sheng 实机结果分别记录。
 
 `scripts/observe_native_bootstrap.py`补充实际链接内核的高物理地址观察。
-使用sheng照片中的kernel PA `0x881004000`与boot_args PA `0x882A00000`，执行原始启动汇编。
+使用sheng照片中的kernel PA `0x881004000`，boot_args PA按本版内核末尾向上对齐16 KiB计算，与DarwinBoot保持一致。
 通过GDB在`arm_init`第一条指令前停止，同时核对实际指令、启动参数和控制寄存器。
 该观察不经过UEFI，不提供设备树或framebuffer，不执行C初始化，也不模拟Gunyah或sheng设备。
 QEMU配置34 GiB稀疏客体RAM，仅为覆盖该物理地址；XNU收到的owned window仍是512 MiB。
 `--framebuffer-trace`提供sheng的0xB8000000、3048×2032、stride12192几何，实际读取16个标记像素并要求全绿。
+完整UEFI QEMU当前GOP为800×600，低于诊断页高度要求，跳过阶段条映射是预期行为。封装时另外要求同一内核在sheng几何下到达C入口、映射就绪且16个实际像素全绿；两份观察分别记录。
 它用于验证新映射及显存写入，仍不模拟真实显示控制器或Gunyah。
 
 ```sh

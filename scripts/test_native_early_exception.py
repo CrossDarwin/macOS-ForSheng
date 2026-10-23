@@ -130,6 +130,13 @@ try:
  assert packet(f'z0,{mapped:x},4')=='OK'
  assert packet(f'M{fb_field:x},8:'+struct.pack('<Q',0x44000000).hex())=='OK'
  assert packet('P20='+struct.pack('<Q',target).hex())=='OK'
+ assert packet(f'Z0,{mapped:x},4')=='OK'
+ assert packet('c').startswith(('T05','S05'))
+ assert struct.unpack('<Q',memory(symbols['sheng_bootstrap_fb_trace_ready'],8))[0]==1
+ for stage in (13,14,15):
+  pixel=0x44000000+568*2560+(224+24*stage)*4
+  assert struct.unpack('<I',memory(pixel,4))[0]==0xff0080ff
+ assert packet(f'z0,{mapped:x},4')=='OK'
  assert packet('c').startswith(('T05','S05'))
  mmu=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record'],192))
  high=0xffff800000000000

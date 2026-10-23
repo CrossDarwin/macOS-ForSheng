@@ -22,6 +22,8 @@ def main() -> None:
     parser.add_argument('--firmware-build', type=Path, required=True)
     parser.add_argument('--backup-dir', type=Path, required=True)
     parser.add_argument('--qemu-observation', type=Path, required=True)
+    parser.add_argument('--bootstrap-observation', type=Path,
+                        help='same-kernel QEMU bootstrap with sheng framebuffer geometry')
     parser.add_argument('--early-kernel-experiment', action='store_true',
                         help='explicitly package the known Image4 stop as an early hardware experiment')
     args = parser.parse_args()
@@ -46,10 +48,21 @@ def main() -> None:
     if (native_build.get('bootstrap_trace_source_sha256') and
             observed.get('early_exception', {}).get('bootstrap_stage') !=
             ('0xf' if native_build.get('bootstrap_post_mmu_stages') else '0xc')):
-        raise ValueError('requires this kernel to complete the pre-MMU stage strip in QEMU')
-    if (native_build.get('bootstrap_post_mmu_stages') and
-            observed.get('observed_globals', {}).get('_sheng_bootstrap_fb_trace_ready') != '0x1'):
-        raise ValueError('requires this kernel to install the bounded framebuffer diagnostic mapping in QEMU')
+        raise ValueError('requires this kernel to complete its bootstrap stage strip in QEMU')
+    if native_build.get('bootstrap_post_mmu_stages'):
+        if args.bootstrap_observation is None:
+            raise ValueError('post-MMU stages require a separate sheng-geometry bootstrap observation')
+        bootstrap = json.loads((args.bootstrap_observation / 'result.json').read_text())
+        # The UEFI QEMU GOP can be smaller than the diagnostic panel.
+        if (bootstrap.get('kernel_sha256') != audit['kernel_sha256']
+                or bootstrap.get('uuid') != audit['uuid']
+                or not bootstrap.get('reached_c_entry')
+                or not bootstrap.get('instruction_and_args_match')
+                or bootstrap.get('bootstrap_stage') != '0xf'
+                or bootstrap.get('post_mmu_framebuffer_mapping_ready') is not True
+                or bootstrap.get('actual_stage_pixels') != ['0xff00ff00'] * 16
+                or bootstrap.get('hardware_executed') is not False):
+            raise ValueError('requires same-kernel C entry and all real stage pixels with sheng geometry')
     firmware = json.loads(args.firmware_build.read_text())
     patch = 'patches/UniXNU/0007-native-16k-bootstrap-congruence.patch'
     panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'
@@ -132,6 +145,8 @@ def main() -> None:
                       purpose='Early native EL1 kernel experiment; macOS recovery is not ready',
                       expected_stop='image4 interface not available', boot_args=boot_args,
                       qemu_observation=str(args.qemu_observation.resolve()),
+                      bootstrap_observation=(str(args.bootstrap_observation.resolve())
+                                             if args.bootstrap_observation else None),
                       source_crypto_post_passed=True, security_components_loaded=False,
                       framebuffer_console_qemu_qualified=True, hardware_log_transport_qualified=False,
                       log_symbol_va=hex(symbols['_sheng_log_buffer']),
