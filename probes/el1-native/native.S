@@ -23,11 +23,12 @@
 
 // x13为首格像素地址，x14为行跨度；只使用调用者临时寄存器
 // 绿色格子在每次控制寄存器切换后直接写入显示内存
-.macro mmu_mark number
+.macro mmu_mark number, color=0xff00
     cbz x13,.Lmark_done\@
     add x16,x13,#(\number * 128)
     mov x15,#12
-    mov w9,#0xff00
+    mov w9,#(\color & 0xffff)
+    movk w9,#((\color >> 16) & 0xffff),lsl #16
 .Lmark_row\@:
     add x17,x16,#96
 .Lmark_pixel\@:
@@ -83,10 +84,15 @@ ShengEl1GranuleProbe:
     isb
     mmu_mark 2
     msr ttbr0_el1,x25
+    mmu_mark 3,0xffffff
     mov x9,#0xff
     msr mair_el1,x9
+    mmu_mark 3,0x808080
     msr tcr_el1,x27
+    isb
+    mmu_mark 3,0xff00ff
     tlbi vmalle1
+    mmu_mark 3,0xff
     dsb sy
     isb
     mmu_mark 3
@@ -152,6 +158,7 @@ ShengEl1GranuleProbe:
     mov x9,x27
 #endif
     msr tcr_el1,x9
+    isb
     tlbi vmalle1
     dsb sy
     isb
@@ -187,6 +194,7 @@ ShengEl1GranuleProbe:
     msr ttbr0_el1,x21
     msr tcr_el1,x20
     msr mair_el1,x22
+    isb
     tlbi vmalle1
     dsb sy
     isb

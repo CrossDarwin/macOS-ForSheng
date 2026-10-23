@@ -225,7 +225,8 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
       (((UINT64) Index << (Index < 64 ? 30 : 25)) | 0x701);
   }
   WriteBackDataCacheRange (Table, 16384);
-  Tcr = 28 | (1ULL << 8) | (1ULL << 10) | (3ULL << 12) | (1ULL << 23) |
+  // 与现有ArmMmuLib一致，禁用TTBR1遍历时仍保留有效的TG1编码
+  Tcr = 28 | (1ULL << 8) | (1ULL << 10) | (3ULL << 12) | (1ULL << 23) | (2ULL << 30) |
         ((Mmfr0 & 15) > 5 ? 5ULL << 32 : (Mmfr0 & 15) << 32);
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1"
                     : "=r" (BeforeTcr), "=r" (BeforeTtbr), "=r" (BeforeMair));

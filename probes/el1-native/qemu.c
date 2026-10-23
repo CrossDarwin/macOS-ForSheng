@@ -36,7 +36,7 @@ void qemu_main(void)
         u64 leaf=i<2 ? 0 : (i<<(i<64 ? 30 : 25))|0x701;
         original[i]=trial[i]=leaf;
     }
-    const u64 tcr=28UL|(1UL<<8)|(1UL<<10)|(3UL<<12)|(1UL<<23)|(5UL<<32);
+    const u64 tcr=28UL|(1UL<<8)|(1UL<<10)|(3UL<<12)|(1UL<<23)|(2UL<<30)|(5UL<<32);
     u64 control=(rd_sctlr()|1)&~(1UL<<19);
     __asm__ volatile("msr daifset,#15; msr mair_el1,%0; msr ttbr0_el1,%1; msr tcr_el1,%2;"
                      "dsb sy; tlbi vmalle1; dsb sy; isb; msr sctlr_el1,%3; isb"
