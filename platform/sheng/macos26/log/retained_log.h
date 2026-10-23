@@ -70,7 +70,8 @@ void sheng_log_begin(uint64_t physical_base, uint64_t virtual_base, const void *
         const uint8_t *cmd = (const uint8_t *)header + 32;
         const uint8_t *end = cmd + mh[5];
         for (uint32_t n = 0; n < mh[4] && (size_t)(end - cmd) >= 8; n++) {
-            const uint32_t *words = (const uint32_t *)cmd;
+            uint32_t words[2];
+            __builtin_memcpy(words, cmd, sizeof(words));
             if (words[1] < 8 || words[1] > (size_t)(end - cmd)) break;
             if (words[0] == 0x1b && words[1] == 24) {
                 for (unsigned i = 0; i < 16; i++) r->kernel_uuid[i] = cmd[8 + i];

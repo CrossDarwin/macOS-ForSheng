@@ -69,7 +69,12 @@ def run(command: list, name: str, record: dict, cwd: Path = ROOT, env=None) -> N
                                                  log=str(log.relative_to(OUT)), returncode=result.returncode))
     save(record)
     if result.returncode:
-        print(log.read_text(errors='replace')[-10000:], file=sys.stderr)
+        lines = log.read_text(errors='replace').splitlines()
+        first = next((index for index, line in enumerate(lines)
+                      if 'error:' in line or 'Undefined symbols' in line or 'fatal error' in line), None)
+        if first is not None:
+            print('\n'.join(lines[max(0, first - 3):first + 18]), file=sys.stderr)
+        print('\n'.join(lines)[-5000:], file=sys.stderr)
         raise subprocess.CalledProcessError(result.returncode, command)
 
 

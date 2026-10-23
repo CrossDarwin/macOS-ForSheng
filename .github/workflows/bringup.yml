@@ -249,6 +249,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: macos26-sheng-diagnostics
+          path: |
+            out/macos26-xnu/build.json
+            out/macos26-xnu/logs/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
           name: macos26-sheng-source
           path: |
             out/kdk-verification.json
