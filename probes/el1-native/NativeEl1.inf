@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = ShengNativeEl1
+  FILE_GUID = 4e240ccd-9e9a-4bf1-832d-4237392fc59f
+  MODULE_TYPE = UEFI_APPLICATION
+  VERSION_STRING = 0.1
+  ENTRY_POINT = UefiMain
+
+[Sources]
+  NativeEl1.c
+  native.S
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+  MemoryAllocationLib
+  CacheMaintenanceLib

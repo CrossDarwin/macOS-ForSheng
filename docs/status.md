@@ -263,3 +263,8 @@ Actions 39933736122 已编译通过 ArmDTPlatform 与 ArmCpu，真实对象部�
 归档规则已按 RC_ProjectName 选择实际生成的对象清单，保留普通内核编译语义，待后续必要构建验证。
 已对照 Snapintosh 组织当前源码，路线差异、EL2/NV2 前提与 PAC 实现记录在 `docs/routes.md`。
 继续工作以 16 KiB 实际页表执行和 arm64e 密钥生命周期为主，不再把清除编译告警当作启动路线成立。
+
+新增独立 `ShengNativeEl1.efi`，以同一份 EL1 汇编执行区分性页表实验与五类 PAC 密钥切换。
+QEMU 实际执行的 16 KiB 正对照、强制 4 KiB 回退负对照，以及 IA/IB/DA/DB/GA 切换和状态恢复均通过。
+UEFI 应用已编译；候选沿用已实机通过的固件和厂商 DTB，使用 RAM FAT，不写分区。
+这些结果尚未证明 sheng 的实际执行、47 位完整布局或 XNU task/thread 的 PAC 语义。

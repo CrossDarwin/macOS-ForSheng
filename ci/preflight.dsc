@@ -12,6 +12,8 @@
 !include MdePkg/MdeLibs.dsc.inc
 
 [LibraryClasses]
+  ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
+  CacheMaintenanceLib|ArmPkg/Library/ArmCacheMaintenanceLib/ArmCacheMaintenanceLib.inf
   BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
   BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
   DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
@@ -26,4 +28,8 @@
   DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
 
 [Components]
+!ifdef SHENG_NATIVE_EL1_PROBE
+  probes/el1-native/NativeEl1.inf
+!else
   UniXNU-sheng/drivers/ShengPreflight/ShengPreflight.inf
+!endif
