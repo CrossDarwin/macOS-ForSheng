@@ -98,7 +98,11 @@ def main() -> None:
     parser.add_argument('--mmu-reset-delay', type=int, choices=range(1, 11),
                         help='diagnostic reset this many seconds after the post-MMU probe is reached')
     parser.add_argument('--reset-after', help='move the diagnostic reset after this verified arm_init call')
+    parser.add_argument('--reset-before', action='store_true', help='stop before the selected call')
+    parser.add_argument('--reset-in', default='_arm_init', help='function containing the selected call')
     args = parser.parse_args()
+    if args.reset_before and not args.reset_after:
+        parser.error('--reset-before requires --reset-after')
     if args.reset_after and not args.mmu_reset_delay:
         parser.error('--reset-after requires --mmu-reset-delay')
     for path in (args.boot_template, args.vendor_boot_template):
@@ -123,8 +127,12 @@ def main() -> None:
                 or build.get('upstream_defconfig_sha256') != baseline['defconfig_sha256']
                 or build.get('archives') != baseline['archives']):
             raise ValueError('requires every pinned upstream sheng option and archive')
-        if not args.mmu_reset_delay or args.reset_after != '_PE_create_console':
-            raise ValueError('first complete-config hardware test must reset after PE_create_console, before IOKit')
+        checkpoint = (args.reset_in, args.reset_after, args.reset_before)
+        if not args.mmu_reset_delay or checkpoint not in {
+                ('_arm_init', '_PE_create_console', False),
+                ('_kernel_bootstrap_thread', '_bsd_init', True),
+                ('_bsd_init', '_IOKitInitializeTime', True)}:
+            raise ValueError('complete-config test requires a bounded console, BSD-entry or BSD-buffer checkpoint')
     audit = audit_kernel(original)
     translation = json.loads((args.kernel_build / 'kernel-audit.json').read_text())
     translation_hash = build.get('source_kernel_sha256') if args.upstream_sheng else audit['sha256']
@@ -180,7 +188,9 @@ def main() -> None:
         probe += (['--reset-delay', str(args.mmu_reset_delay)] if args.mmu_reset_delay
                   else ['--panic-screen', '--no-reset'])
         if args.reset_after:
-            probe += ['--reset-after', args.reset_after]
+            probe += ['--reset-after', args.reset_after, '--in', args.reset_in]
+        if args.reset_before:
+            probe += ['--reset-before']
         subprocess.run(probe, env=env, check=True)
         adt = files / 'kernel.macho.adt'
         owned_memory = 0x40000000 if args.upstream_sheng else 0x20000000
@@ -244,13 +254,18 @@ def main() -> None:
                   'os_version': os_version, 'header_version': 0, 'cpu_scope': 'boot Cortex-A510 only',
                   'compression': args.compression, 'uncompressed_payload_sha256': hashlib.sha256(payload).hexdigest(),
                   'post_mmu_reset_delay_seconds': args.mmu_reset_delay,
-                  'reset_after_arm_init_call': args.reset_after,
+                  'reset_after_arm_init_call': args.reset_after if args.reset_in == '_arm_init' and not args.reset_before else None,
+                  'reset_checkpoint': {'function': args.reset_in, 'callee': args.reset_after,
+                                       'position': 'before' if args.reset_before else 'after'},
+                  'entry_probe_sha256': sha(DEVICE / 'scripts/patch-xnu-entry-probe.py'),
                   'panic_screen_enabled': args.mmu_reset_delay is None,
                   'owned_memory_bytes': owned_memory, 'container_sha256': sha(image),
                   'container_bytes': image.stat().st_size, 'hardware_executed': False,
                   'full_upstream_sheng_config': args.upstream_sheng,
                   'persistent_storage_drivers_linked': args.upstream_sheng,
-                  'stop_before_iokit': args.upstream_sheng,
+                  'stop_before_iokit': args.upstream_sheng and args.reset_in == '_arm_init',
+                  'stop_before_bsd': args.upstream_sheng and args.reset_in != '_bsd_init',
+                  'stop_before_root_mount': args.upstream_sheng,
                   'partition_images_written': False}
         destination = out / record['container_sha256']
         destination.mkdir(exist_ok=False)

@@ -15,6 +15,7 @@
 | 完整 sheng UEFI | 本地构建及 FV 检查通过；fastboot 临时启动成功，菜单和探针输出已由照片及视频确认 |
 | 设备备份 | 六个 LUN 主备 GPT、16 个引导分区已读取并校验，userdata 未备份 |
 | 完整上游 sheng 配置 | 35 项与上游字节一致，19 步及两个外部归档、预链接全部通过，Actions 39919525158 成功 |
+| 完整内核实机 | 完整配置的 PE_create_console 返回后 3 秒复位已由用户确认；Android 恢复到槽 a |
 | 完整内核 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
@@ -68,8 +69,8 @@ Neo/T8140 与 Snapintosh 保留为对照。详见 [路线依据](routes.md)。
 改用已备份 vendor_boot 中的厂商 DTB 后，实机照片确认 XNU 入口蓝条与启用 MMU 前紫条。
 后续镜像在 MMU 后探针处等待 3 秒并复位，用户观察与设计一致；复位后 Android boot_completed=1、槽 _a。
 C 初始化中的 arm_vm_init、serial_init、第一轮 kernel_startup_initialize_upto 和第一条 kprintf 返回后复位探针均已触发。
-PE_create_console 返回后探针未触发。该函数的真实产物仍映射并读取 BCM2837 的固定 panic 地址 0x3c0fc000。
-精简配置漏掉上游 XNU_DT_PANIC_REGION，已补齐并重编译；这处访问是待验证的阻断原因。
+此前精简配置的 PE_create_console 返回后探针未触发，其真实产物仍映射并读取 BCM2837 的固定 panic 地址 0x3c0fc000。
+精简配置漏掉上游 XNU_DT_PANIC_REGION，已补齐并重编译；完整上游配置的控制台返回检查点现已在实机通过。
 用户要求以完整上游配置为准后，新增完整 sheng 构建入口，不再将精简参考配置作为完整设备基线。
 
 ## 上游缺失产物重建
@@ -142,9 +143,28 @@ FAT 与 Android 容器往返校验通过，镜像为 163241984 字节，SHA-256 
 部署前 ADB 实测 Android boot_completed=1、槽 _a；随后 fastboot 核对 sheng、解锁、活动槽及下载容量。
 `fastboot boot` 返回 Sending OKAY、Booting OKAY；设备随后重新出现 ADB。
 08:06 UTC 实测 Android boot_completed=1、槽 _a，bootreason=bootloader。
-已请求观察是否选择了完整内核、彩色条后是否约 3 秒复位；没有这项观察，不把回到 Android 当作检查点通过。
+用户确认已选择完整 sheng 内核，彩色条出现后约 3 秒自动复位；控制台返回检查点实机通过。
 未执行 flash 或 repartition。27 项离线测试通过。
 
 尚无 launchd 或 macOS 用户空间运行结果。
-该阶段不带系统用户空间，也不链接 UFS 写入后端。QEMU 的合成交接已通过，但不能替代真机结果。
+该阶段不带系统用户空间；完整配置包含 UFS 驱动，控制台检查点在其初始化之前。QEMU 的合成交接已通过，但不能替代真机结果。
 在解决系统启动路线、完成用户数据备份与恢复验证之前，不实施 96 GiB 分区变更。
+
+下一轮检查点位于 `kernel_bootstrap_thread` 中调用 `bsd_init` 之前，调用地址 `0xfffffff00c0544b4`。
+该位置在 IOKit、中断和内核 lockdown 初始化之后，完整驱动配置保持不变；不进入 BSD 或挂载系统卷。
+载荷副本将这一条已核对目标的直接调用替换为延迟 PSCI SYSTEM_RESET，不执行被替换的调用。
+修正上游诊断脚本原有 `--reset-before` 忽略延迟的问题，其前置复位与后置复位现在使用同一定时路径。
+QEMU 实测已执行到复位 SMC：PC `0xfffffff00ba50650`、x0 `0x84000009`，不是超时停止。
+QEMU 频率 62.5 MHz 与设备 19.2 MHz 不同；该检查验证控制流，设备延迟仍按实测 19.2 MHz 计算为 3 秒。
+新容器 SHA-256 为 `a3308e6264e37e3e24500790000b0df17ec6bf38a084c25b2acac00f79cd71ff`，
+载荷内核 SHA-256 为 `bef8d1198787f726760241cad509596c41d509bc6686f9b61f9f41f4e6378a2a`。
+27 项离线检查与 FAT/容器往返校验通过。实机结果单独记录，不以 QEMU 代替。
+
+BSD 入口前镜像临时启动返回 `Booting OKAY`。用户确认彩色条后约 3 秒自动复位，实机检查点通过。
+复位后重新读取 Android 状态与活动槽，记录在 `private/device/full-sheng-pre-bsd-01-run.json`。
+下一轮停在 `bsd_init` 调用 `IOKitInitializeTime` 之前，验证进程 0、凭据、BSD 子映射与缓冲区初始化。
+该位置在 `vfsinit` 和根文件系统挂载之前，不执行被替换的时钟初始化调用。
+
+BSD 缓冲区检查点的 QEMU 实际执行通过，调用地址 `0xfffffff00bd104e0`。
+容器 SHA-256 为 `3ec866505b1a5b26d50e63c21503a54223ddd33f8ae1e4cbf907961567526998`；
+载荷内核为 `8a0d08e227a192be2adf102c51ba650c94b940b4e5c27bfd92644974988787aa`。实机观察尚待确认。
