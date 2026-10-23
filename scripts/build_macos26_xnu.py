@@ -20,6 +20,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0003-staged-kernel-sdk.patch',
     ROOT / 'platform/sheng/macos26/patches/0004-system-abi-identifiers.patch',
     ROOT / 'platform/sheng/macos26/patches/0005-native-cache-and-unused-diagnostics.patch',
+    ROOT / 'platform/sheng/macos26/patches/0006-upstream-write-only-diagnostics.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -208,7 +209,7 @@ def compile_sources(args, record: dict) -> None:
     run(common + ['installhdrs'], 'install-headers', record, env=env)
     # Archive the ordinary kernel translation units without substituting an
     # Apple SoC support library or producing an executable with unresolved ABI.
-    run(common + ['build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=1', 'CFLAGS_KERNEL=-mkernel',
+    run(common + ['-k', 'build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=1', 'CFLAGS_KERNEL=-mkernel',
                   'CXXFLAGS_KERNEL=-fapple-kext',
                   'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1'],
         'source-archive', record, env=env)

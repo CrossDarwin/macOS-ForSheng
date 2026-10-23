@@ -1,0 +1,22 @@
+--- a/bsd/vfs/vfs_cache.c
++++ b/bsd/vfs/vfs_cache.c
+@@ -3488,7 +3488,7 @@
+ {
+ 	struct stringhead *head;
+ 	string_t          *entry;
+-	uint32_t          chain_len = 0;
++	uint32_t __unused chain_len = 0;
+ 	uint32_t          hash_index;
+ 	uint32_t          lock_index;
+ 	char              *ptr;
+--- a/iokit/conf/Makefile.template
++++ b/iokit/conf/Makefile.template
+@@ -201,6 +201,8 @@
+ TestIOMemoryDescriptor.cpo_CXXWARNFLAGS_ADD += -Wno-unused-parameter
+ Tests.cpo_CXXWARNFLAGS_ADD += -Wno-unused-parameter
+ IODMACommand.iig.cpo_CXXWARNFLAGS_ADD += -Wno-duplicate-decl-specifier
++# Xcode 27 IIG emits a write-only return value in the OSAction receiver.
++OSAction.iig.cpo_CXXWARNFLAGS_ADD += -Wno-unused-but-set-variable
+ 
+ # Rebuild if per-file overrides change
+ ${OBJS}: $(firstword $(MAKEFILE_LIST))

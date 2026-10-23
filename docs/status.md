@@ -227,3 +227,8 @@ Actions 39928465964 已消除不存在的 include 目录错误。下一处失败
 原始 25F71 KDK 的 KDK_SDK.pkg/Payload 实际包含该头及 CodeSignature/TrustCache/TXM 头，先前构建漏用了 SDK 子包。
 现已将其头文件纳入签名验证后的哈希清单，并在源码构建中逐文件核对、暂存；未引入其中的 SPTM/TXM 二进制库。
 SHENG 目标仅关闭系统 ABI 保留名称的诊断，保留 -Werror 和其余检查。尚无 macOS 26 内核编译或启动通过结果。
+
+Actions 39930215732 已通过 SDK 头哈希校验，之前的缺失头、缓存步长和保留名称错误消失。
+真实源码编译已进入 BSD、IOKit 和 security，停在 VFS 调试计数及 Xcode 27 IIG 生成的 OSAction 接收器未使用变量告警。
+仅为 VFS 计数添加 unused 标注，并为该生成对象设置单项诊断例外，其他对象仍启用该告警和 -Werror。
+后续使用 make -k 汇总各模块实际错误，失败状态仍使工作流失败。
