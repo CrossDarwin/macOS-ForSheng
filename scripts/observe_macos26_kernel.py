@@ -71,6 +71,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kernel-build', type=Path, required=True)
     parser.add_argument('--firmware', type=Path, required=True)
+    parser.add_argument('--loader-build', type=Path, default=ROOT / 'out/native-loader/build.json')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot'), default='arm_init')
@@ -89,7 +90,12 @@ def main() -> None:
     payload.mkdir(parents=True)
     (esp / 'EFI/BOOT').mkdir()
     shutil.copy2(inputs / 'loader/BOOTAA64.EFI', esp / 'EFI/BOOT/BOOTAA64.EFI')
-    shutil.copy2(inputs / 'loader/DarwinBoot.efi', payload / 'DarwinBoot.efi')
+    loader = json.loads(args.loader_build.read_text())
+    loader_path = ROOT / loader['file']
+    if loader.get('bootstrap_block_bytes') != 33554432 or hashlib.sha256(loader_path.read_bytes()).hexdigest() != loader['sha256']:
+        raise ValueError('native kernel needs the built 32 MiB-congruent DarwinBoot loader')
+    shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
+    record['loader_sha256'] = loader['sha256']
     shutil.copy2(kernel, payload / 'kernel.macho')
     (esp / 'EFI/UniXNU/unixnu.toml').write_text(
         'version = 1\n[boot]\ntimeout = 1\ndefault = "native26"\n'
@@ -102,13 +108,24 @@ def main() -> None:
                     '--owned-memory-size', '0x20000000', '--armvirt', '--armcpu',
                     '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                     '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
-                    '--amfi-platform-only'], check=True)
+                    '--amfi-platform-only', '--random-seed-bytes', '256'], check=True)
     command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
                '--fixture', args.output, '--esp', esp, '--kernel', kernel,
                '--firmware', args.firmware.resolve(), '--gic-version', '3',
                '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                '--system-registers', '--qemu-ramfb', '--also-stop', hex(addresses['_panic'])]
     (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
+    vector_base = addresses['_ExceptionVectorsBase']
+    for offset in (0, 0x200, 0x400, 0x600):
+        command += ['--also-stop', hex(vector_base + offset)]
+    command += ['--read-memory', f'{vector_base:x}:800']
+    instruction_request = f'{checkpoint:x}:10'
+    command += ['--read-memory', instruction_request]
+    for name, count in (('_physmap_base', 8), ('_physmap_end', 8), ('_gPhysBase', 8),
+                        ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
+                        ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152)):
+        if name in addresses:
+            command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
     log_requests = []
     if '_sheng_log_buffer' in addresses:
         from decode_native_log import SIZE
@@ -125,12 +142,20 @@ def main() -> None:
         from decode_native_log import decode
         raw = b''.join(bytes.fromhex(snapshot['memory'][key]) for key in log_requests)
         (args.output / 'console.bin').write_bytes(raw)
-        text, console = decode(raw, record['uuid'])
+        try:
+            text, console = decode(raw, record['uuid'])
+        except ValueError as error:
+            text, console = b'', dict(decoded=False, error=str(error))
         (args.output / 'console.txt').write_bytes(text)
         (args.output / 'console.json').write_text(json.dumps(console, indent=2) + '\n')
     regs = {name: int(value, 16) for name, value in snapshot['system_registers'].items()}
     tcr = regs['TCR_EL1']
-    passed = (not snapshot['bounded_timeout_interrupted'] and int(snapshot['pc'], 16) == checkpoint
+    kernel_data = kernel.read_bytes()
+    kernel_image = macho(kernel_data)
+    instruction_at = backed_offset(kernel_image['segments'], checkpoint, 16, len(kernel_data))
+    instruction_match = snapshot['memory'][instruction_request] == kernel_data[instruction_at:instruction_at + 16].hex()
+    record['checkpoint_instructions_match'] = instruction_match
+    passed = (instruction_match and not snapshot['bounded_timeout_interrupted'] and int(snapshot['pc'], 16) == checkpoint
               and tcr >> 14 & 3 == 2 and tcr >> 30 & 3 == 1
               and tcr & 63 == 17 and tcr >> 16 & 63 == 17 and regs['SCTLR_EL1'] & 1)
     record.update(checkpoint=args.checkpoint, checkpoint_va=hex(checkpoint),

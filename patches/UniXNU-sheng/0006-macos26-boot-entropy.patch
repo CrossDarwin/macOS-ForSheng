@@ -1,0 +1,20 @@
+--- a/scripts/make-sheng-adt.py
++++ b/scripts/make-sheng-adt.py
+@@ -101,6 +101,8 @@
+     parser.add_argument('--gpu-addon', action='store_true', help='Zeroed GpuAddon sidecar handoff placeholder (the loader fills in kernel.macho.gpuaddon)')
+     parser.add_argument('--text-fixup', action='append', default=[],
+                         help='/chosen/text-fixups entry <file name>,<file offset>,<original>,<replacement> for the kernel\'s signed-text fixups')
++    parser.add_argument('--random-seed-bytes', type=int, choices=(64, 256), default=64,
++                        help='Paired XNU bootloader entropy size')
+     args = parser.parse_args()
+     if (args.unique_chip_id is None) != (args.chip_id is None):
+         parser.error('--unique-chip-id and --chip-id must be supplied together')
+@@ -136,7 +138,7 @@
+         ('#address-cells', struct.pack('<I', 2)),
+         ('#size-cells', struct.pack('<I', 2)),
+     ], [
+-        node('chosen', [('random-seed', os.urandom(64)),
++        node('chosen', [('random-seed', os.urandom(args.random_seed_bytes)),
+                         # Without these XNU never publishes IOPlatformUUID and gethostuuid() blocks forever
+                         # for callers (configd) that pass a zero timeout.
+                         *([('unique-chip-id', struct.pack('<Q', args.unique_chip_id)), ('chip-id', struct.pack('<I', args.chip_id))]

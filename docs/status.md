@@ -343,3 +343,12 @@ Actions 39946670153（eb14e36）已链接出实际 macOS 26.5 SHENG 可执行内
 新增 DarwinBoot 补丁保持 32 MiB 同余；该约束同时覆盖旧 4K 内核所需的低 21 位，不修改 XNU 指令来掩盖映射错误。
 Actions 39948603742 的日志版编译失败于新日志 UUID 解析的 Wcast-align；改为有界 memcpy，不关闭诊断。
 完整源日志改为独立小型 Actions 产物，失败时优先打印第一处真实错误。
+
+32 MiB 同余加载器（5745be36）已在 QEMU 消除错误映射；现场异常向量与文件指令一致，实际执行到 panic。
+配套源码 prng_random.c 的 ARM64 BOOTLOADER_ENTROPY_REQUEST_SIZE=4*64=256，旧树只有 64 字节，已为两套 DT 生成器增加显式 256 字节选项。
+补足熵后，QEMU 首次 BRK 现场及匹配 dSYM 定位到 arm_vm_physmap_init 的边界断言。
+实测 physmap_base=0xfffffdf0153a8000、physmap_end=0xfffffdf0353a8000、gPhysSize=512 MiB、ptov_index=2。
+非 PPL 大地址分支没有为 PTOV 块对齐间隙留虚拟空间；SHENG 采用与源码另一分支相同的 PTOV_TABLE_SIZE * ARM_TT_TWIG_SIZE 预算。
+预算只扩大虚拟 aperture 上限和对应页表覆盖范围，不增加物理内存；保留原边界断言。
+Actions 39950123042 已编译链接日志版并生成 dSYM，但记录阶段缺失 map 文件：原变量 DEPLOYMENT_LINKER_FLAGS 不参与此链接规则。
+改为显式传入附加原生链接参数，待下一次必要构建确认。

@@ -1,0 +1,19 @@
+--- a/scripts/qemu-entry/make-dt.py
++++ b/scripts/qemu-entry/make-dt.py
+@@ -65,6 +65,7 @@
+ parser.add_argument('--trust-cache', action='store_true', help='Provide a zeroed owned TrustCache sidecar binding')
+ parser.add_argument('--virtio-mmio-fdt', type=Path, help='Describe actual VirtIO resource windows from a QEMU-generated FDT')
+ parser.add_argument('--root-match-volume-uuid', type=uuid.UUID, help='Match an actual IOMedia UUID through the source root-matching mechanism')
++parser.add_argument('--random-seed-bytes', type=int, choices=(64, 256), default=64, help='Paired XNU bootloader entropy size')
+ args = parser.parse_args()
+ if args.owned_memory_size is not None and (not 0x10000000 <= args.owned_memory_size <= 0x100000000 or args.owned_memory_size % 0x200000):
+     parser.error('Owned memory must be 256 MiB to 4 GiB, aligned to 2 MiB')
+@@ -144,7 +145,7 @@
+ tree = node('device-tree', [('model', b'qemu-entry-fixture\0'),
+                           *([('#address-cells', struct.pack('<I', 2)), ('#size-cells', struct.pack('<I', 2))] if virtio_nodes else []),
+                           *([('compatible', args.platform_compatible.encode() + b'\0')] if args.armvirt else [])], [
+-    node('chosen', [('random-seed', os.urandom(64)),
++    node('chosen', [('random-seed', os.urandom(args.random_seed_bytes)),
+                     # This fixture's writable Data lives only in the owned
+                     # RAMDisk. Publish its actual nonpersistent lifetime via
+                     # XNU's standard hw.ephemeral_storage device-tree input.

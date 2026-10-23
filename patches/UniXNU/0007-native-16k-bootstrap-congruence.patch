@@ -1,0 +1,12 @@
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -18,7 +18,8 @@
+ #include "WindowSize.h"
+ 
+ #define WINDOW_SIZE  SIZE_256MB
+-#define BLOCK_SIZE   SIZE_2MB
++// 16K XNU boots with 32 MiB blocks; this also preserves 4K congruence.
++#define BLOCK_SIZE   SIZE_32MB
+ #define MAX_SEGMENTS 64
+ 
+ typedef struct {

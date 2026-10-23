@@ -28,6 +28,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0011-native-platform-personalities.patch',
     ROOT / 'platform/sheng/macos26/patches/0012-native-platform-services.patch',
     ROOT / 'platform/sheng/macos26/patches/0013-native-retained-log.patch',
+    ROOT / 'platform/sheng/macos26/patches/0014-native-link-map.patch',
+    ROOT / 'platform/sheng/macos26/patches/0015-native-physmap-padding.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -353,7 +355,7 @@ def link_kernel(args, record, common, sdk, source, env):
                   ' '.join('-Wno-error=' + w for w in UPSTREAM_WARNINGS),
                   'LD_KERNEL_LIBS=' + str(runtimes[0]),
                   'LD_KERNEL_ARCHIVES=' + ' '.join(archives),
-                  'DEPLOYMENT_LINKER_FLAGS=-mmacosx-version-min=26.5 -Wl,-map,' +
+                  'NATIVE_KERNEL_LINK_FLAGS=-Wl,-map,' +
                   str(OUT / 'kernel.development.sheng.map'),
                   'DO_CTFMERGE=0'], 'kernel-link', record, env=env)
     binary = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.unstripped.noctf'

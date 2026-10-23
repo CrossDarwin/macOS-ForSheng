@@ -12,7 +12,9 @@ Actions 39937165999 的实际归档包含 `kdp_raise_exception`、`kdp_register_
 无需为这些已有选项重复构建。
 
 Actions 39946670153 已链接 macOS 26.5 SHENG 可执行内核并生成对应 dSYM。
-QEMU 的真实 UEFI 交接已到达 arm_init，16K / 47 位页表开启。sheng 实机内核调试传输仍未接通。
+初版 QEMU 地址断点受到加载器错误映射影响，该通过结论已撤回。
+修正 32 MiB VA/PA 同余后，现场指令与文件一致，实际进入 C panic；尚未到达 BSD。
+sheng 实机内核调试传输仍未接通。
 现有 `pe_serial.c` 只有被条件选择的平台后端，SHENG 尚未注册可用的收发实现。
 仅添加 `kdp_match_name=serial` 不会自动得到 USB、网络或 UART 通道。
 
