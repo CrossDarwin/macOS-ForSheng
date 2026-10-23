@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from build_macos26_xnu import ROOT, OUT, audit_object, capture, run, save, sha
+from build_macos26_xnu import ROOT, OUT, ARCH, audit_object, capture, run, save, sha
 
 
 def names(path: Path, mode: str) -> set[str]:
@@ -49,7 +49,7 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
         if not link.exists():
             link.symlink_to(header)
     framework = sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A'
-    command = ['xcrun', '--sdk', 'macosx', 'clang', '-target', 'arm64-apple-macos26.5',
+    command = ['xcrun', '--sdk', 'macosx', 'clang', '-target', f'{ARCH}-apple-macos26.5',
                '-isysroot', capture('xcrun', '--sdk', 'macosx', '--show-sdk-path'),
                '-mkernel', '-ffreestanding', '-fno-builtin', '-fno-stack-check',
                '-std=gnu99', '-fblocks', '-O2', '-g', '-fno-vectorize', '-fno-slp-vectorize',
@@ -134,7 +134,7 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
     if missing or duplicate:
         raise ValueError(f'corecrypto external link contract: missing={missing}, duplicate={duplicate}')
     relocated = work / 'corecrypto-native.o'
-    run(['xcrun', 'ld', '-r', '-arch', 'arm64', '-platform_version', 'macos', '26.5', '27.0',
+    run(['xcrun', 'ld', '-r', '-arch', ARCH, '-platform_version', 'macos', '26.5', '27.0',
          '-all_load', archive, '-rename_section', '__TEXT', '__text', '__TEXT_EXEC', '__cc26_text',
          '-o', relocated], 'corecrypto-module-text', record)
     report['module_object'] = audit_object(relocated)

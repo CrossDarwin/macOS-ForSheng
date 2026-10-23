@@ -14,6 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'out/macos26-xnu'
+ARCH = 'arm64'
 PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0001-native-sheng-target.patch',
     ROOT / 'platform/sheng/macos26/patches/0002-non-apple-machine-paths.patch',
@@ -139,6 +140,9 @@ def prepare() -> dict:
                     'pexpert/arm/pe_sheng_log.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
+                  architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
+                  el0_pac_lifecycle_qualified=False,
+                  pac_key_origin='unchanged EL1 firmware handoff banks' if ARCH == 'arm64e' else None,
                   hardware_source_commit=upstream['commit'],
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   retained_log_source_sha256=sha(retained_log),
@@ -160,8 +164,11 @@ def prepare() -> dict:
 
 def audit_object(path: Path) -> dict:
     data = path.read_bytes()
-    if len(data) < 32 or struct.unpack_from('<4I', data) != (0xfeedfacf, 0x100000c, 0, 1):
-        raise ValueError(f'{path.name}: expected a real ARM64 Mach-O object')
+    if len(data) < 32:
+        raise ValueError(f'{path.name}: truncated Mach-O object')
+    magic, cpu, subtype, kind = struct.unpack_from('<4I', data)
+    if (magic, cpu, subtype & 0xff, kind) != (0xfeedfacf, 0x100000c, 2 if ARCH == 'arm64e' else 0, 1):
+        raise ValueError(f'{path.name}: expected a real {ARCH} Mach-O object')
     cursor = 32
     deployment = None
     for _ in range(struct.unpack_from('<I', data, 16)[0]):
@@ -177,7 +184,7 @@ def audit_object(path: Path) -> dict:
         cursor += length
     if deployment != (1, 0x1a0500):
         raise ValueError(f'{path.name}: deployment differs from macOS 26.5: {deployment}')
-    return dict(sha256=sha(path), bytes=len(data), deployment='macOS 26.5', architecture='arm64')
+    return dict(sha256=sha(path), bytes=len(data), deployment='macOS 26.5', architecture=ARCH)
 
 
 def compile_sources(args, record: dict) -> None:
@@ -245,7 +252,7 @@ def compile_sources(args, record: dict) -> None:
         for path in sorted(sdk.rglob('*.h')) if path.is_file()}
     save(record)
     common = ['make', '-C', source, 'SDKROOT=macosx', f'KDKROOT={args.kdk_root}',
-              'TARGET_CONFIGS=DEVELOPMENT ARM64 SHENG', 'ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG=arm64',
+              'TARGET_CONFIGS=DEVELOPMENT ARM64 SHENG', f'ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG={ARCH}',
               'ARM64_LARGE_MEMORY=1', 'ARM64_LINK_ADDR=0xfffffe0007004000',
               'RC_DARWIN_KERNEL_VERSION=25.5.0', 'RC_ProjectSourceVersion=12377.121.6',
               'DEPLOYMENT_TARGET_FLAGS=-mmacosx-version-min=26.5 -DXNU_TARGET_OS_OSX',
@@ -337,7 +344,7 @@ def link_kernel(args, record, common, sdk, source, env):
                Path(capture('xcrun', '--sdk', 'macosx', '--show-sdk-path')) / 'usr/include']
     run(['xcodebuild', 'install', '-project', dispatch / 'libdispatch.xcodeproj',
          '-target', 'libfirehose_kernel', '-configuration', 'Release', '-sdk', 'macosx',
-         '-jobs', str(args.jobs), 'ARCHS=arm64', 'VALID_ARCHS=arm64', 'ONLY_ACTIVE_ARCH=NO',
+         '-jobs', str(args.jobs), f'ARCHS={ARCH}', f'VALID_ARCHS={ARCH}', 'ONLY_ACTIVE_ARCH=NO',
          'MACOSX_DEPLOYMENT_TARGET=26.5', 'CODE_SIGNING_ALLOWED=NO',
          'GCC_TREAT_WARNINGS_AS_ERRORS=NO', 'USE_HEADERMAP=NO',
          'HEADER_SEARCH_PATHS=' + ' '.join(str(h) for h in headers),
@@ -375,7 +382,7 @@ def link_kernel(args, record, common, sdk, source, env):
     destination = OUT / 'kernel.development.sheng'
     shutil.copy2(binary, destination)
     from seal_macos26_crypto import seal
-    record['corecrypto_integrity'] = seal(destination)
+    record['corecrypto_integrity'] = seal(destination, ARCH)
     run(['xcrun', 'dsymutil', binary, '-o', OUT / 'kernel.development.sheng.dSYM'],
         'kernel-dsym', record, env=env)
     record.update(executable_kernel_built=True, executable_kernel_sha256=sha(destination),
@@ -388,12 +395,20 @@ def link_kernel(args, record, common, sdk, source, env):
 
 
 def main() -> None:
+    global OUT, ARCH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--link-kernel', action='store_true', help='build runtime and attempt the native executable link')
+    parser.add_argument('--arch', choices=('arm64', 'arm64e'), default='arm64')
     parser.add_argument('--kdk-root', type=Path)
     parser.add_argument('-j', '--jobs', type=int, default=4, choices=range(1, 33))
     args = parser.parse_args()
+    ARCH = args.arch
+    if ARCH == 'arm64e':
+        OUT = ROOT / 'out/macos26-xnu-arm64e'
+        PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0001-native-el1-pac-abi.patch')
+    # Keep helpers on this configured module when invoked as a script.
+    sys.modules['build_macos26_xnu'] = sys.modules[__name__]
     record = prepare()
     if args.prepare_only:
         print(json.dumps(record, indent=2))

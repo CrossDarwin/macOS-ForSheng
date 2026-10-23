@@ -7,10 +7,11 @@ from pathlib import Path
 import struct
 
 
-def seal(kernel: Path) -> dict:
+def seal(kernel: Path, arch: str = 'arm64') -> dict:
     data = bytearray(kernel.read_bytes())
-    if struct.unpack_from('<4I', data) != (0xfeedfacf, 0x100000c, 0, 2):
-        raise ValueError('requires the locally linked native ARM64 executable')
+    magic, cpu, subtype, kind = struct.unpack_from('<4I', data)
+    if (magic, cpu, subtype & 0xff, kind) != (0xfeedfacf, 0x100000c, 2 if arch == 'arm64e' else 0, 2):
+        raise ValueError(f'requires the locally linked native {arch} executable')
     if b'_sheng_corecrypto_bootstrap\0' not in data:
         raise ValueError('missing the native provider bootstrap')
     cursor, code, integrity, base = 32, None, None, None

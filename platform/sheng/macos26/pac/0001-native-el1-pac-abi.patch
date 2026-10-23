@@ -1,0 +1,63 @@
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -92,7 +92,7 @@
+ MACHINE_FLAGS_ARM64_T8132 = -DARM64_BOARD_CONFIG_T8132			-mcpu=apple-m4
+ MACHINE_FLAGS_ARM64_T8142 = -DARM64_BOARD_CONFIG_T8142 			-mcpu=apple-m4+memtag+predres2
+ 
+-MACHINE_FLAGS_ARM64_SHENG = -DARM64_BOARD_CONFIG_SHENG -march=armv8-a
++MACHINE_FLAGS_ARM64_SHENG = -DARM64_BOARD_CONFIG_SHENG -march=armv8.3-a
+ 
+ MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a+sme2
+ 
+--- a/pexpert/pexpert/arm64/SHENG.h
++++ b/pexpert/pexpert/arm64/SHENG.h
+@@ -4,6 +4,14 @@
+ #define _PEXPERT_ARM64_SHENG_H
+ 
+ #define SHENG                            1
++#if defined(__arm64e__)
++/* XNU PAC ABI uses architectural instructions, without Apple registers or HVC. */
++#define HAS_APPLE_PAC                    1
++#define HAS_NATIVE_EL1_PAC               1
++#if !__has_feature(ptrauth_calls)
++#error SHENG ARM64E requires compiler pointer authentication
++#endif
++#endif
+ #define NO_MONITOR                       1
+ #define NO_ECORE                         1
+ #define ARM_ARCH_TIMER
+--- a/osfmk/arm64/machine_routines_asm.s
++++ b/osfmk/arm64/machine_routines_asm.s
+@@ -116,6 +116,11 @@
+ 	LOAD_CPU_JOP_KEY x0, x1
+ 	ret
+ #endif /* HAS_PARAVIRTUALIZED_PAC */
++#if HAS_NATIVE_EL1_PAC
++	adrp	x0, Lsheng_el0_pac_pending@page
++	add		x0, x0, Lsheng_el0_pac_pending@pageoff
++	b		EXT(panic)
++#endif
+ 
+ /*
+  * void ml_disable_user_jop_key(uint64_t user_jop_key, uint64_t saved_jop_state)
+@@ -132,8 +137,20 @@
+ 	cbnz		x0, .
+ 	ret
+ #endif /* HAS_PARAVIRTUALIZED_PAC */
++#if HAS_NATIVE_EL1_PAC
++	adrp	x0, Lsheng_el0_pac_pending@page
++	add		x0, x0, Lsheng_el0_pac_pending@pageoff
++	b		EXT(panic)
++#endif
+ 
+ #endif /* defined(HAS_APPLE_PAC) */
++
++#if HAS_NATIVE_EL1_PAC
++	.const
++Lsheng_el0_pac_pending:
++	.asciz "SHENG: EL0 PAC key lifecycle is not implemented"
++	.text
++#endif
+ 
+ #if HAS_BP_RET
+ 

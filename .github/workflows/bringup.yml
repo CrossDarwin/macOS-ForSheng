@@ -7,6 +7,11 @@ on:
         type: choice
         options: [check, preflight, monitor, apple, apple26, macos26-xnu, macos26-kernel, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
         default: check
+      native_arch:
+        description: Native kernel ABI; ARM64E is EL1 bringup only
+        type: choice
+        options: [arm64, arm64e]
+        default: arm64
 permissions:
   contents: read
 concurrency:
@@ -211,6 +216,9 @@ jobs:
     if: inputs.target == 'macos26-xnu' || inputs.target == 'macos26-kernel'
     runs-on: xcode-27
     timeout-minutes: 90
+    env:
+      NATIVE_ARCH: ${{ inputs.native_arch || 'arm64' }}
+      NATIVE_OUT: ${{ inputs.native_arch == 'arm64e' && 'out/macos26-xnu-arm64e' || 'out/macos26-xnu' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -232,37 +240,38 @@ jobs:
       - uses: actions/cache/restore@v4
         id: native-cache
         with:
-          path: out/macos26-xnu/
-          key: macos26-native-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'platform/sheng/macos26/log/**', 'platform/sheng/macos26/crypto/**', 'scripts/build_macos26_xnu.py', 'scripts/build_macos26_crypto.py', 'scripts/seal_macos26_crypto.py') }}
-          restore-keys: macos26-native-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-
+          path: ${{ env.NATIVE_OUT }}/
+          key: macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'platform/sheng/macos26/pac/**', 'platform/sheng/macos26/log/**', 'platform/sheng/macos26/crypto/**', 'scripts/build_macos26_xnu.py', 'scripts/build_macos26_crypto.py', 'scripts/seal_macos26_crypto.py') }}
+          restore-keys: |
+            macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-
       - name: Compile native macOS 26 SHENG sources
         if: inputs.target == 'macos26-xnu'
-        run: python3 scripts/build_macos26_xnu.py --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
       - name: Link native macOS 26 SHENG kernel
         if: inputs.target == 'macos26-kernel'
-        run: python3 scripts/build_macos26_xnu.py --link-kernel --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
       - uses: actions/cache/save@v4
         if: always() && steps.native-cache.outputs.cache-hit != 'true'
         with:
-          path: out/macos26-xnu/
+          path: ${{ env.NATIVE_OUT }}/
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: success() && inputs.target == 'macos26-kernel'
         with:
           name: macos26-sheng-kernel
           path: |
-            out/macos26-xnu/build.json
-            out/macos26-xnu/kernel.development.sheng
-            out/macos26-xnu/kernel.development.sheng.map
-            out/macos26-xnu/kernel.development.sheng.dSYM/
+            ${{ env.NATIVE_OUT }}/build.json
+            ${{ env.NATIVE_OUT }}/kernel.development.sheng
+            ${{ env.NATIVE_OUT }}/kernel.development.sheng.map
+            ${{ env.NATIVE_OUT }}/kernel.development.sheng.dSYM/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: macos26-sheng-diagnostics
           path: |
-            out/macos26-xnu/build.json
-            out/macos26-xnu/logs/
+            ${{ env.NATIVE_OUT }}/build.json
+            ${{ env.NATIVE_OUT }}/logs/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
@@ -271,15 +280,15 @@ jobs:
           path: |
             out/kdk-verification.json
             out/logs/kdk-signature.log
-            out/macos26-xnu/build.json
-            out/macos26-xnu/logs/
-            out/macos26-xnu/ArmCpu.o
-            out/macos26-xnu/ArmDTPlatform.o
-            out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a
-            out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/compile_commands.json
-            out/macos26-xnu/kernel.development.sheng
-            out/macos26-xnu/kernel.development.sheng.map
-            out/macos26-xnu/kernel.development.sheng.dSYM/
-            out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.link/
+            ${{ env.NATIVE_OUT }}/build.json
+            ${{ env.NATIVE_OUT }}/logs/
+            ${{ env.NATIVE_OUT }}/ArmCpu.o
+            ${{ env.NATIVE_OUT }}/ArmDTPlatform.o
+            ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a
+            ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/compile_commands.json
+            ${{ env.NATIVE_OUT }}/kernel.development.sheng
+            ${{ env.NATIVE_OUT }}/kernel.development.sheng.map
+            ${{ env.NATIVE_OUT }}/kernel.development.sheng.dSYM/
+            ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.link/
           if-no-files-found: warn
           retention-days: 7
