@@ -531,3 +531,10 @@ kernel PA=0x881004000、panic PA=0x882A04000；入口ESR为0不能用来排除�
 TTBR0=0x8811C8000、TTBR1=0x8811CC000，未发生异常。
 说明该高物理地址可由本版启动页表处理；不模拟UEFI入口状态、framebuffer或Gunyah，不能据此排除固件相关问题。
 新增scripts/observe_native_bootstrap.py保存这项有边界的实际内核观察，临时flat映像运行结束后删除。
+
+Actions 39990930289（63c05d8）完成0025内核，UUID A7ED53F3-6EF8-3635-B671-754E84E396FB。
+该版高物理地址观察通过，完整QEMU继续完成corecrypto POST并停在已知Image4接口缺失处；控制台后的诊断开关已关闭。
+用户要求检查Gunyah等组件后，补充外层EL2调试陷入对照：同一内核设置MDCR_EL2.TDOSA后，在XNU=1之后的OSLAR写入陷入EL2。
+实际ELR_EL2=0x8815BA07C、ESR_EL2=0x622807E0、指令0xD510109F，EL1 ESR仍为0。
+这是可复现的覆盖边界，不是实机Gunyah归因。新增0026跳过SHENG冷启动及reset入口的可选OSLAR硬件调试解锁。
+该版尚待目标编译和同一EL2陷入策略下的对照；不改写固件分区，不声称已关闭Gunyah。

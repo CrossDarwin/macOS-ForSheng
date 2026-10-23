@@ -1,0 +1,22 @@
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -128,6 +128,8 @@
+ 	// Preserve x0 for start_first_cpu, if called
+ 	// Unlock the core for debugging
++#if !SHENG
+ 	msr		OSLAR_EL1, xzr
++#endif
+ 	msr		DAIFSet, #(DAIFSC_ALL)				// Disable all interrupts
+ 
+ #if !(defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR) || defined(KERNEL_INTEGRITY_PV_CTRR))
+@@ -493,8 +496,8 @@
+ #if SHENG
+ 	isb
+ 	bl Lsheng_early_enter
+-	// Install the low vectors before the first potentially trapped debug access.
+-	msr OSLAR_EL1, xzr
++	// Hardware debug unlock can trap to firmware EL2. Native early boot
++	// uses neither hardware breakpoints nor watchpoints, so leave it alone.
+ #endif
+ 
+ 

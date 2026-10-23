@@ -46,6 +46,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0023-native-early-exception-screen.patch',
     ROOT / 'platform/sheng/macos26/patches/0024-native-bootstrap-sync-screen.patch',
     ROOT / 'platform/sheng/macos26/patches/0025-native-mmu-transition-vectors.patch',
+    ROOT / 'platform/sheng/macos26/patches/0026-native-skip-early-debug-unlock.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

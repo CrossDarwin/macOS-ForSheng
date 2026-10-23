@@ -25,7 +25,13 @@ def main() -> None:
     parser.add_argument('--clang', type=Path, required=True)
     parser.add_argument('--qemu', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--trap-debug-unlock', action='store_true',
+                        help='QEMU only: run at EL1 under an EL2 host that traps OS debug accesses')
+    parser.add_argument('--expect-debug-trap', action='store_true',
+                        help='Accept only an actual EL2 trap on OSLAR_EL1 as the regression control')
     args = parser.parse_args()
+    if args.expect_debug_trap and not args.trap_debug_unlock:
+        parser.error('--expect-debug-trap requires --trap-debug-unlock')
     kernel, symbols, identity = identify(args.kernel_build.resolve())
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
@@ -53,18 +59,35 @@ def main() -> None:
     (out / 'boot-args.bin').write_bytes(boot)
     entry = base + int(identity['entry_va'], 16) - va
     stub = out / 'entry.S'
-    stub.write_text('.text\n.global _start\n_start:\n'
-                    ' msr daifset, #15\n'
-                    f' ldr x0, ={args_pa:#x}\n ldr x1, ={entry:#x}\n br x1\n')
+    setup = ''
+    transfer = ' br x1\n'
+    if args.trap_debug_unlock:
+        setup = (' adr x0, el2_vectors\n msr vbar_el2, x0\n'
+                 ' ldr x0, =0x30080000000\n msr hcr_el2, x0\n'
+                 ' mov x0, #0x400\n msr mdcr_el2, x0\n'
+                 ' msr cptr_el2, xzr\n'
+                 ' ldr x0, =0x30d00808\n msr sctlr_el1, x0\n'
+                 ' ldr x0, =0x40210000\n msr sp_el1, x0\n'
+                 ' mov x0, #0x3c5\n msr spsr_el2, x0\n')
+        transfer = ' msr elr_el2, x1\n isb\n eret\n'
+    stub.write_text('.text\n.global _start\n_start:\n msr daifset, #15\n' + setup +
+                    f' ldr x0, ={args_pa:#x}\n ldr x1, ={entry:#x}\n' + transfer +
+                    '.balign 2048\nel2_vectors:\n.rept 16\n b el2_trap\n.balign 128\n.endr\n'
+                    '.global el2_trap\nel2_trap:\n b el2_trap\n')
     linker = out / 'entry.ld'
     linker.write_text('ENTRY(_start)\nSECTIONS { . = 0x40200000; .text : { *(.text*) } }\n')
     subprocess.run([str(args.clang.resolve()), '--target=aarch64-none-elf', '-nostdlib',
                     '-fuse-ld=lld', '-Wl,-T,' + str(linker), str(stub),
                     '-o', str(out / 'entry.elf')], check=True, timeout=30)
+    elf_symbols = {line.split()[2]: int(line.split()[0], 16) for line in
+                   subprocess.check_output([str(args.clang.resolve().parent / 'llvm-nm'),
+                                            str(out / 'entry.elf')], text=True).splitlines()
+                   if len(line.split()) == 3}
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
-    command = [str(args.qemu.resolve()), '-M', 'virt,virtualization=off,secure=off,gic-version=3',
+    virtualization = 'on' if args.trap_debug_unlock else 'off'
+    command = [str(args.qemu.resolve()), '-M', f'virt,virtualization={virtualization},secure=off,gic-version=3',
                '-cpu', 'cortex-a710', '-m', '34816', '-nodefaults', '-display', 'none',
                '-serial', 'none', '-monitor', 'none', '-no-reboot',
                '-device', f'loader,file={out}/entry.elf,cpu-num=0',
@@ -93,6 +116,8 @@ def main() -> None:
                 checkpoint = symbols['_arm_init']
                 if request(f'Z1,{checkpoint:x},4') != 'OK':
                     raise RuntimeError('QEMU refused the bootstrap breakpoint')
+                if args.trap_debug_unlock and request(f'Z1,{elf_symbols["el2_trap"]:x},4') != 'OK':
+                    raise RuntimeError('QEMU refused the EL2 trap breakpoint')
                 timed_out = False
                 try:
                     request('c')
@@ -103,6 +128,7 @@ def main() -> None:
                 core = struct.unpack('<33Q', registers[:264])
                 result = dict(uuid=identity['uuid'], kernel_pa=hex(base), boot_args_pa=hex(args_pa),
                               pc=hex(core[32]), sp=hex(core[31]), x0=hex(core[0]),
+                              debug_access_trapped_by_test_host=args.trap_debug_unlock,
                               timed_out=timed_out, hardware_executed=False, c_initialization_executed=False)
 
                 def feature(name: str) -> ET.Element:
@@ -124,12 +150,23 @@ def main() -> None:
                     for reg in feature(include.attrib['href']).findall('reg'):
                         name = reg.attrib['name']
                         if name in ('TCR_EL1', 'SCTLR_EL1', 'TTBR0_EL1', 'TTBR1_EL1',
-                                    'ESR_EL1', 'ELR_EL1', 'FAR_EL1', 'VBAR_EL1'):
+                                    'ESR_EL1', 'ELR_EL1', 'FAR_EL1', 'VBAR_EL1',
+                                    'ESR_EL2', 'ELR_EL2', 'FAR_EL2', 'MDCR_EL2', 'HCR_EL2'):
                             value = bytes.fromhex(request(f'p{int(reg.attrib["regnum"]):x}'))
                             result[name] = hex(int.from_bytes(value, 'little'))
                 reached = not timed_out and core[32] == checkpoint
                 result['reached_c_entry'] = reached
-                if reached:
+                if args.trap_debug_unlock and int(result.get('MDCR_EL2', '0'), 16) != 0x400:
+                    raise RuntimeError('the QEMU host did not retain the requested debug trap policy')
+                if args.expect_debug_trap:
+                    fault_pa = int(result.get('ELR_EL2', '0'), 16)
+                    trapped = not timed_out and core[32] == elf_symbols['el2_trap']
+                    instruction = request(f'm{fault_pa:x},4') if trapped else ''
+                    result['trapped_instruction'] = instruction
+                    reached = (trapped and int(result['ESR_EL2'], 16) >> 26 == 0x18
+                               and instruction == '9f1010d5')
+                    result['expected_oslar_trap_captured'] = reached
+                elif reached:
                     result['entry_instruction'] = request(f'm{checkpoint:x},4')
                     expected = None
                     for segment in identity['segments']:
@@ -141,7 +178,7 @@ def main() -> None:
                 (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
                 print(json.dumps(result), flush=True)
                 if not reached:
-                    raise RuntimeError('high physical bootstrap did not reach the identified C entry')
+                    raise RuntimeError('bootstrap outcome differs from the requested C-entry/debug-trap observation')
         finally:
             proc.terminate()
             try:
