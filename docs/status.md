@@ -421,3 +421,7 @@ Actions 39972044375 未分配 runner，GitHub 注释为账户付款失败或支�
 复查 39970542294 的 source-archive.log，缓存命中后仍编译 975 个翻译单元。
 构建器改为只在头文件内容改变时更新暂存文件，KDK 展开路径固定为当前 profile，不再携带运行编号。
 本地主机已确认不变头文件保留 mtime、变更内容正常替换；实际 CI 增量效果待账户恢复后确认。
+
+本地 Clang 22 已将实际修改的链式还原函数编译为 ARM64E Mach-O，使用原 Mach-O/链式结构头文件及最小外部类型声明。
+生成代码包含 PACIA/PACIB/PACDA/PACDB，没有移除认证；该定向编译只确认新增函数的目标语法与指令生成。
+整颗 XNU 的 Xcode 构建、同版 QEMU POST/屏幕日志和 sheng 镜像封装仍未完成，等待 GitHub 账户恢复或可用 macOS 构建机。
