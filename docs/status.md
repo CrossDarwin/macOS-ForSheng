@@ -587,3 +587,11 @@ boot_args PA按新内核末尾计算为0x882A08000，不再沿用旧版固定地
 新增0029在同一已映射行记录16个早期C阶段，青色与原汇编绿色区分，范围从重定位之前到arm_vm_init调用之前。
 采用强制内联的直接写屏，不依赖签名函数指针、日志锁或尚未建立的控制台；单独保存C阶段值并由完整QEMU观察读取。
 ARM64E对象编译无运行时调用，补丁与已准备的同版源码匹配。完整内核构建及实机C阶段结果待完成。
+
+Actions 40001339282（d924ef5）成功构建0029，UUID 7ECEED9F-1220-3FA5-8182-FCBD95E8C7F3。
+实际内核在sheng物理地址和原EL2调试陷入限制下到达arm_init首条指令前，汇编阶段F及16个实际像素全绿。
+完整UEFI QEMU读取到sheng_bootstrap_c_stage=0xF，随后完成VM、控制台及corecrypto POST，诊断开关关闭，仍在Image4接口缺失处panic；512 KiB标准panic完整、CRC/UUID匹配。
+共用C头的定向QEMU运行显示0/7/F青色，其余灰色，相邻像素未变；这项显示测试不代表实机C初始化通过。
+候选88b607ff20b2a73462e86f7c4c158a9258b2d1d195903f70aa188505b8a92d1f已封装。
+Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次RAM启动收到Booting OKAY。实机青色阶段结果待用户反馈。
+旧762f7dda部署镜像和本次已完成观察的ESP暂存已删除，恢复备份、dSYM、字符日志和panic现场保留。
