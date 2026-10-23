@@ -5,7 +5,7 @@ on:
       target:
         description: Build target; no job deploys to hardware
         type: choice
-        options: [check, preflight, monitor, apple, apple26, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
+        options: [check, preflight, monitor, apple, apple26, macos26-xnu, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
         default: check
 permissions:
   contents: read
@@ -203,5 +203,42 @@ jobs:
             out/sheng-abi-bootstrap/kernel-audit.json
             out/sheng-abi-bootstrap/restored-headers.json
             out/sheng-abi-bootstrap/work/sheng/logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+  macos26-xnu:
+    if: inputs.target == 'macos26-xnu'
+    needs: check
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python3 scripts/sources.py fetch --group core
+      - run: python3 scripts/apply_patches.py
+      - run: python3 scripts/sources.py fetch --lock config/macos26-sources.json --group macos26
+      - run: brew install cmake ninja unifdef
+      - uses: actions/cache@v4
+        with:
+          path: private/apple/Kernel_Debug_Kit_26.5_build_25F71.dmg
+          key: macos26-kdk-${{ hashFiles('config/macos26.json') }}
+      - run: bash scripts/verify_kdk.sh config/macos26.json
+      - name: Compile native macOS 26 SHENG sources
+        run: python3 scripts/build_macos26_xnu.py --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos26-sheng-source
+          path: |
+            out/kdk-verification.json
+            out/logs/kdk-signature.log
+            out/macos26-xnu/build.json
+            out/macos26-xnu/logs/
+            out/macos26-xnu/ArmCpu.o
+            out/macos26-xnu/ArmDTPlatform.o
+            out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a
+            out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/compile_commands.json
           if-no-files-found: warn
           retention-days: 7

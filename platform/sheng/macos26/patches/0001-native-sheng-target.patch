@@ -1,0 +1,109 @@
+diff --git a/config/MASTER.arm64.MacOSX b/config/MASTER.arm64.MacOSX
+index 69219cc..27c6d77 100644
+--- a/config/MASTER.arm64.MacOSX
++++ b/config/MASTER.arm64.MacOSX
+@@ -21,7 +21,12 @@
+ #else
+ #  ARM_EXTRAS_BASE = [ config_pmap_ppl ]
+ #endif
+-#  KERNEL_BASE =    [ arm64 medium msgb_large config_requires_u32_munging config_delay_idle_sleep config_proc_udata_storage config_uexc config_darkboot ARM_EXTRAS_BASE ]
++#if SOC_CONFIG_sheng
++#  SHENG_MACHINE = [ nos_arm_asm nos_arm_pmap ]
++#else
++#  SHENG_MACHINE = [ ]
++#endif
++#  KERNEL_BASE =    [ SHENG_MACHINE arm64 medium msgb_large config_requires_u32_munging config_delay_idle_sleep config_proc_udata_storage config_uexc config_darkboot ARM_EXTRAS_BASE ]
+ #  KERNEL_RELEASE = [ KERNEL_BASE release ]
+ #  KERNEL_DEV =     [ KERNEL_BASE development mach_assert config_xnupost proc_ref_debug config_proc_resource_limits config_ext_paniclog ]
+ #  KERNEL_DEBUG =   [ KERNEL_BASE debug mach_assert config_xnupost config_waitq_stats config_workloop_debug config_proc_resource_limits config_ext_paniclog ]
+@@ -58,7 +63,7 @@
+ #  LIBKERN_RELEASE =[ LIBKERN_BASE zlib ]
+ #  LIBKERN_DEV =    [ LIBKERN_BASE zlib iotracking ]
+ #  LIBKERN_DEBUG =  [ LIBKERN_BASE zlib iotracking ]
+-#if SOC_IS_VIRTUALIZED
++#if SOC_IS_VIRTUALIZED || SOC_CONFIG_sheng
+ #  CPU_COUNTERS_BASE = [ ]
+ #else /*!SOC_IS_VIRTUALIZED*/
+ #  CPU_COUNTERS_BASE = [ config_cpu_counters config_pervasive_cpi config_pervasive_energy ]
+diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
+index e37762b..6c7791e 100644
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -29,7 +29,7 @@ SUPPORTED_ARM64_MACHINE_CONFIGS = NONE
+ else ifneq ($(findstring _host,$(RC_ProjectName)),)
+ SUPPORTED_ARM64_MACHINE_CONFIGS = NONE
+ else
+-SUPPORTED_ARM64_MACHINE_CONFIGS = T6000 T6020 T6030 T6031 T6041 T6050 T8101 T8103 T8112 T8122 T8132 T8142 VMAPPLE
++SUPPORTED_ARM64_MACHINE_CONFIGS = T6000 T6020 T6030 T6031 T6041 T6050 T8101 T8103 T8112 T8122 T8132 T8142 VMAPPLE SHENG
+ 
+ SPTM_ENABLED_SOCS_MacOSX = t6000 t8112 t6020 t8122 t6030 t6031 t6041 t6050 t8132 t8142
+ EXCLAVES_ENABLED_SOCS_MacOSX = t8142 t6050
+@@ -92,6 +92,8 @@ MACHINE_FLAGS_ARM64_T8122 = -DARM64_BOARD_CONFIG_T8122_T8130		-mcpu=apple-m3
+ MACHINE_FLAGS_ARM64_T8132 = -DARM64_BOARD_CONFIG_T8132			-mcpu=apple-m4
+ MACHINE_FLAGS_ARM64_T8142 = -DARM64_BOARD_CONFIG_T8142 			-mcpu=apple-m4+memtag+predres2
+ 
++MACHINE_FLAGS_ARM64_SHENG = -DARM64_BOARD_CONFIG_SHENG -march=armv8-a
++
+ MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a+sme2
+ 
+ 
+diff --git a/pexpert/pexpert/arm64/Makefile b/pexpert/pexpert/arm64/Makefile
+index 75938b5..1d29f3a 100644
+--- a/pexpert/pexpert/arm64/Makefile
++++ b/pexpert/pexpert/arm64/Makefile
+@@ -33,7 +33,8 @@ PRIVATE_KERNELFILES = \
+ 	H15.h \
+ 	H16.h \
+ 	H17.h \
+-	VMAPPLE.h
++	VMAPPLE.h \
++	SHENG.h
+ 
+ 
+ # Headers installed into System.framework/PrivateHeaders (userspace internal SDK only).
+diff --git a/pexpert/pexpert/arm64/SHENG.h b/pexpert/pexpert/arm64/SHENG.h
+new file mode 100644
+index 0000000..310c5cd
+--- /dev/null
++++ b/pexpert/pexpert/arm64/SHENG.h
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: MIT */
++/* Native EL1 platform, based on the verified UniXNU sheng machine layer. */
++#ifndef _PEXPERT_ARM64_SHENG_H
++#define _PEXPERT_ARM64_SHENG_H
++
++#define SHENG                            1
++#define NO_MONITOR                       1
++#define NO_ECORE                         1
++#define ARM_ARCH_TIMER
++#define __ARM_ARCH__                     8
++#define __ARM_VMSA__                     8
++#define __ARM_VFP__                      4
++#define __ARM_COHERENT_CACHE__            1
++#define __ARM_DEBUG__                    7
++#define __ARM_PAN_AVAILABLE__            1
++#if !ARM_LARGE_MEMORY
++#define __ARM64_PMAP_SUBPAGE_L1__         1
++#define __ARM64_PMAP_KERN_SUBPAGE_L1__    1
++#endif
++
++#endif /* _PEXPERT_ARM64_SHENG_H */
+diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_config.h
+index 5a6cd33..e00f5ea 100644
+--- a/pexpert/pexpert/arm64/board_config.h
++++ b/pexpert/pexpert/arm64/board_config.h
+@@ -304,6 +304,14 @@
+ 
+ 
+ 
++#ifdef ARM64_BOARD_CONFIG_SHENG
++#include <pexpert/arm64/SHENG.h>
++#define MAX_L2_CLINE                   6
++#define MAX_CPUS                       8
++#define MAX_CPU_CLUSTERS               1
++#define CORE_NCTRS                     8
++#endif /* ARM64_BOARD_CONFIG_SHENG */
++
+ #ifdef ARM64_BOARD_CONFIG_VMAPPLE
+ #include <pexpert/arm64/VMAPPLE.h>
+ 
