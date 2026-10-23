@@ -152,7 +152,8 @@ def main() -> None:
                         ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                         ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
-                        ('_sheng_early_exception_record', 192)):
+                        ('_sheng_early_exception_record', 192),
+                        ('_sheng_bootstrap_capture_enabled', 4)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
     log_requests = []
@@ -202,11 +203,14 @@ def main() -> None:
     tcr = regs['TCR_EL1']
     observed_globals = {}
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
-                        ('_gPanicBase', 8), ('_gPanicSize', 4)):
+                        ('_gPanicBase', 8), ('_gPanicSize', 4),
+                        ('_sheng_bootstrap_capture_enabled', 4)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    if '_sheng_bootstrap_capture_enabled' in addresses:
+        record['bootstrap_diagnostic_disarmed'] = observed_globals['_sheng_bootstrap_capture_enabled'] == 0
     if '_sheng_early_exception_record' in addresses:
         key = f'{addresses["_sheng_early_exception_record"]:x}:c0'
         raw = bytes.fromhex(snapshot['memory'][key])

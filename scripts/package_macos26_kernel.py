@@ -40,6 +40,8 @@ def main() -> None:
         raise ValueError('only the explicit, recorded Image4 stop is admitted for the current hardware experiment')
     if '_sheng_log_buffer' not in symbols:
         raise ValueError('native hardware candidate requires the retained kernel logger')
+    if '_sheng_mmu_sync_fault' in symbols and not observed.get('bootstrap_diagnostic_disarmed'):
+        raise ValueError('requires this MMU-on diagnostic to disarm after console setup in QEMU')
     firmware = json.loads(args.firmware_build.read_text())
     patch = 'patches/UniXNU/0007-native-16k-bootstrap-congruence.patch'
     panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'
@@ -130,6 +132,7 @@ def main() -> None:
                       native_panic_region_bytes=524288,
                       handoff_progress='green=entered blue=cache-clean orange=MMU-off',
                       native_early_exception_screen='_sheng_early_exception_record' in symbols,
+                      native_mmu_on_exception_screen='_sheng_mmu_sync_fault' in symbols,
                       firmware_sha256=firmware['sha256'], temporary_ram_boot=True,
                       hardware_executed=False, userland_started=False,
                       storage_drivers_linked=False, partition_images_written=False)
@@ -145,7 +148,8 @@ def main() -> None:
             '内核接管后应显示文本控制台，保存最后画面。\n'
             '顶部三条标记：绿色=进入交接汇编，蓝色=缓存清理完成，橙色=MMU关闭后执行。\n'
             '这些标记均来自加载器，不能单独证明XNU已经执行。\n'
-            '带早期现场的内核会显示 XNU=1；若捕获低位异常，XNU=2 并显示 ELR/ESR/FAR，拍下全部寄存器。\n'
+            'XNU=1 表示入口已执行；XNU=2 为低位异常，XNU=3 为控制台前 MMU 开启时的同步异常。\n'
+            '若显示 XNU=2/3，请拍下 ELR/ESR/FAR 与全部控制寄存器。\n'
             '若需要导出 RAM 日志，先返回 fastboot；根据本次实际 PA 构建只读 reader。\n'
             'RAM 跨重启保留和 USB reader 尚需实机验收；不得使用 QEMU 的 PA。\n')
         print(destination / image.name)

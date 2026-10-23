@@ -511,3 +511,9 @@ ee83d0f8 实机用户回传为绿色、蓝色两条，未见橙色，随后重�
 独立 QEMU 16K 高位执行测试通过：关闭 TTBR0 后触发真实 BRK，XNU=3，ELR=0xffff8000402000e0、ESR=0xf2000124，保存的 TTBR0=0、TCR.EPD0=1。
 诊断开关关闭后，原异常分发正常执行；复制后的低位向量与 ARM64E 目标汇编同时通过。
 该新路径尚待完整 XNU 目标编译及运行；未部署新实机镜像。
+
+Actions 39987628332（fb141b0）已成功构建包含0024的ARM64E内核，UUID 75EEE56A-3EC5-3A1C-B6BF-55CAF49A0432。
+同版QEMU完成VM、IOKit/NVRAM和全部corecrypto POST（222 ms），控制台建立后sheng_bootstrap_capture_enabled实际为0。
+完整字符日志8801字节，无忙写丢失，512 KiB标准panic区CRC/UUID匹配，仍停在已知Image4接口缺失处，未进入BSD。
+新实机候选为94f5fa427cc58ebb68608d467cfc89ef6fc767958ca24ce6304afdd6793d3314，按a槽基线进行RAM临时启动。
+被替代的6c98fe8c镜像与完成观察的ESP暂存已删除，内核、dSYM、寄存器和panic诊断保留。
