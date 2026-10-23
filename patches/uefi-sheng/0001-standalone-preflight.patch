@@ -1,0 +1,49 @@
+diff --git a/Platforms/Xiaomi/shengPkg/sheng.dsc b/Platforms/Xiaomi/shengPkg/sheng.dsc
+index 367d62a..fe86f3c 100644
+--- a/Platforms/Xiaomi/shengPkg/sheng.dsc
++++ b/Platforms/Xiaomi/shengPkg/sheng.dsc
+@@ -25,6 +25,10 @@
+   FLASH_DEFINITION               = shengPkg/sheng.fdf
+   USE_CUSTOM_DISPLAY_DRIVER      = 0
+
++!ifndef SHENG_PREFLIGHT_ONLY
++  DEFINE SHENG_PREFLIGHT_ONLY = 0
++!endif
++
+   #
+   # 0 = Mu drivers only. The previous stage's display keeps scanning out, so
+   #     the boot manager is visible without any vendor hardware driver.
+@@ -46,6 +50,10 @@
+ !endif
+
+ [PcdsFixedAtBuild]
++!if $(SHENG_PREFLIGHT_ONLY) == 1
++  # UniXNU's existing FV registrar starts the probe without a storage volume.
++  gUniXNUPkgTokenSpaceGuid.PcdUniXNUApplicationFile|{ GUID("624B1B42-3618-4A59-B6B3-D5843A49CD21") }
++!endif
+   #
+   # DDR Memory
+   #
+@@ -106,6 +114,9 @@
+   ConfigurationMapLib|shengPkg/Library/ConfigurationMapLib/ConfigurationMapLib.inf
+
+ [Components]
++!if $(SHENG_PREFLIGHT_ONLY) == 1
++  ShengPreflight/ShengPreflight.inf
++!endif
+   #
+   # ACPI Tables
+   #
+diff --git a/Platforms/Xiaomi/shengPkg/sheng.fdf b/Platforms/Xiaomi/shengPkg/sheng.fdf
+index 57d88b9..3059eb1 100644
+--- a/Platforms/Xiaomi/shengPkg/sheng.fdf
++++ b/Platforms/Xiaomi/shengPkg/sheng.fdf
+@@ -93,5 +93,8 @@ READ_LOCK_STATUS   = TRUE
+   INF SiliciumPkg/Drivers/SmBiosTableDxe/SmBiosTableDxe.inf
+
+   # UniXNU
++!if $(SHENG_PREFLIGHT_ONLY) == 1
++  INF ShengPreflight/ShengPreflight.inf
++!endif
+   INF UniXNUPkg/Application/UniXNU/UniXNU.inf
+   INF UniXNUPkg/Driver/UniXNUDxe/UniXNUDxe.inf

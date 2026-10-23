@@ -1,0 +1,190 @@
+diff --git a/scripts/package-sheng-boot-v4.py b/scripts/package-sheng-boot-v4.py
+index 6557d1f..ee957e0 100755
+--- a/scripts/package-sheng-boot-v4.py
++++ b/scripts/package-sheng-boot-v4.py
+@@ -12,6 +12,7 @@ stock header byte for byte.
+ Evidence: build/sheng/boot/report-v4.json (ignored, like all build output).
+ No bootloader acceptance is claimed; hardware boot remains untested.
+ """
++import argparse
+ import gzip
+ import hashlib
+ import json
+@@ -33,8 +34,9 @@ def digest(data):
+     return hashlib.sha256(data).hexdigest()
+
+
+-def parse_stock_header():
+-    data = STOCK.read_bytes()
++def parse_stock_header(path=STOCK):
++    with path.open('rb') as stream:
++        data = stream.read(V4_PAGE)
+     assert data[:8] == b'ANDROID!', 'stock boot.img magic'
+     (kernel_size, ramdisk_size, os_version, header_size) = struct.unpack_from('<4I', data, 8)
+     (header_version,) = struct.unpack_from('<I', data, 0x28)
+@@ -51,6 +53,8 @@ def parse_stock_header():
+
+ def build_v4_header(kernel_size, stock):
+     """Fixed fields mirror stock; only kernel_size describes our payload."""
++    if stock['ramdisk_size'] or stock['signature_size']:
++        raise ValueError('UEFI-only v4 packaging requires zero stock ramdisk and signature sizes')
+     header = bytearray(V4_HEADER_SIZE)
+     header[0:8] = b'ANDROID!'
+     struct.pack_into('<4I', header, 8, kernel_size, stock['ramdisk_size'],
+@@ -64,9 +68,21 @@ def build_v4_header(kernel_size, stock):
+
+
+ def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--skip-qemu', action='store_true')
++    parser.add_argument('--fixture', type=Path)
++    parser.add_argument('--compression', choices=('gzip', 'none'), default='gzip')
++    parser.add_argument('--boot-template', type=Path, default=STOCK,
++                        help='boot image whose loader metadata matches the current Android slot')
++    args = parser.parse_args()
+     # Rebuild shim + FD artifacts and rerun the QEMU shim fixtures via the
+     # existing v0 recipe, which remains the shim's validation entry point.
+-    subprocess.run(['python3', ROOT / 'scripts/package-sheng-boot.py'], check=True)
++    command = ['python3', ROOT / 'scripts/package-sheng-boot.py']
++    if args.skip_qemu:
++        command.append('--skip-qemu')
++    if args.fixture:
++        command.extend(['--fixture', args.fixture])
++    subprocess.run(command, check=True)
+     config_fd_size = 0x300000
+
+     fd = (ROOT / 'uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd').read_bytes()
+@@ -74,9 +90,9 @@ def main():
+         raise SystemExit('FD size differs from sheng configuration')
+     shim = (OUT / 'shim.bin').read_bytes()
+     combined = shim + fd
+-    kernel = gzip.compress(combined, mtime=0)
++    kernel = gzip.compress(combined, mtime=0) if args.compression == 'gzip' else combined
+
+-    stock = parse_stock_header()
++    stock = parse_stock_header(args.boot_template)
+     header = build_v4_header(len(kernel), stock)
+     pages = (len(kernel) + V4_PAGE - 1) // V4_PAGE
+     image = header + b'\0' * (V4_PAGE - V4_HEADER_SIZE) + kernel \
+@@ -87,34 +103,39 @@ def main():
+     parsed = parse_image(image)
+     if parsed['kernel'] != kernel:
+         raise SystemExit('v4 container round-trip failed')
+-    decompressed = gzip.decompress(parsed['kernel'])
++    decompressed = gzip.decompress(parsed['kernel']) if args.compression == 'gzip' else parsed['kernel']
+     if decompressed != combined:
+         raise SystemExit('v4 payload round-trip failed')
+-    if struct.unpack_from('<QQ', decompressed, 8) != (0xA7100000, len(shim) + len(fd)):
++    arm64_header = json.loads((OUT / 'report.json').read_text())['arm64_header']
++    if struct.unpack_from('<QQQ', decompressed, 8) != (arm64_header['text_offset'], len(shim) + len(fd), arm64_header['flags']):
+         raise SystemExit('shim ARM64 image_size does not cover shim + FD')
+
+     report = {
+         'container_sha256': digest(image), 'container_bytes': len(image),
+-        'kernel_gzip_sha256': digest(kernel), 'payload_sha256': digest(combined),
++        'kernel_sha256': digest(kernel), 'compression': args.compression, 'payload_sha256': digest(combined),
+         'fd_sha256': digest(fd), 'shim_sha256': digest(shim), 'shim_bytes': len(shim),
++        'arm64_header': arm64_header,
+         'stock_header': stock,
+         'field_alignment': {
+             'ramdisk_size': 'stock', 'os_version': 'stock', 'header_size': 'stock',
+             'reserved': 'stock', 'header_version': 4, 'cmdline': 'stock',
+             'signature_size': 'stock', 'page_size': 4096,
+-            'differences': ['kernel_size describes gzip(BootShim+FD)'],
++            'differences': [f'kernel_size describes {args.compression} BootShim+FD payload'],
+         },
+         'dtb_source': 'on-device vendor_boot (ABL runtime fixups); none appended',
+         'qemu': json.loads((OUT / 'report.json').read_text())['qemu'],
++        'qemu_skipped': args.skip_qemu,
+         'hardware_tested': False, 'bootloader_acceptance_proven': False,
+     }
+     (OUT / 'report-v4.json').write_text(json.dumps(report, indent=2) + '\n')
+     print(json.dumps({k: report[k] for k in
+-                      ('container_bytes', 'container_sha256', 'kernel_gzip_sha256',
++                      ('container_bytes', 'container_sha256', 'kernel_sha256',
+                        'payload_sha256', 'stock_header', 'field_alignment')}, indent=2))
+
+
+ def parse_image(image):
++    if len(image) < V4_PAGE:
++        raise ValueError('truncated v4 header page')
+     if image[:8] != b'ANDROID!':
+         raise SystemExit('bad magic')
+     (kernel_size, ramdisk_size, _os, header_size) = struct.unpack_from('<4I', image, 8)
+@@ -122,6 +143,8 @@ def parse_image(image):
+     signature_size = struct.unpack_from('<I', image, V4_HEADER_SIZE - 4)[0]
+     if header_version != 4 or header_size != V4_HEADER_SIZE:
+         raise SystemExit('unexpected header geometry')
++    if not kernel_size or ramdisk_size or signature_size:
++        raise ValueError('expected a UEFI-only kernel payload without ramdisk or boot signature')
+     kernel = image[V4_PAGE:V4_PAGE + kernel_size]
+     expected = V4_PAGE + ((kernel_size + V4_PAGE - 1) // V4_PAGE) * V4_PAGE \
+         + ((ramdisk_size + V4_PAGE - 1) // V4_PAGE) * V4_PAGE \
+diff --git a/scripts/package-sheng-boot.py b/scripts/package-sheng-boot.py
+index de33736..f4d60a6 100755
+--- a/scripts/package-sheng-boot.py
++++ b/scripts/package-sheng-boot.py
+@@ -25,6 +25,18 @@ def digest(data):
+     return hashlib.sha256(data).hexdigest()
+
+
++def image_header(shim, payload_size, text_offset, flags):
++    if text_offset < 0 or text_offset >= 0x200000 or text_offset % 4096:
++        raise ValueError('sheng Image text_offset must be a page-aligned offset below 2 MiB, not an FD address')
++    if flags != 0xA:
++        raise ValueError('sheng Image flags must match the audited stock 4 KiB, relocatable layout')
++    if (len(shim) < 64 or shim[56:60] != b'ARM\x64'
++            or struct.unpack_from('<QQQ', shim, 8) != (text_offset, len(shim) + payload_size, flags)
++            or any(shim[32:56])):
++        raise ValueError('ARM64 header does not describe the shim load offset, complete image and placement')
++    return dict(text_offset=text_offset, image_size=len(shim)+payload_size, flags=flags)
++
++
+ def abl_dtb():
+     # Appended DTB must carry the stock splash_region or ABL powers the panel off.
+     subprocess.run(['python3', ROOT / 'scripts/sheng-abl-dtb.py'], check=True)
+@@ -34,6 +46,8 @@ def abl_dtb():
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--skip-qemu', action='store_true', help='Package with byte round-trip checks only; record that shim execution was not tested')
++    parser.add_argument('--fixture', type=Path, default=ROOT / 'scripts/qemu-entry/bootshim-fixture.S',
++                        help='UniXNU boot shim execution fixture in a separate source checkout')
+     args = parser.parse_args()
+     OUT.mkdir(parents=True, exist_ok=True)
+     config = tomllib.loads((ROOT / 'uefi-sheng/Resources/Configs/sheng.toml').read_text())
+@@ -47,7 +61,10 @@ def main():
+     fd = (ROOT / 'uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd').read_bytes()
+     if len(fd) != size:
+         raise SystemExit('FD size differs from sheng configuration')
+-    common = [tools['clang'], '--target=aarch64-none-elf', '-c', f'-DFD_BASE={base}', f'-DFD_SIZE={size}']
++    text_offset = config['boot_shim']['image_text_offset']
++    flags = config['boot_shim']['image_flags']
++    common = [tools['clang'], '--target=aarch64-none-elf', '-c', f'-DFD_BASE={base}', f'-DFD_SIZE={size}',
++              f'-DIMAGE_TEXT_OFFSET={text_offset}', f'-DIMAGE_FLAGS={flags}']
+     run(*common, '-DREQUIRES_KERNEL_HEADER=1', ROOT / 'uefi-sheng/BootShim/BootShim.S', '-o', OUT / 'shim.o')
+     run(tools['llvm-objcopy'], '-O', 'binary', OUT / 'shim.o', OUT / 'shim.bin')
+     shim = (OUT / 'shim.bin').read_bytes()
+@@ -55,11 +72,12 @@ def main():
+     payload_offset = next(int(line.split()[0], 16) for line in symbols.splitlines() if line.endswith(' _Payload'))
+     if payload_offset != len(shim):
+         raise SystemExit('Literal pool or padding separates the payload label from the appended FD')
+-    if shim[56:60] != b'ARM\x64' or struct.unpack_from('<QQ', shim, 8) != (base, len(shim) + size):
+-        raise SystemExit('ARM64 header does not describe the complete shim + FD')
++    arm64_header = image_header(shim, size, text_offset, flags)
+     results = []
+     if not args.skip_qemu:
+-        fixture = ROOT / 'scripts/qemu-entry/bootshim-fixture.S'
++        fixture = args.fixture
++        if not fixture.is_file():
++            raise SystemExit('Missing UniXNU boot shim fixture; supply --fixture')
+         run(*common, '-DPAYLOAD=1', fixture, '-o', OUT / 'payload.o')
+         run(tools['ld.lld'], f'-Ttext={base:#x}', '-e', '_start', OUT / 'payload.o', '-o', OUT / 'payload.elf')
+         run(tools['llvm-objcopy'], '-O', 'binary', OUT / 'payload.elf', OUT / 'payload-code.bin')
+@@ -132,6 +150,7 @@ def main():
+     if stock_header[:8] != b'ANDROID!':
+         raise SystemExit('Unexpected stock boot image magic')
+     report = {'fd_sha256': digest(fd), 'shim_sha256': digest(shim), 'shim_bytes': len(shim),
++              'arm64_header': arm64_header,
+               'image_size': len(combined), 'android_header_version': version,
+               'kernel_address_field': hex(kernel_address), 'dtb_sha256': digest(dtb),
+               'container_sha256': digest(boot), 'container_bytes': len(boot), 'qemu': results, 'qemu_skipped': args.skip_qemu,

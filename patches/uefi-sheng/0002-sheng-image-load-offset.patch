@@ -1,0 +1,38 @@
+diff --git a/BootShim/BootShim.S b/BootShim/BootShim.S
+index 5a41cc1..8672f90 100644
+--- a/BootShim/BootShim.S
++++ b/BootShim/BootShim.S
+@@ -3,12 +3,18 @@ _Head:
+   b     _Start          /* Jump to the real code */
+
+ #if REQUIRES_KERNEL_HEADER == 1
++#ifndef IMAGE_TEXT_OFFSET
++#define IMAGE_TEXT_OFFSET FD_BASE
++#endif
++#ifndef IMAGE_FLAGS
++#define IMAGE_FLAGS 0
++#endif
+ _StackBase:
+-  .quad FD_BASE         /* Text Offset */
++  .quad IMAGE_TEXT_OFFSET /* Linux load offset, independent of the FD copy destination */
+
+ _StackSize:
+   .quad FD_SIZE + (_Payload - _Head) /* Complete shim and payload */
+-  .quad 0               /* Flags */
++  .quad IMAGE_FLAGS     /* Linux physical placement and page-size flags */
+   .quad 0               /* Reserved */
+   .quad 0               /* Reserved */
+   .quad 0               /* Reserved */
+diff --git a/Resources/Configs/sheng.toml b/Resources/Configs/sheng.toml
+index c2d4d99..534c967 100644
+--- a/Resources/Configs/sheng.toml
++++ b/Resources/Configs/sheng.toml
+@@ -3,6 +3,8 @@
+ #
+ [boot_shim]
+ requires_kernel_header = true
++image_text_offset = 0
++image_flags = 0xA
+
+ #
+ # UEFI FD Configs

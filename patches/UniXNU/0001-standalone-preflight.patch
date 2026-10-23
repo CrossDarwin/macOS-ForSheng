@@ -1,0 +1,52 @@
+diff --git a/scripts/unixnu/cli.py b/scripts/unixnu/cli.py
+index afe199d..c7a8f24 100644
+--- a/scripts/unixnu/cli.py
++++ b/scripts/unixnu/cli.py
+@@ -51,6 +51,8 @@ def parser():
+     sub.add_parser('tree', parents=[c], help='assemble the build tree')
+     b = sub.add_parser('build', parents=[c], help='build kernel, package and firmware')
+     b.add_argument('steps', nargs='*', choices=STEPS + OPTIONAL_STEPS + ('all', 'prelink'), default=['all'])
++    b.add_argument('--firmware-define', action='append', metavar='NAME=VALUE',
++                   help='override a board firmware build switch; FD geometry stays board-owned')
+     i = sub.add_parser('bootimg', parents=[c], help='pack the boot image from the firmware volume and a device tree')
+     i.add_argument('--fd', metavar='FILE', help='firmware volume (default: the build output under --uefi)')
+     i.add_argument('--dtb', metavar='FILE', help='compiled device tree; or UNIXNU_DTB')
+diff --git a/scripts/unixnu/firmware.py b/scripts/unixnu/firmware.py
+index 5388f78..435b1c1 100644
+--- a/scripts/unixnu/firmware.py
++++ b/scripts/unixnu/firmware.py
+@@ -1,5 +1,6 @@
+ """Device UEFI firmware: the EDK II build of a Mu-Silicium checkout (uefi-sheng), driven by board.toml [firmware]."""
+ import os
++import re
+ import shutil
+ from pathlib import Path
+
+@@ -7,6 +8,19 @@ from .config import load_toml
+ from .util import Error, clang_bin, git, log, run, tool
+
+
++def build_switches(defines, overrides):
++    result = dict(defines)
++    for item in overrides or []:
++        key, separator, value = item.partition('=')
++        if (not separator or not re.fullmatch(r'[A-Z][A-Z0-9_]*', key)
++                or not re.fullmatch(r'[A-Za-z0-9_.+-]+', value)):
++            raise Error(f'invalid firmware build switch: {item!r}')
++        if key.startswith('FD_'):
++            raise Error('firmware FD geometry must come from the board configuration')
++        result[key] = value
++    return result
++
++
+ def uefi_config(ctx, uefi):
+     fw = ctx.board.get('firmware')
+     if not fw:
+@@ -33,6 +47,7 @@ def build(ctx, modules, uefi, edk2, target='DEBUG'):
+         run(['python3', ctx.tree / script], cwd=ctx.tree, log_file=ctx.logs / 'firmware-preflight.log')
+     defines = {'FD_BASE': hex(base), 'FD_SIZE': hex(size), 'FD_BLOCKS': str(size // 0x1000)}
+     defines.update({key: str(value) for key, value in fw.get('defines', {}).items()})
++    defines = build_switches(defines, getattr(ctx.args, 'firmware_define', None))
+     fields = {'uefi': str(uefi), 'edk2': str(edk2), 'tree': str(ctx.tree)}
+     packages = ':'.join(item.format(**fields) for item in fw['packages'])
+     tools = edk2 / 'BaseTools'

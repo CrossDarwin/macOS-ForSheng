@@ -24,11 +24,19 @@ def parse_preflight(text):
         if 'SHENG-PREFLIGHT: cpu=' in line:
             fields = dict(re.findall(r'(\w+)=(0x[0-9a-fA-F]+|[0-9]+)', line))
             report['cpus'].append({k: int(v, 0) for k, v in fields.items()})
+        if line.startswith(('SHENG-PREFLIGHT: MMFR0=', 'SHENG-PREFLIGHT: ISAR1=')) and report['cpus']:
+            fields = dict(re.findall(r'(\w+)=(0x[0-9a-fA-F]+|[0-9]+)', line))
+            if report['cpus'][-1].keys() & fields.keys():
+                raise ValueError('duplicate CPU register fields')
+            report['cpus'][-1].update({k: int(v, 0) for k, v in fields.items()})
         if 'SHENG-PREFLIGHT: memory ' in line:
             fields = dict(re.findall(r'(\w+)=(0x[0-9a-fA-F]+|[0-9]+)', line))
             report['memory'].append({k: int(v, 0) for k, v in fields.items()})
     if report['enabled'] is None or not report['cpus']:
         raise ValueError('incomplete preflight CPU report')
+    required = {'cpu', 'MIDR', 'EL', 'MMFR0', 'MMFR1', 'MMFR2', 'ISAR1', 'ISAR2', 'DFR0', 'TIMER'}
+    if any(not required <= cpu.keys() for cpu in report['cpus']):
+        raise ValueError('incomplete preflight CPU registers')
     return report
 
 

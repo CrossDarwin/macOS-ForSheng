@@ -79,6 +79,18 @@ class Gates(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_preflight(log.replace('schema=1', 'schema=99'))
 
+    def test_parse_screen_summary_and_reject_incomplete_registers(self):
+        log = ('SHENG-PREFLIGHT: schema=1 scope=uefi MP=Not Found total=1 enabled=1\n'
+               'SHENG-PREFLIGHT: cpu=0 MIDR=0x411fd461 EL=1\n'
+               'SHENG-PREFLIGHT: MMFR0=0x111 MMFR1=0x0 MMFR2=0x0\n'
+               'SHENG-PREFLIGHT: ISAR1=0x0 ISAR2=0x0 DFR0=0x6 TIMER=19200000\n')
+        report = parse_preflight(log)
+        self.assertEqual(report['cpus'][0]['TIMER'], 19200000)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            parse_preflight('\n'.join(log.splitlines()[:-1]))
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            parse_preflight(log + log.splitlines()[-1] + '\n')
+
     def test_owned_memory_and_framebuffer(self):
         info = dict(current_el=2, arena_owned=True, arena_base=0x80000000,
                     arena_size=0x4000000, timer_hz=19200000)
