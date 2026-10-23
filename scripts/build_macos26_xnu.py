@@ -65,6 +65,13 @@ def capture(*command: str, cwd: Path = ROOT) -> str:
     return subprocess.check_output(command, cwd=cwd, text=True).strip()
 
 
+def stage_file(source: Path, destination: Path) -> None:
+    """Keep cached dependency timestamps when the staged content is unchanged."""
+    source, destination = Path(source), Path(destination)
+    if not destination.is_file() or source.read_bytes() != destination.read_bytes():
+        shutil.copy2(source, destination)
+
+
 def save(record: dict) -> None:
     (OUT / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
 
@@ -134,9 +141,9 @@ def prepare() -> dict:
             subprocess.run(['git', '-C', source, 'apply', '--check', patch], check=True)
             subprocess.run(['git', '-C', source, 'apply', patch], check=True)
     retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
-    shutil.copy2(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
+    stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
     crypto_image = ROOT / 'platform/sheng/macos26/crypto/native_image.h'
-    shutil.copy2(crypto_image, source / 'osfmk/prng/sheng_crypto_image.h')
+    stage_file(crypto_image, source / 'osfmk/prng/sheng_crypto_image.h')
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
@@ -228,17 +235,17 @@ def compile_sources(args, record: dict) -> None:
     for relative in sdk_headers:
         destination = sdk / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(sdk_payload / relative, destination)
+        stage_file(sdk_payload / relative, destination)
     env['XNU_AVAILABILITY_PL'] = str(sdk / 'usr/local/libexec/availability.pl')
     run(['make', '-C', ROOT / 'sources/macos26/AvailabilityVersions', 'install',
          f'DSTROOT={sdk}', f'OBJROOT={OUT / "availability"}', f'SYMROOT={OUT / "availability"}',
          f'CMAKE={shutil.which("cmake")}', f'NINJA={shutil.which("ninja")}'], 'availability', record, env=env)
     for relative in ('include', 'private'):
         shutil.copytree(ROOT / 'sources/macos26/libplatform' / relative,
-                        sdk / 'usr/local/include', dirs_exist_ok=True)
+                        sdk / 'usr/local/include', dirs_exist_ok=True, copy_function=stage_file)
     shutil.copytree(ROOT / 'sources/macos26/libplatform/private/platform',
                     sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform',
-                    dirs_exist_ok=True)
+                    dirs_exist_ok=True, copy_function=stage_file)
     dispatch = sdk / 'usr/local/include/os'
     dispatch.mkdir(parents=True, exist_ok=True)
     for header in sorted((ROOT / 'sources/macos26/libdispatch/os').glob('*.h')):
@@ -247,7 +254,9 @@ def compile_sources(args, record: dict) -> None:
                                  '-UOS_VOUCHER_ACTIVITY_SPI', str(header)], capture_output=True)
         if result.returncode not in (0, 1):
             raise ValueError(result.stderr.decode(errors='replace'))
-        (dispatch / header.name).write_bytes(result.stdout)
+        destination = dispatch / header.name
+        if not destination.is_file() or destination.read_bytes() != result.stdout:
+            destination.write_bytes(result.stdout)
     record['staged_dependency_headers'] = {
         str(path.relative_to(sdk)): sha(path)
         for path in sorted(sdk.rglob('*.h')) if path.is_file()}

@@ -33,7 +33,7 @@ if not trusted_kdk_signature(text):
     raise SystemExit('KDK package does not have the expected trusted Apple signer')
 print('PASS trusted Apple KDK package signature')
 PY
-expanded="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sheng-kdk-expanded-${GITHUB_RUN_ID:-$$}"
+expanded="${SHENG_KDK_EXPANDED:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sheng-kdk-expanded-${GITHUB_RUN_ID:-$$}}"
 pkgutil --expand-full "$kdk_mount/KernelDebugKit.pkg" "$expanded"
 python3 - "$expanded" "$kdk_config" <<'PY'
 import hashlib

@@ -219,6 +219,7 @@ jobs:
     env:
       NATIVE_ARCH: ${{ inputs.native_arch || 'arm64' }}
       NATIVE_OUT: ${{ inputs.native_arch == 'arm64e' && 'out/macos26-xnu-arm64e' || 'out/macos26-xnu' }}
+      SHENG_KDK_EXPANDED: ${{ runner.temp }}/sheng-kdk-25F71
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -272,10 +273,10 @@ jobs:
             macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-
       - name: Compile native macOS 26 SHENG sources
         if: inputs.target == 'macos26-xnu'
-        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
       - name: Link native macOS 26 SHENG kernel
         if: inputs.target == 'macos26-kernel'
-        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
       - uses: actions/cache/save@v4
         if: always() && steps.native-cache.outputs.cache-hit != 'true'
         with:
