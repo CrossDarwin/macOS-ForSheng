@@ -1,0 +1,38 @@
+--- a/osfmk/prng/prng_random.c
++++ b/osfmk/prng/prng_random.c
+@@ -502,3 +502,35 @@
+ 	}
+ 	return rbits;
+ }
++
++#if defined(SHENG)
++#include <kern/startup.h>
++#include <mach/kmod.h>
++#include <mach-o/loader.h>
++
++extern struct mach_header_64 _mh_execute_header;
++extern kern_return_t corecrypto_kext_start(kmod_info_t *, void *);
++SECURITY_READ_ONLY_LATE(kern_return_t) sheng_corecrypto_status = KERN_FAILURE;
++
++static void
++sheng_corecrypto_bootstrap(void)
++{
++	static kmod_info_t info = {
++		.info_version = KMOD_INFO_VERSION,
++		.name = "sheng-source-corecrypto",
++		.version = "26.0",
++	};
++	uint32_t mode = 0;
++
++	/* 启动阶段保留提供者的完整默认POST */
++	if (PE_parse_boot_argn("fips_mode", &mode, sizeof(mode)) && mode != 0) {
++		panic("SHENG source corecrypto requires complete default POST");
++	}
++	info.address = (vm_address_t)&_mh_execute_header;
++	sheng_corecrypto_status = corecrypto_kext_start(&info, NULL);
++	if (sheng_corecrypto_status != KERN_SUCCESS) {
++		panic("SHENG source corecrypto failed: %d", sheng_corecrypto_status);
++	}
++}
++STARTUP(EARLY_BOOT, STARTUP_RANK_FIRST, sheng_corecrypto_bootstrap);
++#endif

@@ -31,6 +31,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0014-native-link-map.patch',
     ROOT / 'platform/sheng/macos26/patches/0015-native-physmap-padding.patch',
     ROOT / 'platform/sheng/macos26/patches/0016-native-first-exception-log.patch',
+    ROOT / 'platform/sheng/macos26/patches/0017-native-corecrypto-bootstrap.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -349,7 +350,9 @@ def link_kernel(args, record, common, sdk, source, env):
                 if (resources / 'lib/darwin' / name).is_file()]
     if not runtimes:
         raise ValueError('the selected Xcode toolchain has no compiler kernel runtime')
-    archives = [str(OUT / 'ArmDTPlatform.o'), str(OUT / 'ArmCpu.o'), str(firehose)]
+    from build_macos26_crypto import build_provider
+    crypto = build_provider(args, record, sdk, source, env)
+    archives = [str(crypto), str(OUT / 'ArmDTPlatform.o'), str(OUT / 'ArmCpu.o'), str(firehose)]
     run(common + ['build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=0',
                   'CFLAGS_KERNEL=-mkernel', 'CXXFLAGS_KERNEL=-fapple-kext',
                   'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1 ' +
@@ -364,6 +367,8 @@ def link_kernel(args, record, common, sdk, source, env):
         raise ValueError('the native linker did not produce an executable Mach-O kernel')
     destination = OUT / 'kernel.development.sheng'
     shutil.copy2(binary, destination)
+    from seal_macos26_crypto import seal
+    record['corecrypto_integrity'] = seal(destination)
     run(['xcrun', 'dsymutil', binary, '-o', OUT / 'kernel.development.sheng.dSYM'],
         'kernel-dsym', record, env=env)
     record.update(executable_kernel_built=True, executable_kernel_sha256=sha(destination),

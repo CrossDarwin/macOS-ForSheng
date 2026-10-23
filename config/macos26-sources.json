@@ -55,6 +55,13 @@
       "url": "https://github.com/apple-oss-distributions/xnu.git",
       "commit": "ac9718fb1af618d5ce8678d0dc6e8a58f252216f",
       "group": "macos26"
+    },
+    {
+      "path": "sources/macos26/corecrypto",
+      "url": "https://github.com/apple/corecrypto.git",
+      "commit": "9612a959abb6eac0aac3ee6a7245c46365c9d81b",
+      "group": "macos26",
+      "provenance": "Apple 2026-05 source release, module 26.0; independent of the distribution lock; runtime ABI requires verification"
     }
   ]
 }
