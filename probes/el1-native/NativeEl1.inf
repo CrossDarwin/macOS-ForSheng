@@ -20,3 +20,6 @@
   UefiLib
   MemoryAllocationLib
   CacheMaintenanceLib
+
+[Protocols]
+  gEfiSimpleTextInProtocolGuid

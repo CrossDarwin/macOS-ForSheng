@@ -4,6 +4,7 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Protocol/SimpleTextIn.h>
 
 extern UINT64 ShengEl1GranuleProbe (UINT64 *Table, UINT64 *Output, UINT64 Tcr);
 extern VOID ShengEl1GranuleProbeEnd (VOID);
@@ -13,17 +14,54 @@ STATIC BOOLEAN
 Pause (CONST CHAR16 *Message)
 {
   EFI_INPUT_KEY Key;
-  UINTN Event;
+  EFI_HANDLE *Handles;
+  EFI_SIMPLE_TEXT_INPUT_PROTOCOL *Inputs[33];
+  EFI_SIMPLE_TEXT_INPUT_PROTOCOL *Input;
+  UINTN Count;
+  UINTN Used;
+  UINTN Index;
+  UINTN Other;
+  BOOLEAN Duplicate;
 
-  Print (L"%s\r\n", Message);
-  while (!EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key))) {
-  }
-  do {
-    if (EFI_ERROR (gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Event))) {
-      return FALSE;
+  Used = 1;
+  Inputs[0] = gST->ConIn;
+  Handles = NULL;
+  Count = 0;
+  if (!EFI_ERROR (gBS->LocateHandleBuffer (ByProtocol, &gEfiSimpleTextInProtocolGuid,
+                                          NULL, &Count, &Handles))) {
+    for (Index = 0; Index < Count && Used < 33; Index++) {
+      if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiSimpleTextInProtocolGuid,
+                                         (VOID **) &Input))) {
+        continue;
+      }
+      Duplicate = FALSE;
+      for (Other = 0; Other < Used; Other++) {
+        if (Inputs[Other] == Input) {
+          Duplicate = TRUE;
+        }
+      }
+      if (!Duplicate) {
+        Inputs[Used++] = Input;
+      }
     }
-  } while (EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key)));
-  return TRUE;
+    FreePool (Handles);
+  }
+  Print (L"SHENG-EL1: input devices=%lu\r\n", (UINT64) Used);
+  Print (L"%s\r\n", Message);
+  for (Index = 0; Index < Used; Index++) {
+    while (!EFI_ERROR (Inputs[Index]->ReadKeyStroke (Inputs[Index], &Key))) {
+    }
+  }
+  for (;;) {
+    for (Index = 0; Index < Used; Index++) {
+      if (!EFI_ERROR (Inputs[Index]->ReadKeyStroke (Inputs[Index], &Key))) {
+        Print (L"SHENG-EL1: key received source=%lu scan=%u char=%u\r\n",
+               (UINT64) Index, Key.ScanCode, Key.UnicodeChar);
+        return TRUE;
+      }
+    }
+    gBS->Stall (20000);
+  }
 }
 
 STATIC EFI_STATUS
@@ -124,6 +162,8 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     FreeAlignedPages (Table, 4);
     return Finish (EFI_DEVICE_ERROR);
   }
+  Print (L"SHENG-EL1: MMU probe starting\r\n");
+  gBS->Stall (200000);
   ProbeStatus = ShengEl1GranuleProbe (Table, Result, Tcr);
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1; mrs %3, sctlr_el1"
                     : "=r" (AfterTcr), "=r" (AfterTtbr), "=r" (AfterMair), "=r" (AfterSctlr));
@@ -148,6 +188,8 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     if (!Pause (L"Press a key to run the PAC probe")) {
       return Finish (EFI_DEVICE_ERROR);
     }
+    Print (L"SHENG-EL1: PAC probe starting\r\n");
+    gBS->Stall (200000);
     PauthFlags = ShengEl1PauthProbe (Signatures);
     Print (L"SHENG-EL1: PAC bank-switch=%s flags=0x%lx expected=0x7fff\r\n",
            PauthFlags == 0x7fff ? L"PASS" : L"FAIL", PauthFlags);
