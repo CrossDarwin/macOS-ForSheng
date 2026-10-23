@@ -102,10 +102,14 @@ def main() -> None:
         'macos_sdk': ['xcrun', '--sdk', 'macosx', '--show-sdk-version'],
     }.items():
         record[name] = subprocess.check_output(command, text=True).strip()
-    if record['macos_sdk'] != '27.0' or record['iphoneos_sdk'] != '27.0':
-        raise ValueError('this build profile requires the recorded macOS and iPhoneOS 27.0 SDKs')
     manifest = output / 'build.json'
     manifest.write_text(json.dumps(record, indent=2) + '\n')
+    print(json.dumps({key: record[key] for key in ('xcode', 'macos_sdk', 'iphoneos_sdk', 'clang')}, indent=2), flush=True)
+    # This is the older iOS 17 source reference; its SDK need not share macOS's version number.
+    if (not record['xcode'].startswith('Xcode 27\n') or record['macos_sdk'] != '27.0'
+            or int(record['iphoneos_sdk'].split('.')[0]) < 17):
+        raise ValueError(f'unqualified reference toolchain: Xcode={record["xcode"]!r}, '
+                         f'macOS SDK={record["macos_sdk"]}, iPhoneOS SDK={record["iphoneos_sdk"]}')
     kernel.build(ctx, modules)
     binary = ctx.tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf'
     if not binary.is_file():
