@@ -5,7 +5,7 @@ on:
       target:
         description: Build target; no job deploys to hardware
         type: choice
-        options: [check, preflight, monitor, apple, apple26, macos26-xnu, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
+        options: [check, preflight, monitor, apple, apple26, macos26-xnu, macos26-kernel, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
         default: check
 permissions:
   contents: read
@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   check:
-    if: inputs.target != 'macos26-xnu'
+    if: inputs.target != 'macos26-xnu' && inputs.target != 'macos26-kernel'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -208,7 +208,7 @@ jobs:
           retention-days: 7
 
   macos26-xnu:
-    if: inputs.target == 'macos26-xnu'
+    if: inputs.target == 'macos26-xnu' || inputs.target == 'macos26-kernel'
     runs-on: xcode-27
     timeout-minutes: 90
     steps:
@@ -225,8 +225,27 @@ jobs:
           path: private/apple/Kernel_Debug_Kit_26.5_build_25F71.dmg
           key: macos26-kdk-${{ hashFiles('config/macos26.json') }}
       - run: bash scripts/verify_kdk.sh config/macos26.json
+      - name: Identify native build toolchain
+        id: native-toolchain
+        run: |
+          echo "identity=$( { xcodebuild -version; xcrun clang --version; xcrun --sdk macosx --show-sdk-version; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: out/macos26-xnu/
+          key: macos26-native-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'scripts/build_macos26_xnu.py') }}
+          restore-keys: macos26-native-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-
       - name: Compile native macOS 26 SHENG sources
+        if: inputs.target == 'macos26-xnu'
         run: python3 scripts/build_macos26_xnu.py --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+      - name: Link native macOS 26 SHENG kernel
+        if: inputs.target == 'macos26-kernel'
+        run: python3 scripts/build_macos26_xnu.py --link-kernel --kdk-root "$RUNNER_TEMP/sheng-kdk-expanded-$GITHUB_RUN_ID/KDK.pkg/Payload" -j 4
+      - uses: actions/cache/save@v4
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: out/macos26-xnu/
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -240,5 +259,8 @@ jobs:
             out/macos26-xnu/ArmDTPlatform.o
             out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a
             out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/compile_commands.json
+            out/macos26-xnu/kernel.development.sheng
+            out/macos26-xnu/kernel.development.sheng.dSYM/
+            out/macos26-xnu/obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.link/
           if-no-files-found: warn
           retention-days: 7

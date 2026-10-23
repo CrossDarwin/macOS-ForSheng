@@ -1,0 +1,11 @@
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -1151,7 +1151,7 @@
+ LD_KERNEL_ARCHIVES = $(LDFLAGS_KERNEL_SDK) -lfirehose_kernel
+ 
+ # Link binary support library
+-ifneq ($(CURRENT_MACHINE_CONFIG),NONE)
++ifeq ($(filter NONE SHENG,$(CURRENT_MACHINE_CONFIG)),)
+         LDFLAGS_KERNEL_ONLY += -rdynamic -Wl,-force_load,$(KDKROOT)/System/Library/KernelSupport/lib$(CURRENT_MACHINE_CONFIG).os.$(CURRENT_KERNEL_CONFIG).a
+ endif
+ 

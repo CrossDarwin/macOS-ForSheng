@@ -1,0 +1,64 @@
+--- a/ArmCpu/ArmCpu.cpp
++++ b/ArmCpu/ArmCpu.cpp
+@@ -13,7 +13,6 @@
+ // Kernel-internal entries used for secondary CPU startup (Darwin 23 osfmk).
+ extern "C" vm_offset_t ml_static_vtop (vm_offset_t);
+ extern "C" char LowResetVectorBase[], LowResetVectorEnd[], ResetHandlerData[], const_boot_args[];
+-extern "C" kern_return_t processor_start (processor_t);
+ extern "C" kern_return_t kernel_thread_start (void (*) (void *, wait_result_t), void *, thread_t *);
+ extern "C" void armcpu_gic_diag (uint64_t aff, uint32_t *out);
+ extern "C" void armcpu_sgi_selfprobe (uint64_t *out);
+@@ -72,8 +71,6 @@
+   bool finishSecondary (void);
+   static void drainPending (void);
+   bool prepareGic (void);
+-  void startSecondary (void);
+-  static void startThread (void *argument, wait_result_t);
+   void enableGic (void);
+   void interrupt (void);
+   static void dispatch (void *target, void *, void *, int);
+@@ -456,14 +453,14 @@
+   info.log_id = logicalId;
+   info.cluster_id = static_cast<uint32_t> (ml_get_cluster_number (static_cast<uint32_t> (affinity)));
+   info.cluster_type = ml_get_boot_cluster_type ();
++  // 新版ml_processor_register会启动处理器，先准备IOCPU状态
++  setCPUNumber (info.log_id);
++  setCPUState (kIOCPUStateUninitalized);
++  armcpu_smp_step[logicalId] = 2;
+   perfmon_interrupt_handler_func pmi = nullptr;
+   kern_return_t status = ml_processor_register (&info, &machProcessor, &ipi_handler, &pmi);
+   if (status != KERN_SUCCESS) { armcpu_smp_fail[logicalId] = 4; return false; }
+-  setCPUNumber (info.log_id);
+-  armcpu_smp_step[logicalId] = 2;
+-  setCPUState (kIOCPUStateUninitalized);
+   registerService ();
+-  startSecondary ();
+   return true;
+ }
+ 
+@@ -495,25 +492,6 @@
+     __asm__ volatile ("smc #0" : "+r" (x0) : "r" (x1), "r" (x2), "r" (x3) : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "memory");
+   }
+   return static_cast<int64_t> (x0);
+-}
+-
+-void ArmCpu::startThread (void *argument, wait_result_t)
+-{
+-  ArmCpu *self = static_cast<ArmCpu *> (argument);
+-  armcpu_smp_step[self->logicalId] = 3;
+-  // Blocks until the new core reaches the scheduler; a core that never arrives only stalls this helper thread.
+-  processor_start (self->machProcessor);
+-  thread_terminate (current_thread ());
+-}
+-
+-void ArmCpu::startSecondary (void)
+-{
+-  thread_t thread;
+-  if (kernel_thread_start (&ArmCpu::startThread, this, &thread) != KERN_SUCCESS) {
+-    armcpu_smp_psci_rc[logicalId] = -1000;
+-    return;
+-  }
+-  thread_deallocate (thread);
+ }
+ 
+ void ArmCpu::initCPU (bool boot)

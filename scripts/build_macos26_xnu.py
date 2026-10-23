@@ -24,6 +24,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0007-native-macos-page-layout.patch',
     ROOT / 'platform/sheng/macos26/patches/0008-native-source-selection.patch',
     ROOT / 'platform/sheng/macos26/patches/0009-normal-kernel-archive.patch',
+    ROOT / 'platform/sheng/macos26/patches/0010-native-kernel-link.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -31,6 +32,7 @@ PATCHES = [
     ROOT / 'UniXNU/patches/xnu/cxx-flag-dependencies.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
+CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
 
 
 # Preserve diagnostics for exported Apple source/tool-generated code on Clang 27.
@@ -261,6 +263,9 @@ def compile_sources(args, record: dict) -> None:
     subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
                     str(MACHINE_PATCH)], cwd=ROOT, check=True)
     record['machine_patch_sha256'] = sha(MACHINE_PATCH)
+    subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
+                    str(CPU_PATCH)], cwd=ROOT, check=True)
+    record['cpu_registration_patch_sha256'] = sha(CPU_PATCH)
     record['platform_objects'] = {}
     for component in ('ArmDTPlatform', 'ArmCpu'):
         original = ROOT / f'UniXNU/drivers/{component}/{component}.cpp'
@@ -293,11 +298,70 @@ def compile_sources(args, record: dict) -> None:
     save(record)
     if failures:
         raise ValueError('; '.join(failures))
+    if args.link_kernel:
+        link_kernel(args, record, common, sdk, source, env)
+
+
+def link_kernel(args, record, common, sdk, source, env):
+    """Use XNU's executable link recipe; missing native contracts remain errors."""
+    record.update(stage='executable-link', link_attempted=True, executable_kernel_built=False)
+    save(record)
+    dispatch = ROOT / 'sources/macos26/libdispatch'
+    headers = [dispatch, sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders',
+               sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/Headers',
+               sdk / 'usr/local/include', sdk / 'usr/local/include/os',
+               sdk / 'usr/local/include/firehose', source / 'EXTERNAL_HEADERS',
+               Path(capture('xcrun', '--sdk', 'macosx', '--show-sdk-path')) / 'usr/include']
+    run(['xcodebuild', 'install', '-project', dispatch / 'libdispatch.xcodeproj',
+         '-target', 'libfirehose_kernel', '-configuration', 'Release', '-sdk', 'macosx',
+         '-jobs', str(args.jobs), 'ARCHS=arm64', 'VALID_ARCHS=arm64', 'ONLY_ACTIVE_ARCH=NO',
+         'MACOSX_DEPLOYMENT_TARGET=26.5', 'CODE_SIGNING_ALLOWED=NO',
+         'GCC_TREAT_WARNINGS_AS_ERRORS=NO', 'USE_HEADERMAP=NO',
+         'HEADER_SEARCH_PATHS=' + ' '.join(str(h) for h in headers),
+         f'OBJROOT={OUT / "firehose/obj"}', f'SYMROOT={OUT / "firehose/sym"}',
+         f'DSTROOT={sdk}'], 'firehose-kernel', record, env=env)
+    firehose = sdk / 'usr/local/lib/kernel/libfirehose_kernel.a'
+    alternate = firehose.with_name('liblibfirehose_kernel.a')
+    if not firehose.exists() and alternate.exists():
+        shutil.copy2(alternate, firehose)
+    if not firehose.exists():
+        raise ValueError('libdispatch did not install its actual kernel firehose library')
+    record['firehose_kernel'] = dict(sha256=sha(firehose), bytes=firehose.stat().st_size)
+    # Xcode ships its kernel compiler runtime separately from userspace libSystem.
+    resources = Path(capture('xcrun', 'clang', '-print-resource-dir'))
+    runtimes = [resources / 'lib/darwin' / name for name in
+                ('libclang_rt.cc_kext_osx.a', 'libclang_rt.cc_kext.a')
+                if (resources / 'lib/darwin' / name).is_file()]
+    if not runtimes:
+        raise ValueError('the selected Xcode toolchain has no compiler kernel runtime')
+    archives = [str(OUT / 'ArmDTPlatform.o'), str(OUT / 'ArmCpu.o'), str(firehose)]
+    run(common + ['build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=0',
+                  'CFLAGS_KERNEL=-mkernel', 'CXXFLAGS_KERNEL=-fapple-kext',
+                  'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1 ' +
+                  ' '.join('-Wno-error=' + w for w in UPSTREAM_WARNINGS),
+                  'LD_KERNEL_LIBS=' + str(runtimes[0]),
+                  'LD_KERNEL_ARCHIVES=' + ' '.join(archives),
+                  'DEPLOYMENT_LINKER_FLAGS=-mmacosx-version-min=26.5',
+                  'DO_CTFMERGE=0'], 'kernel-link', record, env=env)
+    binary = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.unstripped.noctf'
+    if not binary.exists() or struct.unpack_from('<I', binary.read_bytes(), 12)[0] != 2:
+        raise ValueError('the native linker did not produce an executable Mach-O kernel')
+    destination = OUT / 'kernel.development.sheng'
+    shutil.copy2(binary, destination)
+    run(['xcrun', 'dsymutil', binary, '-o', OUT / 'kernel.development.sheng.dSYM'],
+        'kernel-dsym', record, env=env)
+    record.update(executable_kernel_built=True, executable_kernel_sha256=sha(destination),
+                  kernel_uuid=capture('xcrun', 'dwarfdump', '--uuid', str(destination)),
+                  dsym_uuid=capture('xcrun', 'dwarfdump', '--uuid',
+                                   str(OUT / 'kernel.development.sheng.dSYM')),
+                  purpose='Native executable link; runtime and userland ABI remain unqualified')
+    save(record)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prepare-only', action='store_true')
+    parser.add_argument('--link-kernel', action='store_true', help='build runtime and attempt the native executable link')
     parser.add_argument('--kdk-root', type=Path)
     parser.add_argument('-j', '--jobs', type=int, default=4, choices=range(1, 33))
     args = parser.parse_args()
