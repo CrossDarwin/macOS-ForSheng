@@ -1,0 +1,36 @@
+--- a/bsd/kern/kern_mib.c
++++ b/bsd/kern/kern_mib.c
+@@ -750,7 +750,9 @@
+ 		}
+ 	}
+ 
++#if !SHENG
+ 	eng_sample_dev_fused = !ml_device_is_prod_fused();
++#endif /* SHENG has no Apple fuse provider; retain the fail-safe dev state. */
+ }
+ STARTUP(SYSCTL, STARTUP_RANK_MIDDLE, sysctl_load_devicetree_entries);
+ 
+--- a/osfmk/arm/pmap/pmap.h
++++ b/osfmk/arm/pmap/pmap.h
+@@ -773,7 +773,8 @@
+ 	return !!(*((volatile ast_t*)ast_pending()) & AST_URGENT);
+ }
+ 
+-#if SCHED_HYGIENE_DEBUG && (DEBUG || DEVELOPMENT)
++/* The private debug wrapper is unavailable on SHENG; keep real AST checks. */
++#if SCHED_HYGIENE_DEBUG && (DEBUG || DEVELOPMENT) && !SHENG
+ bool pmap_pending_preemption(void); // more complicated, so externally defined
+ #else /* SCHED_HYGIENE_DEBUG && (DEBUG || DEVELOPMENT) */
+ #define pmap_pending_preemption _pmap_pending_preemption_real
+--- a/osfmk/kern/exclaves.c
++++ b/osfmk/kern/exclaves.c
+@@ -3328,7 +3328,8 @@
+ 
+ #endif /* CONFIG_EXCLAVES */
+ 
+-#if __has_include(<Tightbeam/tightbeam.h>)
++/* SHENG supplies neither an exclaves nor an AFK Tightbeam transport. */
++#if !SHENG && __has_include(<Tightbeam/tightbeam.h>)
+ 
+ #include <Tightbeam/tightbeam.h>
+ 

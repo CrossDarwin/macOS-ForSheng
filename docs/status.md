@@ -314,3 +314,19 @@ KDP 的已有编译支持、传输阻断及符号要求记录于 docs/debugging.
 这确认启动核在现有 EL1 环境可遍历并执行 47 位 TTBR1 窗口的 16K 映射，代码写入和未映射地址负对照正确。
 独立能力探针阶段结束；后续推进配套 macOS 26.5 XNU 的可执行链接、机器层 ABI 和 arm64e 生命周期。
 尚未启动 macOS 内核或用户空间，也未验证完整 XNU pmap、EL0 地址空间和多核切换。
+
+可执行内核阶段已启动 Actions 39945615555（a19e82d），目标为 macos26-kernel，尚无链接成功结果。
+构建沿用配套 XNU 的完整链接规则，新增同版本 libdispatch firehose 构建，SHENG 不再索取不存在的 Apple SoC 支持归档。
+ArmCpu 独立副本移除旧 processor_start 辅助线程，改由新版 ml_processor_register 的既有启动路径负责，未改固定 UniXNU 源码。
+首启仍以单核为界；本次源码迁移不代表新内核 SMP 已通过。
+保留实际链接错误和增量产物；链接成功后保留未剥离内核、UUID、dSYM，硬件/用户空间资格仍另行判断。
+已对照当前 DarwinBoot 的 boot_args 字段与 12377.121.6 的 boot.h，布局一致；加载新版 Mach-O 仍待实际产物。
+平板已回到 Android，ADB 核对产品 sheng、活动槽 _a。
+
+Actions 39945615555 已执行真实内核链接，失败仅剩 ml_device_is_prod_fused、pmap_pending_preemption 和 tb_transport_startup 三项。
+firehose 与编译器内核运行库已实际参与链接，CPU 注册迁移未再产生旧 processor_start 引用。
+SHENG 补齐 UniXNU 的 ArmDTPlatform/ArmCpu IOKit 匹配项。
+Apple 熔丝查询在 SHENG 排除，保留现有 fail-safe 开发状态，不伪造量产熔丝值。
+pmap 在 SHENG 使用公开源码已有的 AST_URGENT 检查，仅排除缺失的私有调试包装；其余 SCHED_HYGIENE_DEBUG 保留。
+SHENG 未提供 exclaves/AFK 传输，不注册依赖 Tightbeam 私有实现的初始化入口。
+这些改动解决具体链接契约；并不声明硬件驱动或原版 macOS 组件 ABI 已通过。

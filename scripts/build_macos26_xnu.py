@@ -25,6 +25,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0008-native-source-selection.patch',
     ROOT / 'platform/sheng/macos26/patches/0009-normal-kernel-archive.patch',
     ROOT / 'platform/sheng/macos26/patches/0010-native-kernel-link.patch',
+    ROOT / 'platform/sheng/macos26/patches/0011-native-platform-personalities.patch',
+    ROOT / 'platform/sheng/macos26/patches/0012-native-platform-services.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
