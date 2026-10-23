@@ -2,7 +2,10 @@
   "version": "26.5",
   "build": "25F71",
   "device_class": "j313ap",
-  "candidate_boards": ["j313ap", "j700ap"],
+  "candidate_boards": [
+    "j313ap",
+    "j700ap"
+  ],
   "pairing": "kernel, recovery and system userspace must come from this exact IPSW build",
   "ipsw": {
     "url": "https://updates.cdn-apple.com/2026SpringFCS/fullrestores/122-58869/DFB1CEEF-5619-4591-9924-E20DB2C8FED0/UniversalMac_26.5_25F71_Restore.ipsw",
@@ -17,5 +20,28 @@
     "xnu_commit": "ac9718fb1af618d5ce8678d0dc6e8a58f252216f"
   },
   "hardware_qualified": false,
-  "native_el1_route_qualified": false
+  "native_el1_route_qualified": false,
+  "kdk": {
+    "url": "https://github.com/dortania/KdkSupportPkg/releases/download/25F71/Kernel_Debug_Kit_26.5_build_25F71.dmg",
+    "filename": "Kernel_Debug_Kit_26.5_build_25F71.dmg",
+    "bytes": 1179313408,
+    "sha256": "90ed319cd1ba6e23d1eefcee89fa1b10743f4cf60b85208ae52aa9f45543c7aa",
+    "source": "Dortania mirror; Apple package signature and matching kernel UUID validation required"
+  },
+  "kernels": {
+    "j313ap": {
+      "kdk_name": "kernel.release.t8103",
+      "uuid": "DA4C776A-B10A-38B6-997B-BD66671C5D52",
+      "path": "kernelcache.release.mac13g",
+      "decoded_sha256": "19ae26f46899eb893052436482ac7a7cbf3bbb2b7b0c46b964a849c14442d137",
+      "darwin_version": "Darwin Kernel Version 25.5.0: Mon Apr 27 20:38:00 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8103"
+    },
+    "j700ap": {
+      "kdk_name": "kernel.release.t8140",
+      "uuid": "6F5E696D-EDA7-3AA0-91DC-24B13CF58148",
+      "path": "kernelcache.release.mac17p",
+      "decoded_sha256": "27c6b787ead3200600282967622aa8a7887d7a6f5521d96118c7a8573a69b968",
+      "darwin_version": "Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:22 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8140"
+    }
+  }
 }

@@ -1,12 +1,14 @@
-# macOS 27 / sheng 开发入口
+# macOS 26 / sheng 开发入口
 
-目标是 macOS 27.0 / 26A428 / J700；硬件是 sheng / SM8550 / Adreno 740。
-上游的 iPadOS 17 内核不是 macOS 27 的可替代内核。
+系统目标是 macOS 26.5 / 25F71；硬件是 sheng / SM8550 / Adreno 740。
+内核、恢复系统和用户空间必须来自同一系统构建。上游 iPadOS 17 内核只验证硬件交接。
+候选客体优先 M1/T8103，Neo/T8140 和 VMAPPLE 用于对照，见 [路线依据](routes.md)。
 
 ## 获取源码
 
 ```sh
 python3 scripts/sources.py fetch --group all
+python3 scripts/sources.py fetch --lock config/macos26-sources.json --group macos26
 python3 scripts/apply_patches.py
 python3 scripts/sources.py verify --group all
 ```
@@ -19,19 +21,21 @@ UEFI 的深层构建依赖可用 `git -C uefi-sheng submodule update --init --re
 ## Apple 输入
 
 ```sh
-python3 scripts/fetch_inputs.py --jobs 8
-python3 scripts/fetch_inputs.py --kind kdk
+python3 scripts/fetch_inputs.py --config config/macos26.json --jobs 8
 uv venv --python 3.13 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
-.venv/bin/python scripts/extract_guest.py
-python3 scripts/check_apple.py
+.venv/bin/python scripts/inspect_macos26.py
+python3 scripts/prepare_macos26_recovery.py --ipsw-tool out/tools/ipsw-3.1.739/ipsw
 ```
 
-IPSW 来自 Apple CDN，大小和哈希由 CDN 元数据固定。KDK 来自 Dortania 镜像，先校验下载哈希；
-在 Mac 安装前还须通过 `pkgutil --check-signature` 验证内部 Apple 安装包签名。
-手动工作流的 `apple` 目标在 macOS runner 校验签名，并展开包验证 T8140 内核 UUID；不安装到用户电脑。
-获取引导组件复用 UniXNU 的范围读取和 Snapintosh 的 IM4P 解码器，结果必须匹配上游四项哈希。
-完整 IPSW、KDK、解包内容和 ABI 还原结果都留在忽略目录。
+IPSW 来自 Apple CDN，下载后验证固定大小、SHA-256、版本与板型。哈希记录在 `config/macos26.json`。
+提取工具同时检查 M1、Neo 和 VMAPPLE 的正式擦除身份，保存各自内核、设备树和共同的恢复输入。
+所有 Apple 二进制留在忽略目录。恢复工具版本与归档/可执行文件哈希固定在 `config/ipsw-tool.json`。
+恢复卷通过 AEA 解密，验证 SystemVersion 与 ARM64e launchd/dyld，验收记录保存在私有目录。
+
+旧 `config/guest.json`、`extract_guest.py`、`check_apple.py` 仅服务 macOS 27 / J700 参考合同。
+已有 26A428 KDK 的签名与 UUID 检查不适用于 25F71；25F71 KDK 单独固定在 `config/macos26.json`，下载使用 `fetch_inputs.py --config config/macos26.json --kind kdk`。
+下载哈希通过后仍需 Mac 检查 Apple 包签名与对应内核 UUID。
 
 ## 设备探测
 
@@ -105,7 +109,9 @@ rawdump 可能残留旧启动，必须用版本和具体启动记录建立关联
 
 GitHub Actions 只接受手动触发。`check` 运行输入拒绝测试；`preflight` 构建 EFI；
 `monitor` 在 `xcode-27` 上构建上游监控层，不含 sheng 硬件资格认证。
-`kext` 检查精确 KDK 与私有 ABI 头，缺失时明确失败；`xnu` 在没有匹配源码和 ABI 前明确拒绝旧内核构建。
+旧 `kext`、`xnu` 入口仍检查 macOS 27 参考合同，不作为 macOS 26 构建入口。
+`reference-xnu` 另行构建 UniXNU 的 XNU 10063.141.1，用于 EL1 硬件实验，不加载系统用户空间。
+它记录实际 Xcode/SDK、源码、补丁和内核哈希，并检查初始页表粒度。
 这些入口没有部署动作，不能用构建结果替代实机启动记录。
 
 当前移植阶段仍是输入和硬件入口验证。尚无 sheng 的 SPTM/TXM 实机运行、macOS 启动、
