@@ -30,7 +30,7 @@ def seal(kernel: Path) -> dict:
             for index in range(count):
                 section = cursor + 72 + index * 80
                 name, segment, address, size, offset = struct.unpack_from('<16s16sQQI', data, section)
-                if name.rstrip(b'\0') == b'__text' and segment.rstrip(b'\0') in (b'__TEXT', b'__TEXT_EXEC') and code is None:
+                if name.rstrip(b'\0') == b'__cc26_text' and segment.rstrip(b'\0') in (b'__TEXT', b'__TEXT_EXEC') and code is None:
                     code = offset, size, address
                 if name.rstrip(b'\0') == b'__fips_hmacs':
                     if integrity is not None or size != 32 or offset + size > len(data):
@@ -43,7 +43,8 @@ def seal(kernel: Path) -> dict:
         raise ValueError('runtime text mapping differs from the provider POST contract')
     if code[0] <= integrity < code[0] + code[1]:
         raise ValueError('integrity field overlaps hashed instructions')
-    # Mirrors 2026-05 fipspost_get_hmac: 32 zero key bytes, first __text section.
+    # The native module view exposes only provider-owned __cc26_text as its __text.
+    # Mirrors 2026-05 fipspost_get_hmac: 32 zero key bytes over that section.
     mac = hmac.digest(bytes(32), data[code[0]:code[0] + code[1]], 'sha256')
     data[integrity:integrity + 32] = mac
     kernel.write_bytes(data)

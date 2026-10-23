@@ -78,7 +78,9 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
             relative = str(path.relative_to(source))
             name = hashlib.sha256(relative.encode()).hexdigest()[:12] + '-' + path.stem
             destination = object_dir / (name + '.o')
-            identity = hashlib.sha256((sha(path) + json.dumps(full_command)).encode()).hexdigest()
+            identity = hashlib.sha256((sha(path) + json.dumps(full_command)
+                                       + report['source_revision']
+                                       + (sha(work / 'namespace.h') if extra else '')).encode()).hexdigest()
             stamp = destination.with_suffix('.identity')
             if destination.exists() and stamp.exists() and stamp.read_text() == identity:
                 return destination, 0, ''
@@ -109,7 +111,7 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
     if any(not name[1:].isidentifier() for name in collisions):
         raise ValueError('crypto namespace collision is not representable in C')
     namespace = work / 'namespace.h'
-    namespace.write_text(''.join(f'#define {name[1:]} sheng_cc26_{name[1:]}\n' for name in collisions))
+    namespace.write_text(''.join(f'#pragma redefine_extname {name[1:]} _sheng_cc26_{name[1:]}\n' for name in collisions))
     archive = compile_variant('native', ['-include', str(namespace)])
     defined = names(archive, '-U')
     # XNU's canonical link materializes these aliases after archive compilation.
@@ -131,4 +133,11 @@ def build_provider(args, record: dict, sdk: Path, xnu: Path, env: dict) -> Path:
     save(record)
     if missing or duplicate:
         raise ValueError(f'corecrypto external link contract: missing={missing}, duplicate={duplicate}')
-    return archive
+    relocated = work / 'corecrypto-native.o'
+    run(['xcrun', 'ld', '-r', '-arch', 'arm64', '-platform_version', 'macos', '26.5', '27.0',
+         '-all_load', archive, '-rename_section', '__TEXT', '__text', '__TEXT_EXEC', '__cc26_text',
+         '-o', relocated], 'corecrypto-module-text', record)
+    report['module_object'] = audit_object(relocated)
+    report['integrity_scope'] = '__TEXT_EXEC,__cc26_text (provider-owned, excludes mutable XNU text)'
+    save(record)
+    return relocated

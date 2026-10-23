@@ -375,3 +375,10 @@ Apple 2026-05 corecrypto（9612a959，模块 26.0）631 个 C 源文件已完成
 Actions 39954559619 停在构建器对 IOMallocData 的误判：它由 XNU 的 IOKit.exports 映射到实际 IOMallocData_external。
 已按原导出表识别别名，不增加替代分配器；Actions 39955552708 继续真实链接及 POST。
 该公开提供者没有填充 XNU 26.5 新增的 sized digest/HMAC 尾部，未宣称完整原版组件 ABI 已兼容。
+
+Actions 39955552708 已链接包含 corecrypto 的内核；真实 QEMU POST 的 HMAC/AES/RSA/ECDSA/ECDH 等算法测试通过。
+完整性与服务指示器测试失败，保持原始 POST 拒绝并生成完整 panic/stackshot，尚未注册加密函数表或进入 BSD。
+完整性不再覆盖 XNU 启动时会修改的全部 __text：提供者代码迁入同一 RX 段中的独占 __cc26_text，按模块代码范围封装 POST 视图并生成 HMAC。
+命名隔离从 C 宏改为汇编符号 pragma，保留服务指示器使用的规范 C 字符串；没有修改测试的判定或算法策略。
+原串口初始化失败时 PE_kputc 会回退到 console_write_unbuffered，panic 又把同一字符发到同一控制台两次；新增 SHENG 判断跳过这次冗余镜像。
+已失败和被替代的部署镜像清理 56 个文件，释放约 2.19 GiB；在用 Android 恢复备份、配套输入和调试现场保留。

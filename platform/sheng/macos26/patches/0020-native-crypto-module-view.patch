@@ -1,0 +1,19 @@
+--- a/osfmk/prng/prng_random.c
++++ b/osfmk/prng/prng_random.c
+@@ -507,6 +507,7 @@
+ #include <kern/startup.h>
+ #include <mach/kmod.h>
+ #include <mach-o/loader.h>
++#include "sheng_crypto_image.h"
+ 
+ extern struct mach_header_64 _mh_execute_header;
+ extern kern_return_t corecrypto_kext_start(kmod_info_t *, void *);
+@@ -526,7 +527,7 @@
+ 	if (PE_parse_boot_argn("fips_mode", &mode, sizeof(mode)) && mode != 0) {
+ 		panic("SHENG source corecrypto requires complete default POST");
+ 	}
+-	info.address = (vm_address_t)&_mh_execute_header;
++	info.address = sheng_crypto_image_prepare();
+ 	sheng_corecrypto_status = corecrypto_kext_start(&info, NULL);
+ 	if (sheng_corecrypto_status != KERN_SUCCESS) {
+ 		panic("SHENG source corecrypto failed: %d", sheng_corecrypto_status);

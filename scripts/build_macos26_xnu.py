@@ -33,6 +33,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0016-native-first-exception-log.patch',
     ROOT / 'platform/sheng/macos26/patches/0017-native-corecrypto-bootstrap.patch',
     ROOT / 'platform/sheng/macos26/patches/0018-native-panic-console-mirror.patch',
+    ROOT / 'platform/sheng/macos26/patches/0019-native-console-fallback-mirror.patch',
+    ROOT / 'platform/sheng/macos26/patches/0020-native-crypto-module-view.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -130,13 +132,16 @@ def prepare() -> dict:
             subprocess.run(['git', '-C', source, 'apply', patch], check=True)
     retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
     shutil.copy2(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
-    subprocess.run(['git', '-C', source, 'add', '-N', 'pexpert/pexpert/arm64/SHENG.h',
+    crypto_image = ROOT / 'platform/sheng/macos26/crypto/native_image.h'
+    shutil.copy2(crypto_image, source / 'osfmk/prng/sheng_crypto_image.h')
+    subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   hardware_source_commit=upstream['commit'],
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   retained_log_source_sha256=sha(retained_log),
+                  crypto_image_source_sha256=sha(crypto_image),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],
                   purpose='Native machine-layer source compilation; not a bootable kernel',
