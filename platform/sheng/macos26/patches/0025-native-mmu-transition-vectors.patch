@@ -1,0 +1,26 @@
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -767,7 +767,12 @@
+ 	add		x0, x0, x22									// Convert exception vector address to KVA
+ 	sub		x0, x0, x23
+ 1:
++#if SHENG
++	// Keep the V=P vectors until the first translated instruction completes.
++	mov		x28, x0
++#else
+ 	MSR_VBAR_EL1_X0
++#endif
+ 
+ #if HAS_APPLE_PAC
+ 	PAC_INIT_KEY_STATE tmp=x0, tmp2=x1
+@@ -777,6 +782,10 @@
+ 	MOV64   x0, SCTLR_EL1_DEFAULT
+ 	MSR_SCTLR_EL1_X0
+ 	isb		sy
++#if SHENG
++	msr		VBAR_EL1, x28
++	isb
++#endif
+ 
+ #if !VMAPPLE
+ 	MOV64	x1, SCTLR_EL1_DEFAULT

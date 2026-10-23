@@ -123,8 +123,21 @@ try:
  assert result=='OK',result
  raw=screen.read_bytes()
  Image.frombytes('RGBX',(640,640),raw,'raw','BGRX').convert('RGB').save(p/'mmu-screen.png')
+ # The first translated branch must still reach physical vectors when TTBR1
+ # and the exception stack cannot be used. Only redirect execution, not records.
+ target=symbols['qemu_transition_test']
+ assert packet('P20='+struct.pack('<Q',target).hex())=='OK'
+ assert packet('c').startswith(('T05','S05'))
+ transition=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record'],192))
+ assert transition[0]==3 and transition[1]==0xffff800040000000, [hex(x) for x in transition]
+ assert transition[2]>>26==0x21 and transition[3]==transition[1]
+ assert transition[5]&1 and transition[8]==0 and transition[10]==0
+ (p/'transition-record.json').write_text(json.dumps(
+  dict(state=transition[0],elr=hex(transition[1]),esr=hex(transition[2]),
+       far=hex(transition[3]),ttbr1=hex(transition[8]),sp=hex(transition[10])),indent=2)+'\n')
  # Once console setup disables the gate, the original exception handler runs.
  assert packet(f'z0,{original_halt:x},4')=='OK'
+ target=symbols['qemu_mmu_test']
  branch=0x14000000|((target-original_halt)//4 & 0x3ffffff)
  assert packet(f'M{original_halt:x},4:'+struct.pack('<I',branch).hex())=='OK'
  assert packet(f'M{symbols["sheng_bootstrap_capture_enabled"]:x},4:00000000')=='OK'
@@ -132,9 +145,10 @@ try:
  assert packet(f'Z0,{normal:x},4')=='OK'
  assert packet('c').startswith(('T05','S05'))
  unchanged=struct.unpack('<24Q',memory(high+symbols['sheng_early_exception_record'],192))
- assert unchanged==mmu
+ assert unchanged==transition
  result={'entry_returned':True,'relocated_vector_fault_captured':True,
          'mmu_on_fault_captured':True,'disabled_gate_uses_original_dispatch':True,
+         'first_translation_fault_without_stack_captured':True,
          'status':mmu[0],'elr':hex(mmu[1]),'esr':hex(mmu[2]),'far':hex(mmu[3]),
          'captured_sctlr':hex(mmu[5]),'captured_tcr':hex(mmu[6]),'captured_ttbr0':hex(mmu[7]),
          'record':hex(symbols['sheng_early_exception_record']),

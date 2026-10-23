@@ -45,6 +45,7 @@ PATCHES = [
     ROOT / 'UniXNU/patches/xnu/cxx-flag-dependencies.patch',
     ROOT / 'platform/sheng/macos26/patches/0023-native-early-exception-screen.patch',
     ROOT / 'platform/sheng/macos26/patches/0024-native-bootstrap-sync-screen.patch',
+    ROOT / 'platform/sheng/macos26/patches/0025-native-mmu-transition-vectors.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

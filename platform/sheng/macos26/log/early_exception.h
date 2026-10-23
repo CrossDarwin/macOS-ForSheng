@@ -24,6 +24,9 @@ Lsheng_early_enter:
 
 Lsheng_early_exception:
 	msr DAIFSet, #15
+	/* 首次MMU切换仍使用V=P向量，不依赖高位映射或异常栈 */
+	mrs x0, SCTLR_EL1
+	tbnz x0, #0, EXT(sheng_mmu_sync_fault)
 	adr x19, EXT(sheng_early_exception_record)
 	ldr x0, [x19]
 	cmp x0, #2

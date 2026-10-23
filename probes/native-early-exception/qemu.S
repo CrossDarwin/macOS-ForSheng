@@ -31,6 +31,12 @@ after_entry:
 // 关闭TTBR0后在高位地址触发异常，检查诊断路径能否恢复物理取指
 .global qemu_mmu_test
 qemu_mmu_test:
+ mov x8, #0
+ b qemu_mmu_setup
+.global qemu_transition_test
+qemu_transition_test:
+ mov x8, #1
+qemu_mmu_setup:
  adr x0, LowExceptionVectorBase
  msr vbar_el1, x0
  isb
@@ -57,9 +63,23 @@ qemu_mmu_test:
  orr x0, x0, #0x1000
  msr sctlr_el1, x0
  isb
+ cbnz x8, qemu_transition_setup
  adr x0, qemu_high
  ldr x1, =0xffff800000000000
  add x0, x0, x1
+ br x0
+qemu_transition_setup:
+ // 破坏高位翻译，保留物理向量；异常栈刻意不可用
+ msr ttbr1_el1, xzr
+ isb
+ tlbi vmalle1
+ dsb sy
+ isb
+ mov x0, #0
+ mov sp, x0
+ ldr x0, =0xffff800040000000
+.global qemu_transition_fault
+qemu_transition_fault:
  br x0
 qemu_high:
  SHENG_EARLY_ADDRESS(x0, test_stack_end)
