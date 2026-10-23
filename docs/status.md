@@ -140,7 +140,9 @@ NativeAdreno 所需三份固件已按上游字节数、Git blob 和 SHA-256 固�
 FAT 与 Android 容器往返校验通过，镜像为 163241984 字节，SHA-256 为
 `f7bd670c709b882ee3961f30dc841990a56326d3bc8b665bab538a16a6e350be`。
 部署前 ADB 实测 Android boot_completed=1、槽 _a；随后 fastboot 核对 sheng、解锁、活动槽及下载容量。
-`fastboot boot` 返回 Sending OKAY、Booting OKAY；已请求观察彩色条后是否复位，实机结果待回报。
+`fastboot boot` 返回 Sending OKAY、Booting OKAY；设备随后重新出现 ADB。
+08:06 UTC 实测 Android boot_completed=1、槽 _a，bootreason=bootloader。
+已请求观察是否选择了完整内核、彩色条后是否约 3 秒复位；没有这项观察，不把回到 Android 当作检查点通过。
 未执行 flash 或 repartition。27 项离线测试通过。
 
 尚无 launchd 或 macOS 用户空间运行结果。
