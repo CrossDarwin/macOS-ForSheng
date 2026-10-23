@@ -1,0 +1,28 @@
+diff --git a/scripts/make-sheng-adt.py b/scripts/make-sheng-adt.py
+index 1ff10f3..1702c2e 100755
+--- a/scripts/make-sheng-adt.py
++++ b/scripts/make-sheng-adt.py
+@@ -87,6 +87,9 @@ def main():
+     parser.add_argument('--cpu-regs', default='0',
+                         help='Comma-separated CPU MPIDR affinity values (the /cpus reg of each core); the first is the running boot CPU. '
+                              'SM8550 numbers its cores 0x000..0x700 in Affinity1 (sm8550.dtsi). More than one adds /psci')
++    parser.add_argument('--cpu-compatible', action='append',
++                        choices=['arm,cortex-a510', 'arm,cortex-a710', 'arm,cortex-a715', 'arm,cortex-x3'],
++                        help='Actual compatible of each listed CPU, in --cpu-regs order')
+     parser.add_argument('--psci-method', choices=['smc', 'hvc'], default='smc',
+                         help='/psci method used by the secondary-CPU start (the board DT declares smc)')
+     parser.add_argument('--packed-data-ramdisk', action='store_true', help='Hand off validated DBRDISK1 bytes to the native sparse block driver, without a dense memdev alias')
+@@ -115,9 +118,12 @@ def main():
+     if (not cpu_regs or cpu_regs[0] != 0 or len(set(cpu_regs)) != len(cpu_regs) or len(cpu_regs) > 8
+             or any(reg < 0 or reg > 0xffff or reg & 0xff for reg in cpu_regs)):
+         parser.error('--cpu-regs: up to eight distinct Affinity1-numbered cores, boot CPU 0 first')
++    compatibles = args.cpu_compatible or ['arm,cortex-a715'] * len(cpu_regs)
++    if len(compatibles) != len(cpu_regs):
++        parser.error('--cpu-compatible must describe every listed CPU')
+     cpus = [node('cpu%d' % index, [('state', b'running\0' if index == 0 else b'waiting\0'),
+                                    ('reg', struct.pack('<I', reg)),
+-                                   ('device_type', b'cpu\0'), ('compatible', b'arm,cortex-a715\0'),
++                                   ('device_type', b'cpu\0'), ('compatible', compatibles[index].encode() + b'\0'),
+                                    ('timebase-frequency', struct.pack('<I', TIMEBASE))])
+             for index, reg in enumerate(cpu_regs)]
+     tree = node('device-tree', [
