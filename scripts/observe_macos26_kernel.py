@@ -11,11 +11,11 @@ import subprocess
 import sys
 import uuid
 
-from observe_sheng_abi import symbols
+from native_macho import macho, symbols
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'UniXNU/kits/NativePrelink'))
-from native_prelink import macho, backed_offset
+from native_prelink import backed_offset
 
 
 def identify(build_dir: Path) -> tuple[Path, dict, dict]:
@@ -27,7 +27,8 @@ def identify(build_dir: Path) -> tuple[Path, dict, dict]:
             or build.get('machine') != 'SHENG' or not build.get('executable_kernel_built')
             or digest != build.get('executable_kernel_sha256')):
         raise ValueError('requires the actual linked SHENG macOS 26.5 artifact')
-    image = macho(data)
+    architecture = build.get('architecture', 'arm64')
+    image = macho(data, architecture)
     if image['kind'] != 2:
         raise ValueError('requires an executable kernel, not its source archive')
     entry = deployment = identity = None
@@ -57,14 +58,14 @@ def identify(build_dir: Path) -> tuple[Path, dict, dict]:
     if len(dwarfs) != 1 or not dwarfs[0].is_file():
         raise ValueError('requires exactly one linked kernel DWARF image')
     dwarf_data = dwarfs[0].read_bytes()
-    dwarf_image = macho(dwarf_data)
+    dwarf_image = macho(dwarf_data, architecture)
     dwarf_ids = [str(uuid.UUID(bytes=dwarf_data[at + 8:at + 24])).upper()
                  for kind, at, _ in dwarf_image['commands'] if kind == 0x1b]
     if dwarf_ids != [identity]:
         raise ValueError('debug symbols do not belong to this linked kernel')
     return kernel, addresses, dict(kernel_sha256=digest, uuid=identity,
         entry_va=hex(entry), segments=image['segments'], deployment='macOS 26.5',
-        hardware_executed=False, userland_started=False)
+        architecture=architecture, hardware_executed=False, userland_started=False)
 
 
 def main() -> None:
@@ -97,6 +98,8 @@ def main() -> None:
     (esp / 'EFI/BOOT').mkdir()
     shutil.copy2(inputs / 'loader/BOOTAA64.EFI', esp / 'EFI/BOOT/BOOTAA64.EFI')
     loader = json.loads(args.loader_build.read_text())
+    if record['architecture'] == 'arm64e' and not loader.get('native_arm64e_supported'):
+        raise ValueError('ARM64E observation requires the loader with architectural PAC admission')
     loader_path = ROOT / loader['file']
     if loader.get('native_panic_region_bytes') != 524288 or loader.get('bootstrap_block_bytes') != 33554432 or hashlib.sha256(loader_path.read_bytes()).hexdigest() != loader['sha256']:
         raise ValueError('native kernel needs the built 32 MiB-congruent DarwinBoot loader')

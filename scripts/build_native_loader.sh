@@ -37,6 +37,7 @@ import hashlib, json
 from pathlib import Path
 p = Path('out/native-loader/RELEASE_CLANGPDB/AARCH64/DarwinBoot.efi')
 record = dict(file=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
+              native_arm64e_supported=True,
               bootstrap_block_bytes=33554432, native_panic_region_bytes=524288, hardware_tested=False,
               source_sha256=hashlib.sha256(Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c').read_bytes()).hexdigest())
 Path('out/native-loader/build.json').write_text(json.dumps(record, indent=2)+'\n')

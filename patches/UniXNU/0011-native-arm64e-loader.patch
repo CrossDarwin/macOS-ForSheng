@@ -1,0 +1,20 @@
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -126,8 +126,16 @@
+   BOOLEAN  Executable;
+ 
+   if ((Size < 32) || (U32 (Data) != 0xfeedfacf) || (U32 (Data + 4) != 0x100000c) ||
+-      (U32 (Data + 8) != 0) || (U32 (Data + 12) != 2)) {
++      ((U32 (Data + 8) != 0) && ((U32 (Data + 8) & 0xff) != 2)) || (U32 (Data + 12) != 2)) {
+     return EFI_UNSUPPORTED;
++  }
++  if ((U32 (Data + 8) & 0xff) == 2) {
++    UINT64 Isar1 = READ_SYSREG (id_aa64isar1_el1);
++    // Both address and generic authentication are used by the native kernel.
++    if (((Isar1 & 0xff0) == 0) || ((Isar1 & 0xff000000) == 0)) {
++      Print (L"DARWINBOOT: ARM64E refused - architectural PAC unavailable\n");
++      return EFI_UNSUPPORTED;
++    }
+   }
+   if (U32 (Data + 20) > Size - 32) { return EFI_LOAD_ERROR; }
+   ZeroMem (Kernel, sizeof (*Kernel));
