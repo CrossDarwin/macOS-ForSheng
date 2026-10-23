@@ -357,3 +357,11 @@ Actions 39950123042 已编译链接日志版并生成 dSYM，但记录阶段缺�
 ARM64 PID1 编译、FAT 文件边界和主机捕获格式已通过；当前未部署 reader，不宣称重启后保留或 USB 实机传输通过。
 locore 首次同步异常快照已加入目标源码，待目标汇编和实际执行；原 panic hook 保留格式化消息。
 成功构建另上传只含可执行内核、map、dSYM 和 build.json 的小型产物，避免后续调试每次下载完整源码归档。
+
+Actions 39951693129 已成功构建包含首次异常记录的内核，UUID F06BECA4-5F5A-35B8-9C5A-5B1B57DFE215。
+QEMU 经真实 DarwinBoot 进入 C、完成 VM 初始化并启动 IOKit/NVRAM，取回 6852 字节原生控制台日志，无环形覆盖或忙写丢失。
+首次同步异常 PC=0xfffffe0007a6bfa4、ESR=0x96000005、FAR=0x150，对应 crypto_random_kmem_ctx_size。
+调用者 vm_map_store_crypto_init 读取尚未注册的 g_crypto_funcs；尚未进入 BSD 或 macOS 用户空间。
+日志原始快照、寄存器、对应 dSYM 和 map 已保存在本地私有产物中。
+已封装同版本 RAM 启动候选 c2c9f15c0ae9dd688509b5825b0507452adabdc1df1b9f1fd98954895996d9f0，未部署设备。
+下一项是为原生内核接入真实 corecrypto 源码提供者，复用 UniXNU 的初始化时序，保留完整 POST。

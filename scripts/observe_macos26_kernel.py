@@ -73,6 +73,10 @@ def main() -> None:
     parser.add_argument('--firmware', type=Path, required=True)
     parser.add_argument('--loader-build', type=Path, default=ROOT / 'out/native-loader/build.json')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--seed-bytes', type=int, choices=(64, 256), default=256,
+                        help='64 is the explicit insufficient-entropy panic experiment')
+    parser.add_argument('--let-vector-log', action='store_true',
+                        help='allow the kernel exception hook to retain the first fault before a bounded stop')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot'), default='arm_init')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
@@ -108,16 +112,19 @@ def main() -> None:
                     '--owned-memory-size', '0x20000000', '--armvirt', '--armcpu',
                     '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                     '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
-                    '--amfi-platform-only', '--random-seed-bytes', '256'], check=True)
+                    '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)], check=True)
     command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
                '--fixture', args.output, '--esp', esp, '--kernel', kernel,
                '--firmware', args.firmware.resolve(), '--gic-version', '3',
                '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
-               '--system-registers', '--qemu-ramfb', '--also-stop', hex(addresses['_panic'])]
+               '--system-registers', '--qemu-ramfb']
+    if not args.let_vector_log:
+        command += ['--also-stop', hex(addresses['_panic'])]
     (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
     vector_base = addresses['_ExceptionVectorsBase']
-    for offset in (0, 0x200, 0x400, 0x600):
-        command += ['--also-stop', hex(vector_base + offset)]
+    if not args.let_vector_log:
+        for offset in (0, 0x200, 0x400, 0x600):
+            command += ['--also-stop', hex(vector_base + offset)]
     command += ['--read-memory', f'{vector_base:x}:800']
     instruction_request = f'{checkpoint:x}:10'
     command += ['--read-memory', instruction_request]
@@ -155,6 +162,7 @@ def main() -> None:
     instruction_at = backed_offset(kernel_image['segments'], checkpoint, 16, len(kernel_data))
     instruction_match = snapshot['memory'][instruction_request] == kernel_data[instruction_at:instruction_at + 16].hex()
     record['checkpoint_instructions_match'] = instruction_match
+    record['bootloader_entropy_bytes'] = args.seed_bytes
     passed = (instruction_match and not snapshot['bounded_timeout_interrupted'] and int(snapshot['pc'], 16) == checkpoint
               and tcr >> 14 & 3 == 2 and tcr >> 30 & 3 == 1
               and tcr & 63 == 17 and tcr >> 16 & 63 == 17 and regs['SCTLR_EL1'] & 1)

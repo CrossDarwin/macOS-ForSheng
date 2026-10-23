@@ -96,3 +96,16 @@ python3 scripts/capture_native_log.py --reader-build <新reader的build.json> --
 ```
 
 这些工具只生成或读取候选产物，不自动重启、部署或刷写设备。
+
+原生日志首次实际执行结果：Actions 39951693129 的内核在 QEMU 产生 6852 字节日志，解码 UUID 匹配，busy/覆盖丢失均为 0。
+首次 EL1 同步异常头的 panic_state=3，PC 对应 crypto_random_kmem_ctx_size，FAR=0x150；后续 panic 保留该现场。
+这验证了字符记录和首次异常记录的运行路径，尚不证明 sheng 跨重启 RAM 保留或 USB 导出成立。
+
+实际候选封装命令：
+
+```sh
+python3 scripts/package_macos26_kernel.py --kernel-build <macos26-sheng-kernel产物目录> \
+  --firmware-build out/firmware-build.json --backup-dir <当前槽备份目录>
+```
+
+封装使用当前厂商 DTB、32 MiB 同余加载器和 256 字节启动熵，不自动部署。
