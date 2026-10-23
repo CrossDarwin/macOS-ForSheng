@@ -89,7 +89,10 @@ Actions 39909466130 产物源码内核 SHA-256 为
 只读调试记录取得 IOBlockStorageDevice/IOService 实际大小 `0x90`/`0x88`，页表为原生 4 KiB。
 另一次实际构造函数返回记录取得 IOMobileFramebufferLegacy 元类 `0xfffffff006b35940`、
 父类 `0xfffffff006b31400` 和大小 `0x18a0`。这些是 QEMU ABI 结果，不是 sheng 显示驱动验收。
-原版 PMGR 指令和 Legacy 358 槽静态审计已通过；存储注解对象仍需 macOS 编译验证。
+原版 PMGR 指令和 Legacy 358 槽静态审计已通过。Actions 39912573333 的实际 macOS 编译进一步通过存储审计：
+190 个方法槽、176 个内核绑定、14 个纯虚槽和实际元类大小均一致；注解对象未链接或执行。
+该次构建停在 VerifiedRoot 编译记录包含的不存在 libsa include 目录，已过滤失效目录；
+完整配置与原版指令保持不变，后续编译仍待验。
 
 OS 完整虚拟介质由 UDIF 六段原始内容还原，6077580800 字节，SHA-256 与上游固定值
 `e5634d04a8ac35f024845f583394e0a35deb26a04cb0c00286a8674e25a9a4f2` 一致。
