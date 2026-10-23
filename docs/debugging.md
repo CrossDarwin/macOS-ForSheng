@@ -11,7 +11,8 @@ Actions 39937165999 的实际归档包含 `kdp_raise_exception`、`kdp_register_
 `kdp_serial_send` 和 `kdp_serial_receive`，编译参数保留 `-g`，优化为 `-O2`。
 无需为这些已有选项重复构建。
 
-尚无 macOS 26 可执行内核、对应 dSYM 或 sheng 可用的内核调试传输。
+Actions 39946670153 已链接 macOS 26.5 SHENG 可执行内核并生成对应 dSYM。
+QEMU 的真实 UEFI 交接已到达 arm_init，16K / 47 位页表开启。sheng 实机内核调试传输仍未接通。
 现有 `pe_serial.c` 只有被条件选择的平台后端，SHENG 尚未注册可用的收发实现。
 仅添加 `kdp_match_name=serial` 不会自动得到 USB、网络或 UART 通道。
 
@@ -43,3 +44,33 @@ EL0 程序可执行 PAC/AUT，内核负责密钥生命周期和特权状态；Ap
 [KDP 传输实现](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/osfmk/kdp/kdp_udp.c)、
 [Apple 用户态指针认证](https://developer.apple.com/documentation/security/preparing-your-app-to-work-with-pointer-authentication)、
 [Clang arm64e ABI](https://clang.llvm.org/docs/PointerAuthentication.html)。
+
+## 原生内核日志
+
+参考 Snapintosh 固定源码的 `probes/xnuboot/telemetry.c`、`compat/console-link.h` 和
+`tools/recover-console-log.py`。它由 EL2 监控层统一接收 SPTM SERIAL_PUTC 与 UART 输出，
+保留开头和尾部，通过 q1n1 USB NCM / call service 导出。sheng 的原生 EL1 路线没有这层常驻服务，
+不能只加 serial=3 就宣称获得 USB 日志。
+
+`platform/sheng/macos26/log/retained_log.h` 在内核自己的映射和内存窗口中保留日志，
+不用未确认归属的固定物理地址。头部 128 字节，启动前缀 16 KiB，尾部环形区 64 KiB。
+`_sheng_log_buffer` 是同次链接中的地址来源，头部记录实际物理地址和内核 LC_UUID。
+写入不等待锁；重入丢失单独计数，数据和提交游标清理到一致点。
+视频与串行字符出口都接入，串行字符不重复记录；panic 的公共入口在串行初始化前也保存有界的格式化消息。
+头部另保存 panic caller/SP、ELR_EL1、ESR_EL1、FAR_EL1 和 MPIDR_EL1。
+这些是日志钩子执行时的寄存器，不能当成原始异常的完整现场；完整调试仍需 KDP 或 GDB。
+
+`observe_macos26_kernel.py` 复用 UniXNU 的 UEFI/QEMU 入口和 GDB 传输，
+按新内核符号停止后读取固定大小的日志，保存 `console.bin`、`console.txt`、`console.json`，
+同时保留完整 GDB 寄存器和 UART 文件。`decode_native_log.py` 拒绝错 UUID、未知布局和截断输入，
+明确标记环形覆盖、重入丢失与未完成写入，不把不完整日志当成完整记录。
+构建同时保留实际内核、dSYM 和链接 map。
+
+实机导出仍需实现并验证：原生 XNU 尚无 q1n1 NCM 等价后端；现有 Linux RAM reader 固定读取的是旧 UEFI 区域，
+不能拿它读取新内核日志。若采用 warm reset 后的只读导出，必须把实际日志物理区传给 reader、
+从 reader 的 Linux 分配器保留该区，并先验证 ABL/固件跨重启未覆盖它。
+冷启动与断电不保留 RAM。当前不宣称跨重启保留或实机 USB 日志已通过。
+
+来源：[Snapintosh USB NCM 启动与日志通道](https://github.com/Acelogic/Snapintosh/blob/main/README.md)、
+[统一控制台缓冲区](https://github.com/Acelogic/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/probes/xnuboot/telemetry.c)、
+[保留日志恢复](https://github.com/Acelogic/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/tools/recover-console-log.py)。

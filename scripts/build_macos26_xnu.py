@@ -27,6 +27,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0010-native-kernel-link.patch',
     ROOT / 'platform/sheng/macos26/patches/0011-native-platform-personalities.patch',
     ROOT / 'platform/sheng/macos26/patches/0012-native-platform-services.patch',
+    ROOT / 'platform/sheng/macos26/patches/0013-native-retained-log.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -117,11 +118,15 @@ def prepare() -> dict:
         if reverse.returncode:
             subprocess.run(['git', '-C', source, 'apply', '--check', patch], check=True)
             subprocess.run(['git', '-C', source, 'apply', patch], check=True)
-    subprocess.run(['git', '-C', source, 'add', '-N', 'pexpert/pexpert/arm64/SHENG.h'], check=True)
+    retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
+    shutil.copy2(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
+    subprocess.run(['git', '-C', source, 'add', '-N', 'pexpert/pexpert/arm64/SHENG.h',
+                    'pexpert/arm/pe_sheng_log.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   hardware_source_commit=upstream['commit'],
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
+                  retained_log_source_sha256=sha(retained_log),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],
                   purpose='Native machine-layer source compilation; not a bootable kernel',
@@ -343,7 +348,8 @@ def link_kernel(args, record, common, sdk, source, env):
                   ' '.join('-Wno-error=' + w for w in UPSTREAM_WARNINGS),
                   'LD_KERNEL_LIBS=' + str(runtimes[0]),
                   'LD_KERNEL_ARCHIVES=' + ' '.join(archives),
-                  'DEPLOYMENT_LINKER_FLAGS=-mmacosx-version-min=26.5',
+                  'DEPLOYMENT_LINKER_FLAGS=-mmacosx-version-min=26.5 -Wl,-map,' +
+                  str(OUT / 'kernel.development.sheng.map'),
                   'DO_CTFMERGE=0'], 'kernel-link', record, env=env)
     binary = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.unstripped.noctf'
     if not binary.exists() or struct.unpack_from('<I', binary.read_bytes(), 12)[0] != 2:
@@ -356,6 +362,7 @@ def link_kernel(args, record, common, sdk, source, env):
                   kernel_uuid=capture('xcrun', 'dwarfdump', '--uuid', str(destination)),
                   dsym_uuid=capture('xcrun', 'dwarfdump', '--uuid',
                                    str(OUT / 'kernel.development.sheng.dSYM')),
+                  link_map_sha256=sha(OUT / 'kernel.development.sheng.map'),
                   purpose='Native executable link; runtime and userland ABI remain unqualified')
     save(record)
 

@@ -330,3 +330,9 @@ Apple 熔丝查询在 SHENG 排除，保留现有 fail-safe 开发状态，不�
 pmap 在 SHENG 使用公开源码已有的 AST_URGENT 检查，仅排除缺失的私有调试包装；其余 SCHED_HYGIENE_DEBUG 保留。
 SHENG 未提供 exclaves/AFK 传输，不注册依赖 Tightbeam 私有实现的初始化入口。
 这些改动解决具体链接契约；并不声明硬件驱动或原版 macOS 组件 ABI 已通过。
+
+Actions 39946670153（eb14e36）已链接出实际 macOS 26.5 SHENG 可执行内核，dSYM UUID 匹配。
+实际 UEFI / DarwinBoot / QEMU 已进入 arm_init，记录 PC=0xfffffe0007bab8a4，MMU 开启，TG0/TG1=16K、T0SZ/T1SZ=17。
+这不是 sheng 实机 XNU 启动或用户空间结果。
+参考 Snapintosh 的保留控制台机制，新增原生字符出口日志和 panic 快照；同一写入代码的回绕、重入丢失及解码拒绝已通过。
+该新增日志代码仍待 macOS 目标编译与实际内核执行；实机导出、重启后保留及 KDP 传输尚未接通。
