@@ -26,7 +26,8 @@ M1 缺少 SPTM 配置不代表原版内核可直接运行于 sheng。
 - [machine_routines_apple.c](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/osfmk/arm/machine_routines_apple.c)：VMAPPLE PAC 密钥 HVC 路径
 
 先以 UniXNU 的 XNU 10063.141.1 验证退出 UEFI、异常入口、定时器和初始页表。
-该镜像只有内核与 sheng ADT，不含 macOS 用户空间，不链接 UFS 写入后端。
+完整基线包含全部上游驱动，但测试参数未启用 UFS 控制器；不含 macOS 用户空间。
+实机已通过控制台、IOKit、BSD 初始化，并在根设备查找前按设计复位。
 随后将确有运行证据的平台实现移到 12377.121.6，处理该版本的 CPU、引导参数和驱动 ABI。
 恢复卷、launchd、WindowServer 的验收从配对的 25F71 开始。
 

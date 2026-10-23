@@ -15,7 +15,7 @@
 | 完整 sheng UEFI | 本地构建及 FV 检查通过；fastboot 临时启动成功，菜单和探针输出已由照片及视频确认 |
 | 设备备份 | 六个 LUN 主备 GPT、16 个引导分区已读取并校验，userdata 未备份 |
 | 完整上游 sheng 配置 | 35 项与上游字节一致，19 步及两个外部归档、预链接全部通过，Actions 39919525158 成功 |
-| 完整内核实机 | 完整配置的 PE_create_console 返回后 3 秒复位已由用户确认；Android 恢复到槽 a |
+| 完整内核实机 | 控制台、BSD 入口、BSD 缓冲区、IOKitBSDInit 前与 IOFindBSDRoot 前检查点均实机通过；Android 恢复到槽 a |
 | 完整内核 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
@@ -173,4 +173,14 @@ BSD 缓冲区检查点的 QEMU 实际执行通过，调用地址 `0xfffffff00bd1
 `bsd_autoconf` 已被编译器内联，没有可供原有探针替换的独立调用；封装器对此明确拒绝，未发送失败候选。
 QEMU 实测新的调用前复位路径通过，BSD 已执行 VFS 框架、事件、POSIX 线程及网络初始化，但尚未调用 `IOKitBSDInit`。
 容器 SHA-256 为 `6ad7b2c1365c17a31ccc4cac9470a20c9357c3c1c74b36c1003f13cda950c362`，载荷内核为 `03f57caae56ae822edc18ba11f2260592422bfac7bea730f7acd0e6d9f95bd74`。
-实机观察尚待确认。
+用户确认彩色条后约 3 秒自动复位，设备自动配置前检查点实机通过。
+
+继续推进到 `bsd_init` 调用 `IOFindBSDRoot` 之前，尚不执行根设备查找或挂载。
+固定上游 `NativeUfs::start` 在 `native-ufs-probe` 与 `native-ufs-root` 均为零时直接返回 false，早于控制器映射和任何硬件命令。
+测试配置只传入 `-v debug=0x100 keepsyms=1 cpus=1`，没有这两项启用参数，不沿用上游 board.toml 的 UFS root 参数。
+此为启动参数隔离，完整 35 项编译配置和已链接驱动保持不变。
+
+根设备查找前镜像 SHA-256 为 `d2fd15f42a1ed132e3e04107d39c58a5506a4979c38ca070a9f2a63f077c87a0`，
+载荷内核为 `9ef56570f6e8d0f0eab1ec15c6764df4b06e2b829ba87c4236d04866ca7e63d8`。
+QEMU 与实机均通过该检查点；用户确认彩色条后约 3 秒自动复位。Android 已恢复完成，槽 _a。
+硬件参考内核至此已执行到根设备选择前，不再增加旧用户空间启动实验。macOS 26.5 的源码迁移与 ABI 验证单独推进。
