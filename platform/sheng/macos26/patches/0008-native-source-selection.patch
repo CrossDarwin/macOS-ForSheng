@@ -1,0 +1,54 @@
+--- a/config/MASTER
++++ b/config/MASTER
+@@ -328,6 +328,8 @@
+ # Compile XNU with PPL support.
+ options   CONFIG_PMAP_PPL			# <config_pmap_ppl>
+ 
++options   CONFIG_APPLE_AMCC			# <apple_amcc>
++
+ options   NOS_ARM_ASM			# <nos_arm_asm>
+ options   NOS_ARM_PMAP			# <nos_arm_pmap>
+ 
+--- a/osfmk/conf/files.arm64
++++ b/osfmk/conf/files.arm64
+@@ -21,7 +21,7 @@
+ osfmk/arm64/sptm/pmap/pmap_misc.c	optional nos_arm_asm config_sptm
+ osfmk/arm64/sptm/pmap/pmap_ppl_interface.c	optional nos_arm_asm config_sptm
+ osfmk/arm64/sptm/start_sptm.s		optional nos_arm_asm config_sptm
+-osfmk/arm64/amcc_rorgn_sptm.c		optional nos_arm_asm config_sptm
++osfmk/arm64/amcc_rorgn_sptm.c		optional nos_arm_asm config_sptm apple_amcc
+ osfmk/arm64/sptm/arm_init_sptm.c	optional config_sptm
+ osfmk/arm64/sop.c			optional config_sptm
+ 
+@@ -35,10 +35,10 @@
+ osfmk/arm64/WKdmData.s		standard
+ osfmk/arm64/lz4_decode_arm64.s  standard
+ osfmk/arm64/lz4_encode_arm64.s  standard
+-osfmk/arm64/amcc_rorgn_ppl.c optional nos_arm_asm config_pmap_ppl
+-osfmk/arm64/amcc_rorgn_ppl_amcc.c optional nos_arm_asm config_pmap_ppl
+-osfmk/arm64/amcc_rorgn_common.c optional nos_arm_asm
+-osfmk/arm64/amcc_rorgn_pv_ctrr.c optional nos_arm_asm
++osfmk/arm64/amcc_rorgn_ppl.c optional nos_arm_asm config_pmap_ppl apple_amcc
++osfmk/arm64/amcc_rorgn_ppl_amcc.c optional nos_arm_asm config_pmap_ppl apple_amcc
++osfmk/arm64/amcc_rorgn_common.c optional nos_arm_asm apple_amcc
++osfmk/arm64/amcc_rorgn_pv_ctrr.c optional nos_arm_asm apple_amcc
+ osfmk/arm64/bcopy.s standard
+ osfmk/arm64/bzero.s standard
+ osfmk/arm/caches.c		standard
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -115,12 +115,14 @@
+  */
+ static bool disable_uart_irq = 0;
+ 
++#if defined(APPLE_UART) || defined(DOCKCHANNEL_UART) || defined(PL011_UART)
+ static void
+ register_serial_functions(struct pe_serial_functions *fns)
+ {
+ 	fns->next = gPESF;
+ 	gPESF = fns;
+ }
++#endif
+ 
+ /**
+  * Indicates whether or not a given device's irqs have been set up by calling

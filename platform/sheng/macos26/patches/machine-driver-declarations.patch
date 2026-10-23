@@ -1,0 +1,26 @@
+--- a/ArmCpu/ArmCpu.cpp
++++ b/ArmCpu/ArmCpu.cpp
+@@ -15,6 +15,12 @@
+ extern "C" char LowResetVectorBase[], LowResetVectorEnd[], ResetHandlerData[], const_boot_args[];
+ extern "C" kern_return_t processor_start (processor_t);
+ extern "C" kern_return_t kernel_thread_start (void (*) (void *, wait_result_t), void *, thread_t *);
++extern "C" void armcpu_gic_diag (uint64_t aff, uint32_t *out);
++extern "C" void armcpu_sgi_selfprobe (uint64_t *out);
++extern "C" void armcpu_ipi_selftest (uint64_t aff);
++extern "C" IOReturn armcpu_spi_attach (uint32_t intid, bool edge, void (*handler) (void *), void *context,
++                                       uint32_t *readback, uint64_t *router);
++extern "C" uint64_t armcpu_spi_count (uint32_t intid);
+ extern "C" void thread_deallocate (thread_t);
+ extern "C" thread_t current_thread (void);
+ extern "C" kern_return_t thread_terminate (thread_t);
+--- a/ArmDTPlatform/ArmDTPlatform.cpp
++++ b/ArmDTPlatform/ArmDTPlatform.cpp
+@@ -109,7 +109,7 @@
+   return true;
+ }
+ 
+-static void platformStageReset (void)
++[[noreturn]] static void platformStageReset (void)
+ {
+   // PSCI SYSTEM_RESET via the same SMC conduit as the entry reset probe.
+   register uint64_t x0 __asm__ ("x0") = 0x84000009;

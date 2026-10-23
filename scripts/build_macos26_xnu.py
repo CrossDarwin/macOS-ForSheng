@@ -22,12 +22,14 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0005-native-cache-and-unused-diagnostics.patch',
     ROOT / 'platform/sheng/macos26/patches/0006-upstream-write-only-diagnostics.patch',
     ROOT / 'platform/sheng/macos26/patches/0007-native-macos-page-layout.patch',
+    ROOT / 'platform/sheng/macos26/patches/0008-native-source-selection.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
     ROOT / 'UniXNU/patches/xnu/local-availability.patch',
     ROOT / 'UniXNU/patches/xnu/cxx-flag-dependencies.patch',
 ]
+MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 
 
 # Preserve diagnostics for exported Apple source/tool-generated code on Clang 27.
@@ -243,16 +245,25 @@ def compile_sources(args, record: dict) -> None:
         save(record)
         raise ValueError('; '.join(record['build_failures']))
     compile_record = json.loads(recipe.read_text().strip().rstrip(','))
+    machine = OUT / 'machine'
+    for component in ('ArmDTPlatform', 'ArmCpu'):
+        destination = machine / component / (component + '.cpp')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / 'UniXNU/drivers' / component / destination.name, destination)
+    subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
+                    str(MACHINE_PATCH)], cwd=ROOT, check=True)
+    record['machine_patch_sha256'] = sha(MACHINE_PATCH)
     record['platform_objects'] = {}
     for component in ('ArmDTPlatform', 'ArmCpu'):
         original = ROOT / f'UniXNU/drivers/{component}/{component}.cpp'
+        adapted = machine / component / (component + '.cpp')
         destination = OUT / (component + '.o')
         command, index = [], 0
         arguments = compile_record['arguments']
         while index < len(arguments):
             arg = arguments[index]
             if arg == compile_record['file']:
-                command.append(str(original))
+                command.append(str(adapted))
             elif arg in ('-o', '-MF', '-MT', '-MQ', '-MJ'):
                 if arg == '-o':
                     command += ['-o', str(destination)]
@@ -264,7 +275,8 @@ def compile_sources(args, record: dict) -> None:
         command += ['-Werror=' + warning for warning in UPSTREAM_WARNINGS]
         try:
             run(command, component, record, cwd=Path(compile_record['directory']), env=env)
-            record['platform_objects'][component] = dict(source_sha256=sha(original), **audit_object(destination))
+            record['platform_objects'][component] = dict(source_sha256=sha(original),
+                adapted_source_sha256=sha(adapted), **audit_object(destination))
         except (subprocess.CalledProcessError, ValueError) as error:
             failures.append(f'{component}: {error}')
         save(record)
