@@ -18,6 +18,10 @@
 #ifndef LOG_BASE
 #error LOG_BASE must come from the observed native kernel load address
 #endif
+#ifndef PANIC_BASE
+#define PANIC_BASE 0ULL
+#endif
+#define PANIC_BYTES (512 * 1024)
 #define LOG_BYTES 82048
 #define LOG_ALLOC_BYTES ((LOG_BYTES + 511) / 512 * 512)
 #define FAT_DATA_OFFSET (17 * 512)
@@ -57,33 +61,42 @@ static int subdir(const char *path)
     return result;
 }
 
+static int read_region(int mem, uint64_t base, unsigned char *bytes, size_t size)
+{
+    if (mem < 0) return EBADF;
+    void *mapped = mmap(NULL, size, PROT_READ, MAP_SHARED, mem, (off_t)base);
+    if (mapped == MAP_FAILED) return errno;
+    memcpy(bytes, mapped, size);
+    munmap(mapped, size);
+    return 0;
+}
+
 static int snapshot(void)
 {
-    unsigned char bytes[LOG_BYTES] = {0};
-    int error = 0;
+    static unsigned char bytes[LOG_BYTES];
+    static unsigned char panic_bytes[PANIC_BYTES];
     int mem = open("/dev/mem", O_RDONLY | O_CLOEXEC | O_SYNC);
-    if (mem < 0) error = errno;
-    else {
-        void *mapped = mmap(NULL, sizeof(bytes), PROT_READ, MAP_SHARED, mem, (off_t)LOG_BASE);
-        if (mapped == MAP_FAILED) error = errno;
-        else {
-            memcpy(bytes, mapped, sizeof(bytes));
-            munmap(mapped, sizeof(bytes));
-        }
-        close(mem);
-    }
+    int error = mem < 0 ? errno : read_region(mem, LOG_BASE, bytes, sizeof(bytes));
+    int panic_error = 0;
+    if (PANIC_BASE) panic_error = mem < 0 ? error : read_region(mem, PANIC_BASE, panic_bytes, sizeof(panic_bytes));
+    if (mem >= 0) close(mem);
     char status[1024] = {0};
     snprintf(status, sizeof(status),
-             "reader=sheng-native-reader-v1\nphysical_base=0x%llx\nbytes=%u\nerrno=%d\ncrc32=%08x\n"
+             "reader=sheng-native-reader-v2\nphysical_base=0x%llx\nbytes=%u\nerrno=%d\ncrc32=%08x\n"
+             "panic_physical_base=0x%llx\npanic_bytes=%u\npanic_errno=%d\npanic_crc32=%08x\n"
              "storage=RAM-backed read-only USB export\nufs_opened=false\n",
-             (unsigned long long)LOG_BASE, LOG_BYTES, error, crc32(bytes, sizeof(bytes)));
+             (unsigned long long)LOG_BASE, LOG_BYTES, error, crc32(bytes, sizeof(bytes)),
+             (unsigned long long)PANIC_BASE, PANIC_BASE ? PANIC_BYTES : 0, panic_error,
+             PANIC_BASE ? crc32(panic_bytes, sizeof(panic_bytes)) : 0);
     int fd = open("/ramlog.img", O_RDWR | O_CLOEXEC);
     if (fd < 0) return -1;
     int result = pwrite(fd, bytes, sizeof(bytes), FAT_DATA_OFFSET) != sizeof(bytes)
-              || pwrite(fd, status, sizeof(status), FAT_DATA_OFFSET + LOG_ALLOC_BYTES) != sizeof(status)
-              || fsync(fd) != 0;
+              || pwrite(fd, status, sizeof(status), FAT_DATA_OFFSET + LOG_ALLOC_BYTES) != sizeof(status);
+    if (PANIC_BASE && pwrite(fd, panic_bytes, sizeof(panic_bytes), FAT_DATA_OFFSET + LOG_ALLOC_BYTES + 1024) != sizeof(panic_bytes))
+        result = 1;
+    if (fsync(fd) != 0) result = 1;
     close(fd);
-    dprintf(2, "SHENG-NATIVE-READER: snapshot errno=%d crc32=%08x\n", error, crc32(bytes, sizeof(bytes)));
+    dprintf(2, "SHENG-NATIVE-READER: snapshot errno=%d panic_errno=%d\n", error, panic_error);
     return result ? -1 : 0;
 }
 

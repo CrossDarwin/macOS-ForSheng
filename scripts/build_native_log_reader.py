@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT/'scripts'))
 from range_download import download
 
 
-def fat_image():
+def fat_image(include_panic=False):
     """A fixed FAT12 export: two contiguous files, never a physical disk."""
     image = bytearray(2048 * 512)
     image[:3] = b'\xeb\x3c\x90'
@@ -37,18 +37,23 @@ def fat_image():
         table[at:at+2] = word.to_bytes(2, 'little')
     entry(0, 0xff8)
     entry(1, 0xfff)
-    for first, count in ((2, 161), (163, 2)):
+    spans = [(2, 161), (163, 2)] + ([(165, 1024)] if include_panic else [])
+    for first, count in spans:
         for cluster in range(first, first+count):
             entry(cluster, 0xfff if cluster == first+count-1 else cluster+1)
     image[512:7*512] = table
     image[7*512:13*512] = table
-    for index, (name, first, size) in enumerate(((b'NATIVLOGBIN', 2, 82048), (b'STATUS  TXT', 163, 1024))):
+    files = [(b'NATIVLOGBIN', 2, 82048), (b'STATUS  TXT', 163, 1024)]
+    if include_panic:
+        files.append((b'XNUPANICBIN', 165, 524288))
+    for index, (name, first, size) in enumerate(files):
         at = 13*512 + index*32
         image[at:at+11] = name
         image[at+11] = 0x21
         struct.pack_into('<HI', image, at+26, first, size)
-    image[13*512+64:13*512+75] = b'SHENGNATLOG'
-    image[13*512+75] = 8
+    label = 13 * 512 + len(files) * 32
+    image[label:label+11] = b'SHENGNATLOG'
+    image[label+11] = 8
     return bytes(image)
 
 
@@ -59,6 +64,8 @@ def main():
     parser.add_argument('--kernel-physical-base', type=lambda value: int(value, 0), required=True,
                         help='actual DarwinBoot load PA from this hardware boot, never the QEMU address')
     parser.add_argument('--boot-template', type=Path, required=True)
+    parser.add_argument('--panic-physical-base', type=lambda value: int(value, 0), default=0,
+                        help='optional actual panic RAM PA printed by this DarwinBoot run')
     args = parser.parse_args()
     from observe_macos26_kernel import identify
     _, addresses, native = identify(args.kernel_build.resolve())
@@ -69,6 +76,12 @@ def main():
     reserved_bytes = 0x18000
     if physical & 0x3fff or not 0x90000000 <= physical < physical + reserved_bytes <= 0x280000000:
         raise ValueError('native log PA must be aligned in sheng DRAM outside the reader boot window')
+    panic = args.panic_physical_base
+    if panic:
+        if (panic & 0x3fff or not args.kernel_physical_base <= panic < panic + 524288 <= args.kernel_physical_base + 0x20000000
+                or not 0x90000000 <= panic < panic + 524288 <= 0x280000000
+                or max(physical, panic) < min(physical + reserved_bytes, panic + 524288)):
+            raise ValueError('panic PA must be an aligned, disjoint observed range inside the kernel window')
     with args.boot_template.open('rb') as stream:
         template = stream.read(4096)
     if template[:8] != b'ANDROID!' or struct.unpack_from('<I', template, 40)[0] != 4:
@@ -89,10 +102,10 @@ def main():
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         if path.stat().st_size != asset['bytes'] or digest != asset['sha256']:
             raise ValueError(f'input hash differs: {path.name}')
-    out = ROOT/'out/native-log-reader'/f'{physical:x}-{native["uuid"]}'
+    out = ROOT/'out/native-log-reader'/f'{physical:x}-{panic:x}-{native["uuid"]}'
     out.mkdir(parents=True, exist_ok=False)
     subprocess.run(['aarch64-linux-gnu-gcc', '-static', '-Os', '-Wall', '-Wextra', '-Werror',
-                    f'-DLOG_BASE=0x{physical:x}ULL', ROOT/'probes/native_log_reader.c', '-o', out/'init'], check=True)
+                    f'-DLOG_BASE=0x{physical:x}ULL', f'-DPANIC_BASE=0x{panic:x}ULL', ROOT/'probes/native_log_reader.c', '-o', out/'init'], check=True)
     source = ROOT/'UniXNU-sheng/package/linux-log/build-linux-log-boot.py'
     spec = importlib.util.spec_from_file_location('upstream_reader', source)
     module = importlib.util.module_from_spec(spec)
@@ -128,15 +141,20 @@ def main():
         value = subprocess.check_output(['fdtget', '-tx', tree, '/reserved-memory', field], text=True).strip()
         if value != '2':
             raise ValueError('reader reservation requires two-cell addresses and sizes')
-    node = f'/reserved-memory/sheng-native-log@{physical:x}'
-    subprocess.run(['fdtput', '-cp', tree, node], check=True)
-    subprocess.run(['fdtput', '-t', 'x', tree, node, 'reg', f'{physical >> 32:x}', f'{physical & 0xffffffff:x}', '0', f'{reserved_bytes:x}'], check=True)
-    subprocess.run(['fdtput', tree, node, 'no-map'], check=True)
+    ranges = [('sheng-native-log', physical, reserved_bytes)]
+    if panic:
+        ranges.append(('sheng-xnu-panic', panic, 524288))
+    for name, address, size in ranges:
+        node = f'/reserved-memory/{name}@{address:x}'
+        subprocess.run(['fdtput', '-cp', tree, node], check=True)
+        subprocess.run(['fdtput', '-t', 'x', tree, node, 'reg', f'{address >> 32:x}',
+                        f'{address & 0xffffffff:x}', '0', f'{size:x}'], check=True)
+        subprocess.run(['fdtput', tree, node, 'no-map'], check=True)
     patched_kernel = compressed_kernel[:len(compressed_kernel)-len(dtb)] + tree.read_bytes()
     initrd = gzip.compress(module.cpio([
         ('dev', 0o40755, b''), ('proc', 0o40755, b''), ('sys', 0o40755, b''), ('run', 0o40755, b''),
         ('dev/console', 0o20600, b''), ('init', 0o100755, (out/'init').read_bytes()),
-        ('ramlog.img', 0o100600, fat_image()), ('nvmem-reboot-mode.ko', 0o100600, reset_module)]), mtime=0)
+        ('ramlog.img', 0o100600, fat_image(bool(panic))), ('nvmem-reboot-mode.ko', 0o100600, reset_module)]), mtime=0)
     header = bytearray(page)
     header[:8] = b'ANDROID!'
     struct.pack_into('<10I', header, 8, len(patched_kernel), kernel_addr, len(initrd), 0x01000000, 0,
@@ -153,7 +171,8 @@ def main():
     path = out/'sheng-native-log-reader.img'
     path.write_bytes(image)
     report = dict(kernel_uuid=native["uuid"], kernel_sha256=native["kernel_sha256"],
-                  reader="sheng-native-reader-v1", physical_base=physical, log_bytes=82048,
+                  reader="sheng-native-reader-v2", physical_base=physical, log_bytes=82048,
+                  panic_physical_base=panic, panic_bytes=524288 if panic else 0,
                   os_version=template_os_version,
                   reserved_bytes=reserved_bytes, observed_kernel_physical_base=args.kernel_physical_base,
                   image=path.name, bytes=len(image), sha256=hashlib.sha256(image).hexdigest(),

@@ -118,3 +118,10 @@ QEMU 实测 gPanicBase=0xfffffe000a000000、gPanicSize=0x80000，标准 panic �
 
 观察器增加 `--capture-panic-buffer`：从现场 gPanicBase 指针分块读取，保存 `xnu-panic.bin`、`xnu-panic.txt`、`xnu-stackshot.bin` 和元数据。
 `scripts/decode_xnu_panic.py` 按配套源码的 packed version-8 头解码；范围损坏、UUID 不匹配或 CRC 未完成时保留原始区并明确标记。
+
+reader v2 可同时导出原生控制台和标准 panic 区。
+构建时增加 `--panic-physical-base <本次DarwinBoot打印的panic RAM PA>`，两段 RAM 分别保留并禁止 Linux 映射分配。
+地址必须在实际 owned window 内，不能相互重叠；不用模拟器地址生成实机 reader。
+USB 仍为 1 MiB 只读 RAM 磁盘，新增 `XNUPANIC.BIN`；每段有独立的映射状态和传输 CRC。
+捕获器保留原始区，再按匹配内核解码 panic 文本和 stackshot。
+ARM64 PID1 编译和包含真实 QEMU panic 的 FAT 导出/提取已通过；这些结果不代替实机 USB、重启后 RAM 保留的验收。
