@@ -67,6 +67,10 @@ def main():
     parser.add_argument('--panic-physical-base', type=lambda value: int(value, 0), default=0,
                         help='optional actual panic RAM PA printed by this DarwinBoot run')
     args = parser.parse_args()
+    config = json.loads((ROOT/'config/native-log-reader.json').read_text())
+    ram = [(int(item['base'], 0), int(item['bytes'], 0)) for item in config['retained_ram_ranges']]
+    def retained_ram(address, size):
+        return any(base <= address < address + size <= base + span for base, span in ram)
     from observe_macos26_kernel import identify
     _, addresses, native = identify(args.kernel_build.resolve())
     if '_sheng_log_buffer' not in addresses:
@@ -74,12 +78,12 @@ def main():
     base = min(segment['va'] for segment in native['segments'] if segment['size'])
     physical = args.kernel_physical_base + addresses['_sheng_log_buffer'] - base
     reserved_bytes = 0x18000
-    if physical & 0x3fff or not 0x90000000 <= physical < physical + reserved_bytes <= 0x280000000:
+    if physical & 0x3fff or not retained_ram(physical, reserved_bytes):
         raise ValueError('native log PA must be aligned in sheng DRAM outside the reader boot window')
     panic = args.panic_physical_base
     if panic:
         if (panic & 0x3fff or not args.kernel_physical_base <= panic < panic + 524288 <= args.kernel_physical_base + 0x20000000
-                or not 0x90000000 <= panic < panic + 524288 <= 0x280000000
+                or not retained_ram(panic, 524288)
                 or max(physical, panic) < min(physical + reserved_bytes, panic + 524288)):
             raise ValueError('panic PA must be an aligned, disjoint observed range inside the kernel window')
     with args.boot_template.open('rb') as stream:
@@ -89,7 +93,6 @@ def main():
     template_os_version = struct.unpack_from('<I', template, 16)[0]
     if not template_os_version:
         raise ValueError('the boot template OS metadata is missing')
-    config = json.loads((ROOT/'config/native-log-reader.json').read_text())
     cache = ROOT/'private/linux-reader'
     cache.mkdir(parents=True, exist_ok=True)
     for asset in config['assets']:

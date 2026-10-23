@@ -441,3 +441,9 @@ QEMU 处理格式 7 的 116829 个指针，其中 43757 个需要认证；内核
 2026-10-24 首次部署此 ARM64E 镜像：ADB 确认 sheng / _a，fastboot 仍为 a，下载上限 768 MiB。
 仅执行 fastboot boot，72015872 字节镜像发送成功，ABL 返回 Booting OKAY；未执行 flash、分区写入或槽位切换。
 当前仅确认引导器接受镜像，实际 XNU 屏幕结果待用户回传。
+
+实机回传仅见 DarwinBoot 绿色条，没有 XNU 控制台；该条由 DarwinEnter 绘制，不能据此认定 XNU 入口或 C 初始化已执行。
+照片可辨 args PA=0x882A00000、panic PA=0x882A04000，窗口 512 MiB。
+同版内核 VM 跨度为 0x19FC000，据此得 kernel PA=0x881004000、log PA=0x881DBC000，VA/PA 低 25 位均为 0x1004000。
+读取器原先按连续低位内存限制地址，未覆盖 sheng 的实际高位 DRAM 银行；已按保存的 Recovery iomem 和 UEFI SMEM 范围限定为 0x880000000..0x8BB300000。
+本次只读 reader 已构建，显式 DT no-map 预留日志与 panic 区、禁用 UFS，实际 USB 及 warm-reset 保留仍待运行。
