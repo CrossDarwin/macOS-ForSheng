@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "sources": [
+    {
+      "path": "sources/reference/Snapintosh",
+      "url": "https://github.com/Snapintosh/Snapintosh.git",
+      "commit": "2c60b47a950f6d98caed6b2551adc227f8ced4c9",
+      "group": "reference",
+      "submodules": false
+    },
+    {
+      "path": "sources/reference/q1n1",
+      "url": "https://github.com/Snapintosh/q1n1.git",
+      "commit": "b72baceeafbdc28c866838e000146455a9f4a653",
+      "group": "reference",
+      "submodules": false
+    }
+  ]
+}

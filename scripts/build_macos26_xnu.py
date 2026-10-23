@@ -23,6 +23,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0006-upstream-write-only-diagnostics.patch',
     ROOT / 'platform/sheng/macos26/patches/0007-native-macos-page-layout.patch',
     ROOT / 'platform/sheng/macos26/patches/0008-native-source-selection.patch',
+    ROOT / 'platform/sheng/macos26/patches/0009-normal-kernel-archive.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',

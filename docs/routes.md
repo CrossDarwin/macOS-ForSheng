@@ -33,3 +33,34 @@ M1 缺少 SPTM 配置不代表原版内核可直接运行于 sheng。
 
 Snapintosh 的 SPTM/TXM 与客体兼容代码继续作为参考；当前 EL1 入口无法运行其现有 EL2 监控层。
 发现原生路线不能满足的具体依赖时，记录函数、异常与寄存器，再判断需要内核改动还是新的固件入口。
+
+## Snapintosh 实现对照（2026-10-23）
+
+已另行浅克隆组织仓库，固定在 `config/snapintosh-reference-sources.json`，不更新原有构建依赖。
+Snapintosh 提交为 `2c60b47a950f6d98caed6b2551adc227f8ced4c9`，q1n1 为 `b72baceeafbdc28c866838e000146455a9f4a653`。
+
+上游使用配套 26A428 的原版 J700 kernelcache、设备树、SPTM/TXM 输入，不重新编译 XNU。
+EL2 监控层实现 SPTM/TXM 调用，维护 16 KiB 客体表和 4 KiB 实际影子表；NV2 将客体的 EL2 寄存器访问重定向到 VNCR。
+硬件驱动通过 KDK 和 kmutil 链接到 AuxKC。少量可选内核补丁用于已测得的陷入成本，不提供 sheng 的 EL1 实现。
+依据：[启动链](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/docs/BOOT-CHAIN.md)、
+[构建说明](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/docs/BUILDING.md)。
+
+| 条件 | 上游实际实现 | sheng 的依据与处理 |
+| --- | --- | --- |
+| EL2 入口 | q1n1 的 A16 实机记录为固件直接进入 EL2；`HostRuntime.from_q1n1` 拒绝 EL1 | 已有 UEFI 探针 CPU0 为 EL1；更换 q1n1 不会自行获得 EL2 |
+| NV2 | `probes/xnuboot/prepare.c` 设置 HCR.NV/NV2 和 VNCR | CPU0 MMFR2=`0x1221011110101011`，NV=0；不是其已支持的主机 |
+| 16 KiB | A16 的区分性 `AT S1E1R` 实测失败，所以使用影子表 | sheng MMFR0 的 TGran16=1 仅是能力声明；需要真正页表执行，不能直接运行上游需要 EL2 的探针 |
+| arm64e/PAC | `compat/pauth-domain.c` 派生兼容密钥域，`pauth-switch.S` 在用户返回前安装密钥、异常进入后恢复；汇编检查 CurrentEL=2 | Android PACIA/AUTIA 往返只证明指令可用；必须适配 EL1 的密钥保存/恢复、进程切换和用户返回 |
+| 存储 | `compat/ans.c` 将 Apple ANS 接到实际 NVMe 后端 | sheng 使用 UFS；复用 UniXNU 的硬件实现，不能沿用 A16 的 NVMe 寄存器 |
+
+q1n1 的可选 slbounce 是 Qualcomm PC Secure Launch/QHEE 路径，依赖签名 tcblaunch 和对应固件协议。
+A16 已记录的成功启动没有使用它。当前没有 sheng 的 Gunyah 支持该协议的证据，不能将它当作通用 EL1→EL2 跳板。
+依据：[A16 EL2 实机记录](https://github.com/Snapintosh/q1n1/blob/b72baceeafbdc28c866838e000146455a9f4a653/docs/A16-FIRST-EL2-BOOT.md)、
+[slbounce 原理](https://github.com/TravMurav/slbounce/blob/c090a8cdafa25e4c99df90f8d6f73f3805d9b397/theory_of_operation.md)。
+
+当前路线保留配套 macOS 26 的原生 EL1 实验，但尚未形成可启动用户空间的方案。
+后续实现先处理两个实际条件：sheng 的 16 KiB/47 位页表执行，以及 arm64e 用户空间的密钥生命周期。
+后者需要同时处理 `do_cpuid`、`ml_grade_binary`、PAC 密钥初始化、上下文切换与异常返回。
+目前未定义 HAS_APPLE_PAC 的 SHENG 会报告 ARMv8，并拒绝 arm64e 二进制；不能只修改 subtype 放行或直接定义 Apple PAC。
+参考 Snapintosh 的密钥域和切换语义，采用适合 EL1 的实现；其需要 HCR_EL2 的汇编不直接搬入。
+只有这些条件成立，才继续恢复卷、launchd 和新版驱动集合；不以旧内核继续增加检查点或把归档成功当作系统启动。
