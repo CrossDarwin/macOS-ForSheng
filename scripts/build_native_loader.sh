@@ -25,6 +25,9 @@ from pathlib import Path
 source = Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c').read_text()
 if '#define BLOCK_SIZE   SIZE_32MB' not in source:
     raise SystemExit('native loader requires the recorded 32 MiB bootstrap congruence patch')
+entry = Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S').read_text()
+if entry.count('  DARWIN_HANDOFF_PROGRESS ') != 3 or 'HANDOFF: green=entered' not in source:
+    raise SystemExit('native loader requires the three actual handoff progress markers')
 dsc = Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/DarwinBoot.dsc').read_text()
 dsc = dsc.replace('OUTPUT_DIRECTORY = build/DarwinBoot', 'OUTPUT_DIRECTORY = out/native-loader')
 dsc = dsc.replace('  Test/Validation.inf\n', '')
@@ -39,8 +42,10 @@ p = Path('out/native-loader/RELEASE_CLANGPDB/AARCH64/DarwinBoot.efi')
 record = dict(file=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
               native_arm64e_supported=True,
               handoff_panic_address_visible=True,
+              handoff_progress='green=entered blue=cache-clean orange=MMU-off',
               bootstrap_block_bytes=33554432, native_panic_region_bytes=524288, hardware_tested=False,
-              source_sha256=hashlib.sha256(Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c').read_bytes()).hexdigest())
+              source_sha256=hashlib.sha256(Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c').read_bytes()).hexdigest(),
+              entry_source_sha256=hashlib.sha256(Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S').read_bytes()).hexdigest())
 Path('out/native-loader/build.json').write_text(json.dumps(record, indent=2)+'\n')
 print(json.dumps(record))
 PY

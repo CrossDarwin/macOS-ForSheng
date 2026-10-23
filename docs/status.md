@@ -447,3 +447,14 @@ QEMU 处理格式 7 的 116829 个指针，其中 43757 个需要认证；内核
 同版内核 VM 跨度为 0x19FC000，据此得 kernel PA=0x881004000、log PA=0x881DBC000，VA/PA 低 25 位均为 0x1004000。
 读取器原先按连续低位内存限制地址，未覆盖 sheng 的实际高位 DRAM 银行；已按保存的 Recovery iomem 和 UEFI SMEM 范围限定为 0x880000000..0x8BB300000。
 本次只读 reader 已构建，显式 DT no-map 预留日志与 panic 区、禁用 UFS，实际 USB 及 warm-reset 保留仍待运行。
+
+只读 RAM reader 临时启动被 ABL 接受，但未出现 USB 磁盘；随后 fastboot getvar current-slot 正常返回 a，未取得 RAM 内容。
+该结果不能区分读取器未启动、取样失败或 USB 链路未就绪；配套 Linux 的 qcom_glink_smem 和远端处理器为模块，当前读取器未提供完整 PMIC GLINK 启动链。
+失败的 reader 部署镜像已删除，源码、输入和实际部署记录保留。
+DarwinEnter 新增直接 framebuffer 交接标记：绿色为进入、蓝色为缓存清理结束、橙色为 MMU 关闭后执行。
+这些都是加载器检查点，不作为 XNU 执行证据；后续用同一 ARM64E 内核区分交接阶段与内核阶段。
+
+三段交接标记加载器已完成本地构建，实际固件 FV 中存在相应提示字符串；QEMU 同版内核再次完成 POST 与预期 Image4 panic，完整 panic 可导出。
+新 RAM 候选为 5f96ecce756ea1445da944a6ae3525cd83059794be19bea5d94ea51e08aa6bbd。
+发送 72015872 字节完成，但 boot 命令在 USB 断开时未收到最终状态；是否执行以实机回传为准，不将发送完成记作启动成功。
+被替代的部署镜像、固件副本和已完成 QEMU ESP 暂存另删除 104582976 字节；当前候选、有效 Android 恢复备份与诊断记录保留。

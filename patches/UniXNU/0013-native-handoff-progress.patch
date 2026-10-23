@@ -1,0 +1,76 @@
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S
+@@ -1,5 +1,24 @@
+ // SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <AsmMacroLib.h>
++
++// Three strips retain the actual transition reached without calling firmware.
++.macro DARWIN_HANDOFF_PROGRESS lo, hi, stage
++  cbz x12, 9f
++  lsr x9, x13, #6
++  bic x9, x9, #7
++  cbz x9, 9f
++  mov x14, #\stage
++  madd x11, x9, x14, x12
++  mov w10, #\lo
++  movk w10, #\hi, lsl #16
++8:
++  stp w10, w10, [x11], #8
++  subs x9, x9, #8
++  b.hi 8b
++  dsb sy
++9:
++.endm
++
+ 
+ ASM_FUNC(DarwinCurrentEl)
+   mrs x0, CurrentEL
+@@ -9,20 +28,9 @@
+ // PA (0 for none), x5=its size in bytes. EL1 only.
+ ASM_FUNC(DarwinEnter)
+   msr daifset, #15
+-  // Breadcrumb: a green bar (BGRA 0xFF00FF00) over the top 1/16 of the frame
+-  // buffer shows that this code ran, whatever the kernel does afterwards.
+-  cbz x4, 2f
+-  lsr x9, x5, #4
+-  bic x9, x9, #7
+-  mov w10, #0xFF00
+-  movk w10, #0xFF00, lsl #16
+-  mov x11, x4
+-3:
+-  stp w10, w10, [x11], #8
+-  subs x9, x9, #8
+-  b.hi 3b
+-  dsb sy
+-2:
++  mov x12, x4
++  mov x13, x5
++  DARWIN_HANDOFF_PROGRESS 0xFF00, 0xFF00, 0
+   add x5, x2, x3
+   mrs x6, ctr_el0
+   ubfx x6, x6, #16, #4
+@@ -40,6 +48,7 @@
+   ic iallu
+   dsb sy
+   isb
++  DARWIN_HANDOFF_PROGRESS 0x00FF, 0xFF00, 1
+   mrs x4, sctlr_el1
+   bic x4, x4, #1
+   bic x4, x4, #4
+@@ -49,4 +58,5 @@
+   tlbi vmalle1
+   dsb sy
+   isb
++  DARWIN_HANDOFF_PROGRESS 0x8800, 0xFFFF, 2
+   br x1
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -715,6 +715,8 @@
+   DEBUG ((DEBUG_ERROR, "\nExiting boot services. A green bar across the top\nmeans the kernel entry code ran.\n"));
+   // Capture the actual load and panic addresses before the kernel owns video.
+   if (AsciiStrStr (CommandLine, "-sheng-capture-handoff") != NULL) {
++    Print (L"DARWINBOOT: kernel pa 0x%lx panic pa 0x%lx\n", Address, PanicAddress);
++    Print (L"HANDOFF: green=entered blue=cache-clean orange=MMU-off\n");
+     Print (L"DARWINBOOT: capture handoff addresses - starting in 10 seconds\n");
+     gBS->Stall (10000000);
+   }
