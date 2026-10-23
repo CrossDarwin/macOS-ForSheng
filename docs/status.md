@@ -542,3 +542,10 @@ Actions 39990930289（63c05d8）完成0025内核，UUID A7ED53F3-6EF8-3635-B671-
 Actions 39992979541（3dc4360）成功构建0026，UUID C9819D72-7190-3DF2-877C-6F93C6F722F5。
 保持同一QEMU EL2调试陷入限制MDCR=0x400，新内核实际从0x881004000执行到arm_init第一条指令，入口指令和启动参数匹配。
 ESR_EL2=0，说明跳过早期硬件调试解锁能绕开此已复现限制；尚不能据此归因实机Gunyah。
+
+同版完整QEMU继续完成corecrypto POST，控制台后关闭诊断开关，仍在Image4接口缺失处panic，未到BSD。
+8801字节字符日志无丢失，512 KiB标准panic区完整，CRC与UUID匹配；现场位于out/macos26-debug-unlock-39992979541。
+实机候选81b73787560593b12213d6a3ffead5faac9acb61998e4e1419880f0e99fc23a7已封装。
+Android基线sheng / _a / boot_completed=1，随后a槽可启动检查通过，单次RAM临时启动返回Booting OKAY。
+实机结果待用户观察，记录位于private/experiments/20261024-native-arm64e/skip-debug-unlock，不把ABL确认记作内核运行证据。
+被替代的94f5fa42部署镜像和已完成QEMU的ESP暂存已删除，保留有效Android恢复备份及配套诊断。
