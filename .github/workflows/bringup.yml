@@ -219,7 +219,6 @@ jobs:
     env:
       NATIVE_ARCH: ${{ inputs.native_arch || 'arm64' }}
       NATIVE_OUT: ${{ inputs.native_arch == 'arm64e' && 'out/macos26-xnu-arm64e' || 'out/macos26-xnu' }}
-      SHENG_KDK_EXPANDED: ${{ runner.temp }}/sheng-kdk-25F71
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -259,6 +258,8 @@ jobs:
         with:
           path: private/apple/Kernel_Debug_Kit_26.5_build_25F71.dmg
           key: macos26-kdk-${{ hashFiles('config/macos26.json') }}
+      - name: Select stable KDK staging path
+        run: echo "SHENG_KDK_EXPANDED=$RUNNER_TEMP/sheng-kdk-25F71" >> "$GITHUB_ENV"
       - run: bash scripts/verify_kdk.sh config/macos26.json
       - name: Identify native build toolchain
         id: native-toolchain
