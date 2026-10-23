@@ -308,3 +308,9 @@ TTBR1 版（0e6d102）实机照片确认全部 0-F 标记、granule16=PASS 和 f
 由此确认启动核 EL1 的 IA/IB/DA/DB/GA 测试密钥切换、认证和固件密钥恢复，不代表 Apple 密钥派生或任务切换已实现。
 KDP 的已有编译支持、传输阻断及符号要求记录于 docs/debugging.md，并已写入本地开发约定。
 下一项独立探针在 47 位 TTBR1 的低端和预定内核高地址执行 16K RX 页，检查独立 RW 数据页和拒绝控制。
+
+47 位候选（012d6fc）实机照片确认 walks=PASS、execute=PASS、controls=PASS、firmware-restored=PASS、status=Success。
+返回 PC 分别为 0xffff800000004000 和 0xfffffe0007004000，独立数据页读回 0x5757，0-F 标记全部完成。
+这确认启动核在现有 EL1 环境可遍历并执行 47 位 TTBR1 窗口的 16K 映射，代码写入和未映射地址负对照正确。
+独立能力探针阶段结束；后续推进配套 macOS 26.5 XNU 的可执行链接、机器层 ABI 和 arm64e 生命周期。
+尚未启动 macOS 内核或用户空间，也未验证完整 XNU pmap、EL0 地址空间和多核切换。
