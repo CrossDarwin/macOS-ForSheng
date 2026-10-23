@@ -1,0 +1,36 @@
+diff --git a/patches/xnu/offline-component-load-probes.patch b/patches/xnu/offline-component-load-probes.patch
+index 94bf523..69d5e48 100644
+--- a/patches/xnu/offline-component-load-probes.patch
++++ b/patches/xnu/offline-component-load-probes.patch
+@@ -1,6 +1,6 @@
+ --- a/bsd/kern/bsd_init.c
+ +++ b/bsd/kern/bsd_init.c
+-@@ -478,5 +478,88 @@
++@@ -478,5 +478,90 @@
+   * of the tro_ucred field so that the uthread structure can be
+   * used like any other.
+   */
+@@ -72,12 +72,14 @@
+ +	}
+ +	native_mobile_graphics_load_status = OSKextLoadKextWithIdentifier("com.apple.iokit.IOMobileGraphicsFamily");
+ +	native_mobile_graphics_probe_checkpoint();
+++#if defined(XNU_NATIVE_LEGACY_DISPLAY) && XNU_NATIVE_LEGACY_DISPLAY
+ +	int legacy_register = 0;
+ +	if (native_mobile_graphics_load_status == 0 &&
+ +	    PE_parse_boot_argn("offline-legacy-register", &legacy_register, sizeof(legacy_register)) && legacy_register) {
+ +		extern void native_legacy_display_probe(void);
+ +		native_legacy_display_probe();
+ +	}
+++#endif
+ +	int client_probe = 0;
+ +	if (native_mobile_graphics_load_status == 0 &&
+ +	    PE_parse_boot_argn("offline-mobile-graphics-client", &client_probe, sizeof(client_probe)) && client_probe) {
+@@ -89,7 +91,7 @@
+ +
+  void
+  bsd_init(void)
+-@@ -698,6 +774,27 @@
++@@ -698,6 +776,27 @@
+  	/* Initialize the file systems. */
+  	bsd_init_kprintf("calling vfsinit\n");
+  	vfsinit();
