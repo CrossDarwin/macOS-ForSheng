@@ -14,8 +14,8 @@ LIMITS = {'logfs': 32 << 20, 'xbl_sc_logs': 4 << 20, 'rawdump': 1 << 20}
 
 
 def decode_log(data: bytes) -> str:
-    # ASCII logs also have zero-filled tails; inspect character positions before trimming.
-    prefix = data[:256]
+    # Zero-filled tails are padding, not evidence of UTF-16 encoding.
+    prefix = data.rstrip(b'\0')[:256]
     if len(prefix) >= 4 and prefix[1::2].count(0) > len(prefix[1::2]) * .75:
         if len(data) % 2:
             data = data[:-1]
