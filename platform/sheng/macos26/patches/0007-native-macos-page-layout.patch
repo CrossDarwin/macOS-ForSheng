@@ -1,0 +1,77 @@
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -55,7 +55,9 @@
+ #include <machine/machine_cpc.h>
+ 
+ #include <pexpert/arm/protos.h>
++#if defined(APPLE_ARM64_ARCH_FAMILY)
+ #include <pexpert/arm64/apple_arm64_cpu.h>
++#endif
+ #include <pexpert/arm64/apple_arm64_regs.h>
+ #include <pexpert/arm64/board_config.h>
+ 
+--- a/osfmk/arm/machine_routines_common.c
++++ b/osfmk/arm/machine_routines_common.c
+@@ -51,7 +51,9 @@
+ #include <machine/monotonic.h>
+ #include <pexpert/pexpert.h>
+ #include <pexpert/device_tree.h>
++#if defined(APPLE_ARM64_ARCH_FAMILY)
+ #include <pexpert/arm64/apple_arm64_cpu.h>
++#endif
+ 
+ #include <mach/machine.h>
+ #include <mach/machine/sdt.h>
+--- a/osfmk/arm64/pcb.c
++++ b/osfmk/arm64/pcb.c
+@@ -71,7 +71,9 @@
+ 
+ #include <IOKit/IOBSD.h>
+ 
++#if defined(APPLE_ARM64_ARCH_FAMILY)
+ #include <pexpert/arm64/apple_arm64_cpu.h>
++#endif
+ #include <pexpert/pexpert.h>
+ 
+ // fixme: rdar://114299113 tracks resolving the supportlib issue with hwtrace features
+--- a/pexpert/pexpert/arm64/SHENG.h
++++ b/pexpert/pexpert/arm64/SHENG.h
+@@ -7,6 +7,7 @@
+ #define NO_MONITOR                       1
+ #define NO_ECORE                         1
+ #define ARM_ARCH_TIMER
++#define __ARM_16K_PG__                   1
+ #define __ARM_ARCH__                     8
+ #define __ARM_VMSA__                     8
+ #define __ARM_VFP__                      4
+--- a/osfmk/arm/pmap/pmap_data.c
++++ b/osfmk/arm/pmap/pmap_data.c
+@@ -4177,6 +4177,8 @@
+ #endif
+ }
+ 
++void pmap_mark_page_for_cache_flush(pmap_paddr_t pa);
++
+ void
+ pmap_mark_page_for_cache_flush(pmap_paddr_t pa)
+ {
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -4955,13 +4955,13 @@
+ 		if (pvh_ptep_is_iommu(pte_p)) {
+ #if XNU_MONITOR
+ 			if (__improbable(pvh_flags & PVH_FLAG_LOCKDOWN_MASK)) {
+-				panic("pmap_page_protect: ppnum 0x%x locked down, cannot be owned by iommu %p, pve_p=%p",
+-				    ppnum, ptep_get_iommu(pte_p), pve_p);
++				panic("pmap_page_protect: ppnum 0x%x locked down, cannot be with encoded iommu ptep %p, pve_p=%p",
++				    ppnum, pte_p, pve_p);
+ 			}
+ #endif
+ 			if (remove && (options & PMAP_OPTIONS_COMPRESSOR)) {
+-				panic("pmap_page_protect: attempt to compress ppnum 0x%x owned by iommu %p, pve_p=%p",
+-				    ppnum, ptep_get_iommu(pte_p), pve_p);
++				panic("pmap_page_protect: attempt to compress ppnum 0x%x with encoded iommu ptep %p, pve_p=%p",
++				    ppnum, pte_p, pve_p);
+ 			}
+ 			goto protect_skip_pve_pass1;
+ 		}

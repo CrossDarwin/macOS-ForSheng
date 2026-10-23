@@ -21,12 +21,21 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0004-system-abi-identifiers.patch',
     ROOT / 'platform/sheng/macos26/patches/0005-native-cache-and-unused-diagnostics.patch',
     ROOT / 'platform/sheng/macos26/patches/0006-upstream-write-only-diagnostics.patch',
+    ROOT / 'platform/sheng/macos26/patches/0007-native-macos-page-layout.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
     ROOT / 'UniXNU/patches/xnu/local-availability.patch',
     ROOT / 'UniXNU/patches/xnu/cxx-flag-dependencies.patch',
 ]
+
+
+# Preserve diagnostics for exported Apple source/tool-generated code on Clang 27.
+# Machine-layer translation units restore these categories to errors below.
+UPSTREAM_WARNINGS = (
+    'unused-but-set-variable', 'gnu-folding-constant', 'implicit-int-float-conversion',
+    'pointer-to-int-cast', 'void-pointer-to-int-cast', 'void-pointer-to-enum-cast',
+)
 
 
 def sha(path: Path) -> str:
@@ -104,6 +113,8 @@ def prepare() -> dict:
                   purpose='Native machine-layer source compilation; not a bootable kernel',
                   source_archive_built=False, platform_objects_built=False, runnable_kernel=False,
                   stage='source-compilation', full_upstream_sheng_config=False,
+                  kernel_page_bytes=16384, virtual_address_bits=47,
+                  upstream_warning_only_categories=list(UPSTREAM_WARNINGS),
                   upstream_binary_archives_reused=False, boot_image_generated=False,
                   original_component_abi_qualified=False, hardware_executed=False,
                   source_diff_sha256=hashlib.sha256(subprocess.check_output(
@@ -200,7 +211,7 @@ def compile_sources(args, record: dict) -> None:
     save(record)
     common = ['make', '-C', source, 'SDKROOT=macosx', f'KDKROOT={args.kdk_root}',
               'TARGET_CONFIGS=DEVELOPMENT ARM64 SHENG', 'ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG=arm64',
-              'ARM64_LARGE_MEMORY=0', 'ARM64_LINK_ADDR=0xfffffff007004000',
+              'ARM64_LARGE_MEMORY=1', 'ARM64_LINK_ADDR=0xfffffe0007004000',
               'RC_DARWIN_KERNEL_VERSION=25.5.0', 'RC_ProjectSourceVersion=12377.121.6',
               'DEPLOYMENT_TARGET_FLAGS=-mmacosx-version-min=26.5 -DXNU_TARGET_OS_OSX',
               'BUILD_LTO=0', 'BOUND_CHECKS=0', 'BUILD_WERROR=1', f'MAKEJOBS=-j{args.jobs}',
@@ -209,17 +220,28 @@ def compile_sources(args, record: dict) -> None:
     run(common + ['installhdrs'], 'install-headers', record, env=env)
     # Archive the ordinary kernel translation units without substituting an
     # Apple SoC support library or producing an executable with unresolved ABI.
-    run(common + ['-k', 'build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=1', 'CFLAGS_KERNEL=-mkernel',
-                  'CXXFLAGS_KERNEL=-fapple-kext',
-                  'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1'],
-        'source-archive', record, env=env)
-    archive = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a'
-    if not archive.is_file() or archive.stat().st_size < 1 << 20:
-        raise ValueError('source compilation did not produce a real kernel archive')
-    record.update(source_archive_built=True, source_archive_sha256=sha(archive),
-                  source_archive_bytes=archive.stat().st_size)
-    save(record)
+    failures = []
+    try:
+        run(common + ['-k', 'build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=1',
+                      'CFLAGS_KERNEL=-mkernel', 'CXXFLAGS_KERNEL=-fapple-kext',
+                      'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1 ' +
+                      ' '.join('-Wno-error=' + warning for warning in UPSTREAM_WARNINGS)],
+            'source-archive', record, env=env)
+    except subprocess.CalledProcessError:
+        failures.append('source-archive: compilation failed; see logs/source-archive.log')
+    else:
+        archive = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a'
+        if not archive.is_file() or archive.stat().st_size < 1 << 20:
+            failures.append('source-archive: no real kernel archive was produced')
+        else:
+            record.update(source_archive_built=True, source_archive_sha256=sha(archive),
+                          source_archive_bytes=archive.stat().st_size)
+        save(record)
     recipe = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json'
+    if not recipe.is_file():
+        record['build_failures'] = failures + ['no IOPlatformExpert compilation record was produced']
+        save(record)
+        raise ValueError('; '.join(record['build_failures']))
     compile_record = json.loads(recipe.read_text().strip().rstrip(','))
     record['platform_objects'] = {}
     for component in ('ArmDTPlatform', 'ArmCpu'):
@@ -239,11 +261,18 @@ def compile_sources(args, record: dict) -> None:
                 command.append(arg)
             index += 1
         command += ['-I', str(source / 'osfmk'), '-Werror', '-Wno-unused-parameter']
-        run(command, component, record, cwd=Path(compile_record['directory']), env=env)
-        record['platform_objects'][component] = dict(source_sha256=sha(original), **audit_object(destination))
+        command += ['-Werror=' + warning for warning in UPSTREAM_WARNINGS]
+        try:
+            run(command, component, record, cwd=Path(compile_record['directory']), env=env)
+            record['platform_objects'][component] = dict(source_sha256=sha(original), **audit_object(destination))
+        except (subprocess.CalledProcessError, ValueError) as error:
+            failures.append(f'{component}: {error}')
         save(record)
-    record['platform_objects_built'] = True
+    record['platform_objects_built'] = len(record['platform_objects']) == 2
+    record['build_failures'] = failures
     save(record)
+    if failures:
+        raise ValueError('; '.join(failures))
 
 
 def main() -> None:

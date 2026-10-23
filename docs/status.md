@@ -232,3 +232,20 @@ Actions 39930215732 已通过 SDK 头哈希校验，之前的缺失头、缓存�
 真实源码编译已进入 BSD、IOKit 和 security，停在 VFS 调试计数及 Xcode 27 IIG 生成的 OSAction 接收器未使用变量告警。
 仅为 VFS 计数添加 unused 标注，并为该生成对象设置单项诊断例外，其他对象仍启用该告警和 -Werror。
 后续使用 make -k 汇总各模块实际错误，失败状态仍使工作流失败。
+
+Android EL0 独立实机探测：CPU 0–5 的 MIDR 分别覆盖 0x411fd461、0x411fd4d0、0x412fd470，
+CTR_EL0 均为 0x49444c004，公开给该程序的 I/D 缓存维护步长均为 64 字节。
+各核 PACIA 确实改变指针，AUTIA 恢复原值，基本指令往返通过。
+CPU 6–7 的 sched_setaffinity 返回 -EINVAL，未验证；CTR/MIDR 读取可能受 Linux 模拟或归一化处理。
+原始二进制结果、探针源码/可执行文件及 SHA-256 保存在 private/device/android-cache-pac.*。
+该结果不证明 EL1 密钥寄存器访问、macOS arm64e 加载和跨进程密钥切换已实现。
+
+Actions 39931119921 已完整收集各模块错误，避免逐文件失败后重复构建。
+公开 XNU 的普通 4 KiB 页表路径只提供 38/39 位用户 VA，无法直接承载 macOS 默认 47 位用户地址布局；
+该路径的 commpage 断言揭示了实际配置冲突，不删除断言，也不缩小 macOS 用户地址 ABI。
+SHENG 的 macOS 26 编译目标改为原生 16 KiB / 47 位布局及对应链接地址。
+UEFI 实测 MMFR0=0x22200101122 的 TGran16 字段为 1；当前只作为能力声明，16 KiB 页表执行尚待新内核验证。
+原有完整 sheng 4 KiB 硬件参考配置保持原样。
+已将三个无条件 Apple CPU 头改为仅 Apple 平台引用，修复非 SPTM pmap 的真实声明和 panic 诊断引用。
+六类旧源码/工具生成代码兼容告警保留为 warning，其余仍为 error；重新编译的机器层对象将恢复这六类 error。
+归档失败时仍尝试编译机器层对象，分别记录失败，不把残留归档或个别对象算作内核成功。
