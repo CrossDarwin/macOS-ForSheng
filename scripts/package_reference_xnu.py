@@ -131,8 +131,9 @@ def main() -> None:
         if not args.mmu_reset_delay or checkpoint not in {
                 ('_arm_init', '_PE_create_console', False),
                 ('_kernel_bootstrap_thread', '_bsd_init', True),
-                ('_bsd_init', '_IOKitInitializeTime', True)}:
-            raise ValueError('complete-config test requires a bounded console, BSD-entry or BSD-buffer checkpoint')
+                ('_bsd_init', '_IOKitInitializeTime', True),
+                ('_bsd_init', '_IOKitBSDInit', True)}:
+            raise ValueError('complete-config test requires a bounded console or pre-autoconfiguration BSD checkpoint')
     audit = audit_kernel(original)
     translation = json.loads((args.kernel_build / 'kernel-audit.json').read_text())
     translation_hash = build.get('source_kernel_sha256') if args.upstream_sheng else audit['sha256']

@@ -167,4 +167,10 @@ BSD 入口前镜像临时启动返回 `Booting OKAY`。用户确认彩色条后�
 
 BSD 缓冲区检查点的 QEMU 实际执行通过，调用地址 `0xfffffff00bd104e0`。
 容器 SHA-256 为 `3ec866505b1a5b26d50e63c21503a54223ddd33f8ae1e4cbf907961567526998`；
-载荷内核为 `8a0d08e227a192be2adf102c51ba650c94b940b4e5c27bfd92644974988787aa`。实机观察尚待确认。
+载荷内核为 `8a0d08e227a192be2adf102c51ba650c94b940b4e5c27bfd92644974988787aa`。用户确认彩色条后约 3 秒自动复位，BSD 早期初始化实机通过。
+
+设备自动配置前的下一检查点选在实际产物 `bsd_init` 内对 `IOKitBSDInit` 的直接调用之前，地址 `0xfffffff00bd107f4`。
+`bsd_autoconf` 已被编译器内联，没有可供原有探针替换的独立调用；封装器对此明确拒绝，未发送失败候选。
+QEMU 实测新的调用前复位路径通过，BSD 已执行 VFS 框架、事件、POSIX 线程及网络初始化，但尚未调用 `IOKitBSDInit`。
+容器 SHA-256 为 `6ad7b2c1365c17a31ccc4cac9470a20c9357c3c1c74b36c1003f13cda950c362`，载荷内核为 `03f57caae56ae822edc18ba11f2260592422bfac7bea730f7acd0e6d9f95bd74`。
+实机观察尚待确认。
