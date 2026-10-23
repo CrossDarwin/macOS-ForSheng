@@ -20,13 +20,21 @@ def main():
     p.add_argument('--firmware-build', type=Path, required=True)
     p.add_argument('--backup-dir', type=Path, required=True)
     args = p.parse_args()
-    build = json.loads((ROOT / 'out/native-el1-build.json').read_text())
-    app = ROOT / 'out/uefi/RELEASE_CLANGPDB/AARCH64/ShengNativeEl1.efi'
-    if hashlib.sha256(app.read_bytes()).hexdigest() != build['sha256']:
-        raise ValueError('probe differs from its completed build')
     firmware = json.loads(args.firmware_build.read_text())
-    if firmware['preflight_only'] or firmware['bootimg']['compression'] != 'none':
-        raise ValueError('requires the existing normal, uncompressed UniXNU firmware container')
+    embedded = firmware.get('native_el1', False)
+    if (firmware['preflight_only'] and not embedded) or firmware['bootimg']['compression'] != 'none':
+        raise ValueError('requires an uncompressed normal or native-EL1 firmware container')
+    app = None
+    if embedded:
+        if firmware['entry_audit']['application_guid'] != '4e240ccd-9e9a-4bf1-832d-4237392fc59f':
+            raise ValueError('firmware registrar does not select the native EL1 probe')
+        build = dict(sources_sha256=firmware['native_el1_sources_sha256'],
+                     application_source='firmware-volume')
+    else:
+        build = json.loads((ROOT / 'out/native-el1-build.json').read_text())
+        app = ROOT / 'out/uefi/RELEASE_CLANGPDB/AARCH64/ShengNativeEl1.efi'
+        if hashlib.sha256(app.read_bytes()).hexdigest() != build['sha256']:
+            raise ValueError('probe differs from its completed build')
     base = ROOT / next(x for x in firmware['artifacts'] if x.endswith('.img'))
     data = base.read_bytes()
     payload_size = struct.unpack_from('<I', data, 8)[0]
@@ -51,12 +59,13 @@ def main():
         work = Path(temp)
         stage = work / 'EFI/UniXNU'
         (stage / 'Payloads').mkdir(parents=True)
-        shutil.copy2(app, stage / 'Payloads/ShengNativeEl1.efi')
-        (stage / 'unixnu.toml').write_text(
-            'version = 1\n[boot]\ntimeout = 3\ndefault = "native-el1"\n'
-            '[kits]\nautoload = false\n[[entry]]\nid = "native-el1"\n'
-            'title = "SHENG EL1 - 16K and PAC"\ntype = "efi"\n'
-            'path = "Payloads/ShengNativeEl1.efi"\n')
+        if app is not None:
+            shutil.copy2(app, stage / 'Payloads/ShengNativeEl1.efi')
+            (stage / 'unixnu.toml').write_text(
+                'version = 1\n[boot]\ntimeout = 3\ndefault = "native-el1"\n'
+                '[kits]\nautoload = false\n[[entry]]\nid = "native-el1"\n'
+                'title = "SHENG EL1 - 16K and PAC"\ntype = "efi"\n'
+                'path = "Payloads/ShengNativeEl1.efi"\n')
         fat = work / 'probe.fat'
         subprocess.run(['mformat', '-C', '-F', '-T', str(64 * 2048), '-v', 'SHENGEL1',
                         '-N', '53484531', '-i', fat, '::'], check=True)

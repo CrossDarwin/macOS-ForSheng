@@ -31,6 +31,9 @@ python3 scripts/test_el1_native.py --clang /path/to/clang --qemu /path/to/qemu-s
 
 打包沿用已实机成功的 UniXNU 固件、原始厂商 DTB 与当前槽 OS 元数据，使用 RAM FAT。
 `scripts/package_el1_native.py --help` 列出输入；该脚本不部署设备。
+sheng 当前固件从 RAM FAT 加载该 EFI 时返回 Access Denied；实机使用
+`scripts/build_firmware.py --native-el1` 将探针嵌入 FV，由现有注册器直接选择。
+该模式不修改全局镜像认证策略，也不使用另一个独立 EFI 构建的哈希替代 FV 内的应用。
 
 参考：[Snapintosh 页粒度实验](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/probes/tgran16.c)、
 [PAC 切换语义](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/compat/pauth-switch.S)。

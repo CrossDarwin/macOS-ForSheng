@@ -1,0 +1,23 @@
+--- a/Platforms/Xiaomi/shengPkg/sheng.dsc
++++ b/Platforms/Xiaomi/shengPkg/sheng.dsc
+@@ -131,3 +131,7 @@
+ [LibraryClasses]
+   UniXNULib|UniXNUPkg/Library/UniXNULib/UniXNULib.inf
+   FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
++
++!ifdef SHENG_NATIVE_EL1_PROBE
++!include ShengNativeEl1/NativeEl1.dsc.inc
++!endif
+--- a/Platforms/Xiaomi/shengPkg/sheng.fdf
++++ b/Platforms/Xiaomi/shengPkg/sheng.fdf
+@@ -102,6 +102,10 @@
+   # IORT DT
+   INF QcomPkg/Drivers/IortDtDxe/IortDtDxe.inf
+ 
++!ifdef SHENG_NATIVE_EL1_PROBE
++  INF ShengNativeEl1/NativeEl1.inf
++!endif
++
+   # Device Tree
+   #INF EmbeddedPkg/Drivers/DtPlatformDxe/DtPlatformDxe.inf
+   #FILE FREEFORM = 25462CDA-221F-47DF-AC1D-259CFAA4E326 {

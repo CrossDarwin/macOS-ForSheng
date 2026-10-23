@@ -268,3 +268,9 @@ Actions 39933736122 已编译通过 ArmDTPlatform 与 ArmCpu，真实对象部�
 QEMU 实际执行的 16 KiB 正对照、强制 4 KiB 回退负对照，以及 IA/IB/DA/DB/GA 切换和状态恢复均通过。
 UEFI 应用已编译；候选沿用已实机通过的固件和厂商 DTB，使用 RAM FAT，不写分区。
 这些结果尚未证明 sheng 的实际执行、47 位完整布局或 XNU task/thread 的 PAC 语义。
+
+Actions 39937165999 已成功生成 macOS 26.5 原生内核归档，ArmDTPlatform/ArmCpu 对象编译通过。
+当前仍无可执行内核，不将此结果视为 ABI 或实机启动通过。
+第一轮独立 EFI 探针从 RAM FAT 选择后返回 Access Denied，屏幕照片确认尚未取得探针执行结果。
+新版改用现有 FV 注册启动方式，固件 FV 与注册器均已构建；没有放宽全局镜像加载策略。
+同时让所有提前返回的探针分支停留显示原因，栈映射检查仅覆盖实际使用范围。
