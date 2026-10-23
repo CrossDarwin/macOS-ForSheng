@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 import argparse, json, os, socket, struct, subprocess, time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from PIL import Image
 ROOT=Path(__file__).resolve().parents[1]
@@ -43,13 +44,37 @@ try:
   return payload.decode()
  def packet(command):
   payload=command.encode();s.sendall(b'$'+payload+b'#'+f'{sum(payload)%256:02x}'.encode())
-  return receive()
+  try:
+   return receive()
+  except TimeoutError:
+   s.sendall(b'\x03');receive()
+   raw=bytes.fromhex(packet('g'))
+   registers=struct.unpack('<33Q',raw[:264])
+   report={f'x{i}':hex(v) for i,v in enumerate(registers[:31])}
+   report.update(sp=hex(registers[31]),pc=hex(registers[32]))
+   def feature(name):
+    offset=0;text=''
+    while True:
+     chunk=packet(f'qXfer:features:read:{name}:{offset:x},1000')
+     text+=chunk[1:];offset+=len(chunk)-1
+     if chunk[0]=='l':
+      if 'xi:include' in text and 'xmlns:xi=' not in text:
+       text=text.replace('<target','<target xmlns:xi="http://www.w3.org/2001/XInclude"',1)
+      return ET.fromstring(text)
+   target_xml=feature('target.xml')
+   for include in target_xml.findall('{http://www.w3.org/2001/XInclude}include'):
+    for reg in feature(include.attrib['href']).findall('reg'):
+     if reg.attrib['name'] in ('TCR_EL1','TTBR0_EL1','TTBR1_EL1','SCTLR_EL1','ESR_EL1','FAR_EL1','ELR_EL1'):
+      report[reg.attrib['name']]=hex(int.from_bytes(bytes.fromhex(packet(f'p{int(reg.attrib["regnum"]):x}')),'little'))
+   (p/'timeout-registers.json').write_text(json.dumps(report,indent=2)+'\n')
+   print(json.dumps(report),flush=True)
+   raise
  def memory(address, length):
   reply=packet(f'm{address:x},{length:x}')
   return bytes.fromhex(reply)
  assert packet(f'Z0,{symbols["after_entry"]:x},4')=='OK'
  assert packet('c').startswith(('T05','S05'))
- record=struct.unpack('<18Q',memory(symbols['sheng_early_exception_record'],144))
+ record=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record'],192))
  assert record[0]==1 and record[12]==symbols['boot_args']
  assert packet(f'z0,{symbols["after_entry"]:x},4')=='OK'
  # The vector page is copied during XNU CPU bootstrap; verify PC-relative code remains valid.
@@ -69,7 +94,7 @@ try:
  halt=symbols['Lsheng_early_halt']+delta
  assert packet(f'Z0,{halt:x},4')=='OK'
  assert packet('c').startswith(('T05','S05'))
- saved=struct.unpack('<18Q',memory(symbols['sheng_early_exception_record']+delta,144))
+ saved=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record']+delta,192))
  assert saved[0]==2 and saved[1]==trampoline+24 and saved[2]==0xf2000123, [hex(x) for x in saved]
  assert struct.unpack('<Q',memory(symbols['sheng_early_exception_record'],8))[0]==1
  screen=p/'screen.raw'
@@ -79,7 +104,42 @@ try:
  assert result=='OK',result
  raw=screen.read_bytes();assert len(raw)==640*640*4
  Image.frombytes('RGBX',(640,640),raw,'raw','BGRX').convert('RGB').save(p/'screen.png')
- result={'entry_returned':True,'relocated_vector_fault_captured':True,'status':saved[0],'elr':hex(saved[1]),'esr':hex(saved[2]),'far':hex(saved[3]),'record':hex(symbols['sheng_early_exception_record']+delta),'copied_page_bytes':4096,'vector_used_bytes':symbols['sheng_early_exception_record']+144-symbols['LowExceptionVectorBase'],'sheng_hardware_executed':False}
+ # Exercise the shared vector hook while executing high VA with TTBR0 disabled.
+ assert packet(f'z0,{halt:x},4')=='OK'
+ target=symbols['qemu_mmu_test']
+ branch=0x14000000|((target-halt)//4 & 0x3ffffff)
+ assert packet(f'M{halt:x},4:'+struct.pack('<I',branch).hex())=='OK'
+ original_halt=symbols['Lsheng_early_halt']
+ assert packet(f'Z0,{original_halt:x},4')=='OK'
+ assert packet('c').startswith(('T05','S05'))
+ mmu=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record'],192))
+ high=0xffff800000000000
+ assert mmu[0]==3 and mmu[1]==high+symbols['qemu_high_fault'] and mmu[2]==0xf2000124, [hex(x) for x in mmu]
+ assert mmu[5]&1 and mmu[6]&128 and mmu[7]==0
+ screen=p/'mmu-screen.raw'
+ result=packet('qRcmd,'+f'pmemsave 0x41000000 0x190000 "{screen}"'.encode().hex())
+ while result.startswith('O') and result!='OK':
+  print(bytes.fromhex(result[1:]).decode(errors='replace'));result=receive()
+ assert result=='OK',result
+ raw=screen.read_bytes()
+ Image.frombytes('RGBX',(640,640),raw,'raw','BGRX').convert('RGB').save(p/'mmu-screen.png')
+ # Once console setup disables the gate, the original exception handler runs.
+ assert packet(f'z0,{original_halt:x},4')=='OK'
+ branch=0x14000000|((target-original_halt)//4 & 0x3ffffff)
+ assert packet(f'M{original_halt:x},4:'+struct.pack('<I',branch).hex())=='OK'
+ assert packet(f'M{symbols["sheng_bootstrap_capture_enabled"]:x},4:00000000')=='OK'
+ normal=high+symbols['qemu_normal_dispatch']
+ assert packet(f'Z0,{normal:x},4')=='OK'
+ assert packet('c').startswith(('T05','S05'))
+ unchanged=struct.unpack('<24Q',memory(high+symbols['sheng_early_exception_record'],192))
+ assert unchanged==mmu
+ result={'entry_returned':True,'relocated_vector_fault_captured':True,
+         'mmu_on_fault_captured':True,'disabled_gate_uses_original_dispatch':True,
+         'status':mmu[0],'elr':hex(mmu[1]),'esr':hex(mmu[2]),'far':hex(mmu[3]),
+         'captured_sctlr':hex(mmu[5]),'captured_tcr':hex(mmu[6]),'captured_ttbr0':hex(mmu[7]),
+         'record':hex(symbols['sheng_early_exception_record']),
+         'copied_page_bytes':4096,'vector_used_bytes':symbols['sheng_early_exception_record']+192-symbols['LowExceptionVectorBase'],
+         'sheng_hardware_executed':False}
  (p/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
 finally:
  proc.terminate()

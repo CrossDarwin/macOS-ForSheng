@@ -24,6 +24,12 @@ struct sheng_log_record sheng_log_buffer __attribute__((aligned(16384))) = {
     .magic = {'S','H','N','L','O','G','0','1'}, .version = 1, .header_bytes = 128,
     .prefix_bytes = SHENG_LOG_PREFIX, .tail_bytes = SHENG_LOG_TAIL,
 };
+volatile uint32_t sheng_bootstrap_capture_enabled = 1;
+
+void sheng_bootstrap_capture_end(void)
+{
+    __atomic_store_n(&sheng_bootstrap_capture_enabled, 0, __ATOMIC_RELEASE);
+}
 
 static void sheng_log_clean(const void *address, size_t bytes)
 {

@@ -1,0 +1,48 @@
+--- a/osfmk/arm64/locore.s
++++ b/osfmk/arm64/locore.s
+@@ -47,6 +47,7 @@
+ 
+ 
+ #if SHENG
++#include <arm64/sheng_bootstrap_sync.h>
+ /* Capture the first EL1 sync exception before thread-dependent vector code. */
+ .macro SHENG_FIRST_SYNC_LOG
+     stp x0, x1, [sp, #-16]!
+@@ -673,6 +674,7 @@
+ el1_sp0_synchronous_vector_long:
+ #if SHENG
+ 	SHENG_FIRST_SYNC_LOG
++	SHENG_BOOTSTRAP_SYNC_SCREEN
+ #endif
+ 	stp		x0, x1, [sp, #-16]!				// Save x0 and x1 to the exception stack
+ 	mrs		x1, ESR_EL1							// Get the exception syndrome
+@@ -799,6 +801,7 @@
+ el1_sp1_synchronous_vector_long:
+ #if SHENG
+ 	SHENG_FIRST_SYNC_LOG
++	SHENG_BOOTSTRAP_SYNC_SCREEN
+ #endif
+ 	/*
+ 	 * Before making our first (potentially faulting) memory access, check if we
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -163,6 +163,7 @@
+ void sheng_log_putc(char c);
+ void sheng_log_begin(uint64_t physical_base, uint64_t virtual_base, const void *header);
+ void sheng_log_panic(uint64_t caller, const char *message);
++void sheng_bootstrap_capture_end(void);
+ #endif
+ 
+ void PE_init_printf(
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -582,6 +582,9 @@
+ 		printf("SHENG: early framebuffer console acquired\n");
+ 	}
+ #endif
++#if SHENG
++	sheng_bootstrap_capture_end();
++#endif
+ }
+ 
+ int

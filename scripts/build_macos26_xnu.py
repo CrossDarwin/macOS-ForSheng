@@ -44,6 +44,7 @@ PATCHES = [
     ROOT / 'UniXNU/patches/xnu/local-availability.patch',
     ROOT / 'UniXNU/patches/xnu/cxx-flag-dependencies.patch',
     ROOT / 'platform/sheng/macos26/patches/0023-native-early-exception-screen.patch',
+    ROOT / 'platform/sheng/macos26/patches/0024-native-bootstrap-sync-screen.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -145,10 +146,13 @@ def prepare() -> dict:
     stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
     early_exception = ROOT / 'platform/sheng/macos26/log/early_exception.h'
     stage_file(early_exception, source / 'osfmk/arm64/sheng_early_exception.h')
+    bootstrap_sync = ROOT / 'platform/sheng/macos26/log/bootstrap_sync.h'
+    stage_file(bootstrap_sync, source / 'osfmk/arm64/sheng_bootstrap_sync.h')
     crypto_image = ROOT / 'platform/sheng/macos26/crypto/native_image.h'
     stage_file(crypto_image, source / 'osfmk/prng/sheng_crypto_image.h')
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
-                    'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h'], check=True)
+                    'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
+                    'osfmk/arm64/sheng_bootstrap_sync.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -158,6 +162,7 @@ def prepare() -> dict:
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   retained_log_source_sha256=sha(retained_log),
                   early_exception_source_sha256=sha(early_exception),
+                  bootstrap_sync_source_sha256=sha(bootstrap_sync),
                   crypto_image_source_sha256=sha(crypto_image),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],

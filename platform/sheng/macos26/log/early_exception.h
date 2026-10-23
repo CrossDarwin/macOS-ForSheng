@@ -1,9 +1,23 @@
 /* SPDX-License-Identifier: MIT */
 /* 与低位向量一起复制，不依赖栈、C全局变量、固件或MMIO串口 */
+#ifndef SHENG_EARLY_ADDRESS
+#ifdef __APPLE__
+#define SHENG_EARLY_ADDRESS(reg, name) adrp reg, name@page; add reg, reg, name@pageoff
+#else
+#define SHENG_EARLY_ADDRESS(reg, name) adrp reg, name; add reg, reg, :lo12:name
+#endif
+#endif
 Lsheng_early_enter:
 	adr x19, EXT(sheng_early_exception_record)
 	str x20, [x19, #96]
 	str lr, [x19, #104]
+	str x20, [x19, #176]
+	ldp x0, x1, [x20, BA_VIRT_BASE]
+	stp x0, x1, [x19, #144]
+	SHENG_EARLY_ADDRESS(x0, EXT(bootstrap_pagetables))
+	str x0, [x19, #160]
+	adr x0, Lsheng_mmu_off_fault
+	str x0, [x19, #168]
 	mov x0, #1
 	str x0, [x19]
 	b Lsheng_early_capture
@@ -13,7 +27,7 @@ Lsheng_early_exception:
 	adr x19, EXT(sheng_early_exception_record)
 	ldr x0, [x19]
 	cmp x0, #2
-	b.eq Lsheng_early_halt
+	b.hs Lsheng_early_halt
 	mov x0, #2
 	str x0, [x19]
 	str x20, [x19, #96]
@@ -48,6 +62,7 @@ Lsheng_early_capture:
 	/* 低位向量只用于MMU关闭时，拒绝把物理framebuffer当作已映射VA */
 	ldr x0, [x19, #40]
 	tbnz x0, #0, Lsheng_early_finish
+Lsheng_early_draw:
 	ldr x0, [x19, #96]
 	cbz x0, Lsheng_early_finish
 	ldr x21, [x0, BA_VIDEO_BASE]
@@ -74,6 +89,23 @@ Lsheng_early_capture:
 	and x1, x1, #255
 	cmp x1, #32
 	b.ne Lsheng_early_finish
+	/* 整块覆盖文字背景，包括字间距和行间距 */
+	mov x0, #112
+	madd x0, x0, x22, x21
+	add x0, x0, #64
+	mov x1, #448
+	mov w5, #0xff000000
+Lsheng_early_clear_row:
+	mov x2, #152
+	mov x3, x0
+Lsheng_early_clear_pixels:
+	stp w5, w5, [x3], #8
+	stp w5, w5, [x3], #8
+	subs x2, x2, #1
+	b.ne Lsheng_early_clear_pixels
+	add x0, x0, x22
+	subs x1, x1, #1
+	b.ne Lsheng_early_clear_row
 	adr x23, Lsheng_early_font
 	adr x24, Lsheng_early_labels
 	mov x26, #0
@@ -157,6 +189,71 @@ Lsheng_early_finish:
 Lsheng_early_halt:
 	b Lsheng_early_halt
 
+/* 正式向量入口只在控制台建立前使用，保留故障时的系统寄存器 */
+	.globl EXT(sheng_mmu_sync_fault)
+LEXT(sheng_mmu_sync_fault)
+	msr DAIFSet, #15
+	mrs x9, ELR_EL1
+	mrs x10, ESR_EL1
+	mrs x11, FAR_EL1
+	mrs x12, SPSR_EL1
+	mrs x13, SCTLR_EL1
+	mrs x14, TCR_EL1
+	mrs x15, TTBR0_EL1
+	mrs x16, TTBR1_EL1
+	mrs x17, MAIR_EL1
+	mrs x18, SP_EL0
+	tbz x12, #0, 1f
+	mov x18, sp
+1:
+	SHENG_EARLY_ADDRESS(x0, EXT(sheng_early_exception_record))
+	ldr x1, [x0, #160]
+	ldr x2, [x0, #168]
+	ldr x3, [x0, #176]
+	/* SHENG不使用KTRR，原始bootstrap表保留内核窗口的V=P映射 */
+	msr TTBR0_EL1, x1
+	isb
+	mov x4, #0xc0bf
+	bic x5, x14, x4
+	mov x4, #0x8011
+	orr x5, x5, x4
+	msr TCR_EL1, x5
+	isb
+	tlbi vmalle1
+	dsb ish
+	isb
+	br x2
+
+Lsheng_mmu_off_fault:
+	/* 此处已从V=P地址取指，关闭翻译后不再使用原异常栈 */
+	adr x0, EXT(LowExceptionVectorBase)
+	msr VBAR_EL1, x0
+	isb
+	bic x0, x13, #1
+	bic x0, x0, #4
+	bic x0, x0, #0x1000
+	msr SCTLR_EL1, x0
+	isb
+	tlbi vmalle1
+	dsb sy
+	isb
+	adr x19, EXT(sheng_early_exception_record)
+	mov x0, #3
+	str x0, [x19]
+	stp x9, x10, [x19, #8]
+	stp x11, x12, [x19, #24]
+	stp x13, x14, [x19, #40]
+	stp x15, x16, [x19, #56]
+	stp x17, x18, [x19, #72]
+	mrs x0, MPIDR_EL1
+	str x0, [x19, #88]
+	str x3, [x19, #96]
+	str lr, [x19, #104]
+	stp x22, x23, [x19, #112]
+	stp x24, x25, [x19, #128]
+	dsb sy
+	b Lsheng_early_draw
+
 Lsheng_early_labels:
 	.ascii "XNU     ELR     ESR     FAR     SPSR    SCTLR   TCR     TTBR0   TTBR1   MAIR    "
 Lsheng_early_font:
@@ -201,4 +298,4 @@ Lsheng_early_font:
 	.p2align 3
 	.globl EXT(sheng_early_exception_record)
 LEXT(sheng_early_exception_record)
-	.space 144, 0
+	.space 192, 0

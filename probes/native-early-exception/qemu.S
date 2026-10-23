@@ -5,14 +5,18 @@
 #define EXT(x) x
 #define LEXT(x) x:
 #define BA_VIDEO_BASE 40
+#define BA_VIRT_BASE 8
 #define BA_VIDEO_ROW_BYTES 56
 #define BA_VIDEO_WIDTH 64
 #define BA_VIDEO_HEIGHT 72
 #define BA_VIDEO_DEPTH 80
+#include "../../platform/sheng/macos26/log/bootstrap_sync.h"
 .text
 .global _start
 _start:
  msr daifset, #15
+ ldr x0, =test_stack_end
+ mov sp, x0
  ldr x20, =boot_args
  mov x21, #0
  adr x0, LowExceptionVectorBase
@@ -23,6 +27,72 @@ _start:
 after_entry:
  brk #0x123
  b .
+
+// 关闭TTBR0后在高位地址触发异常，检查诊断路径能否恢复物理取指
+.global qemu_mmu_test
+qemu_mmu_test:
+ adr x0, LowExceptionVectorBase
+ msr vbar_el1, x0
+ isb
+ SHENG_EARLY_ADDRESS(x0, bootstrap_pagetables)
+ SHENG_EARLY_ADDRESS(x1, test_l2)
+ orr x2, x1, #3
+ str x2, [x0]
+ ldr x2, =0x40000701
+ str x2, [x1, #256]
+ dsb sy
+ msr ttbr0_el1, x0
+ msr ttbr1_el1, x0
+ ldr x0, =0x27511b511
+ msr tcr_el1, x0
+ mov x0, #255
+ msr mair_el1, x0
+ isb
+ tlbi vmalle1
+ dsb sy
+ isb
+ mrs x0, sctlr_el1
+ orr x0, x0, #1
+ orr x0, x0, #4
+ orr x0, x0, #0x1000
+ msr sctlr_el1, x0
+ isb
+ adr x0, qemu_high
+ ldr x1, =0xffff800000000000
+ add x0, x0, x1
+ br x0
+qemu_high:
+ SHENG_EARLY_ADDRESS(x0, test_stack_end)
+ mov sp, x0
+ adr x0, qemu_high_vectors
+ msr vbar_el1, x0
+ msr ttbr0_el1, xzr
+ mrs x0, tcr_el1
+ orr x0, x0, #128
+ msr tcr_el1, x0
+ isb
+ tlbi vmalle1
+ dsb sy
+ isb
+.global qemu_high_fault
+qemu_high_fault:
+ brk #0x124
+ b .
+
+.balign 2048
+qemu_high_vectors:
+.rept 16
+ b qemu_high_exception
+ .balign 128
+.endr
+qemu_high_exception:
+ SHENG_BOOTSTRAP_SYNC_SCREEN
+.global qemu_normal_dispatch
+qemu_normal_dispatch:
+ mrs x0, elr_el1
+ add x0, x0, #4
+ msr elr_el1, x0
+ eret
 .balign 4096
 .global LowExceptionVectorBase
 LowExceptionVectorBase:
@@ -35,5 +105,20 @@ LowExceptionVectorBase:
 .data
 .balign 8
 boot_args:
- .space 40
+ .space 8
+ .quad 0xffff800040200000,0x40200000
+ .space 16
  .quad 0x41000000,0,2560,640,640,32
+.global sheng_bootstrap_capture_enabled
+sheng_bootstrap_capture_enabled:
+ .word 1
+.bss
+.balign 16384
+.global bootstrap_pagetables
+bootstrap_pagetables:
+ .space 16384
+test_l2:
+ .space 16384
+test_stack:
+ .space 16384
+test_stack_end:
