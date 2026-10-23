@@ -425,3 +425,19 @@ Actions 39972044375 未分配 runner，GitHub 注释为账户付款失败或支�
 本地 Clang 22 已将实际修改的链式还原函数编译为 ARM64E Mach-O，使用原 Mach-O/链式结构头文件及最小外部类型声明。
 生成代码包含 PACIA/PACIB/PACDA/PACDB，没有移除认证；该定向编译只确认新增函数的目标语法与指令生成。
 整颗 XNU 的 Xcode 构建、同版 QEMU POST/屏幕日志和 sheng 镜像封装仍未完成，等待 GitHub 账户恢复或可用 macOS 构建机。
+
+
+Actions 39973422068（f6ba858）成功构建原生 ARM64E 内核，UUID EAD2C86F-E6BC-3D27-AA13-CA19EC0E76D2。
+此轮已实际恢复固定源码、KDK 与 ARM64E 编译缓存；工作流的稳定路径在 runner 分配后的步骤中导出。
+QEMU 处理格式 7 的 116829 个指针，其中 43757 个需要认证；内核继续完成 VM、IOKit/NVRAM 与全部 corecrypto POST（230 ms）。
+原始 panic 仍为 `image4 interface not available @kern_trustcache.c:584`，尚未进入 BSD 或用户空间。
+早期 framebuffer 文本控制台已实际显示完整 panic/回溯；字符日志 8801 字节，无覆盖或忙写丢失。
+标准 panic 区 512 KiB 的 CRC/UUID 匹配，panic 文本 2390 字节，压缩 stackshot 2684 字节。
+同版 sheng RAM 启动镜像已封装，SHA-256 7b69a7af4a642b7594ae7011d7577c0d786522eae438163900320d5c2d93179a，72015872 字节。
+镜像仅用于实机原生内核与日志实验，预期停在上述 Image4 panic，不代表恢复界面可用；实机日志保留和 USB reader 仍待验收。
+用户提供的 fileset/kext 参考截图没有配套源码，按机制参考；当前内核已含 csr_check，不重复引入配置。
+后续真实原版 corecrypto 接入时必须替换现有源码提供者，避免两次注册/初始化 PRNG；不将常量表中的字节当作 BL 修补。
+
+2026-10-24 首次部署此 ARM64E 镜像：ADB 确认 sheng / _a，fastboot 仍为 a，下载上限 768 MiB。
+仅执行 fastboot boot，72015872 字节镜像发送成功，ABL 返回 Booting OKAY；未执行 flash、分区写入或槽位切换。
+当前仅确认引导器接受镜像，实际 XNU 屏幕结果待用户回传。
