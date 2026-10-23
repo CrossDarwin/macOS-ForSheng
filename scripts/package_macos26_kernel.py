@@ -127,6 +127,7 @@ def main() -> None:
                       bootstrap_block_bytes=33554432, owned_memory_bytes=0x20000000,
                       native_panic_region_bytes=524288,
                       handoff_progress='green=entered blue=cache-clean orange=MMU-off',
+                      native_early_exception_screen='_sheng_early_exception_record' in symbols,
                       firmware_sha256=firmware['sha256'], temporary_ram_boot=True,
                       hardware_executed=False, userland_started=False,
                       storage_drivers_linked=False, partition_images_written=False)
@@ -142,6 +143,7 @@ def main() -> None:
             '内核接管后应显示文本控制台，保存最后画面。\n'
             '顶部三条标记：绿色=进入交接汇编，蓝色=缓存清理完成，橙色=MMU关闭后执行。\n'
             '这些标记均来自加载器，不能单独证明XNU已经执行。\n'
+            '带早期现场的内核会显示 XNU=1；若捕获低位异常，XNU=2 并显示 ELR/ESR/FAR，拍下全部寄存器。\n'
             '若需要导出 RAM 日志，先返回 fastboot；根据本次实际 PA 构建只读 reader。\n'
             'RAM 跨重启保留和 USB reader 尚需实机验收；不得使用 QEMU 的 PA。\n')
         print(destination / image.name)

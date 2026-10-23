@@ -151,7 +151,8 @@ def main() -> None:
                         ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
                         ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                         ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
-                        ('_gPanicBase', 8), ('_gPanicSize', 4)):
+                        ('_gPanicBase', 8), ('_gPanicSize', 4),
+                        ('_sheng_early_exception_record', 144)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
     log_requests = []
@@ -206,6 +207,14 @@ def main() -> None:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    if '_sheng_early_exception_record' in addresses:
+        key = f'{addresses["_sheng_early_exception_record"]:x}:90'
+        raw = bytes.fromhex(snapshot['memory'][key])
+        values = struct.unpack('<18Q', raw)
+        names = ('state', 'elr', 'esr', 'far', 'spsr', 'sctlr', 'tcr', 'ttbr0',
+                 'ttbr1', 'mair', 'sp', 'mpidr', 'boot_args', 'lr', 'x22', 'x23', 'x24', 'x25')
+        record['early_exception'] = {name: hex(value) for name, value in zip(names, values)}
+        (args.output / 'early-exception.bin').write_bytes(raw)
     record['source_crypto_initialized'] = (observed_globals.get('_sheng_corecrypto_status') == 0
                                           and observed_globals.get('_prng_ready') == 1
                                           and bool(observed_globals.get('_g_crypto_funcs')))

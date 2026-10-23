@@ -481,3 +481,11 @@ kernel PA=0x881004000、panic PA=0x882A04000；屏幕保留的 SecurityLock 与�
 针对 XNU 早期低位异常向量只会循环、无法输出现场的缺口，新增 0023 和页内原生异常屏幕。
 独立 ARM64E 汇编及 QEMU 实际故障注入通过：入口正常返回，复制后的 4 KiB 向量页捕获 BRK，ELR=0x40400018、ESR=0xF2000123，屏幕能显示寄存器。
 该结果只确认新增异常路径；完整内核的目标编译与运行尚待完成，不作为 sheng 内核启动成功。
+
+Actions 39982721882（82725c4）已构建含早期现场的完整 ARM64E 内核，UUID FD9D4990-B43E-3BC2-B02C-50AA7C34DDA1。
+同版 QEMU 记录 XNU 入口状态 1，随后完成 VM、IOKit/NVRAM 和全部 corecrypto POST（235 ms）。
+仍在 Image4 缺失处 panic，未到 BSD；8801 字节字符日志完整，无覆盖或忙写丢失，512 KiB panic 区 CRC/UUID 匹配。
+保存于 out/macos26-early-exception-39982721882，原有 bsd_init 观察未命中属于已知 Image4 阻断。
+新实机候选为 ee83d0f8768c64d63043e1d5940a1c1aa3f21414a6801a128254338b1255f296。
+Android / _a 基线确认后仅临时启动，a 槽可启动，ABL 返回 Booting OKAY；早期现场实机结果待回传。
+被替代的 5f96ecce 部署镜像和已结束观察的 ESP 暂存已删除，调试现场、对应 dSYM 与有效 Android 备份保留。

@@ -69,3 +69,15 @@ AMFI 同样需要真实初始化，并注册 AMFI 与 CoreEntitlements 接口。
 VMAPPLE 的 HVC 密钥接口不能用于现有 sheng EL1 启动链。
 公开 corecrypto 提供者的 POST 已通过，但不能据此替代原版 corecrypto 的全部导出及新版尾部接口。
 每次实际接入后，用 QEMU 的原 panic 与对应符号定位下一处错误；实机部署不作为解决 ABI 缺口的手段。
+
+## 外部进度截图的后续线索
+
+用户补充的截图声称使用 XNU 12377 与 macOS 26.5 原版 kext 到达 launchd，没有对应源码或日志。
+以下只作为后续兼容项，不视为本项目已通过：
+
+- IOBlockStorageDevice 的宏分支影响虚表；除 XNU_TARGET_OS_OSX 外，还需对照 TARGET_OS_OSX，逐槽核对原版 ABI
+- 原版 kext 的 kalloc 类型信息可能包含真实签名，应按实际类型区分 KT_DATA_ONLY，不能统一当作数据指针
+- 用户空间的 16 KiB 签名页需要匹配真实 CodeDirectory，不能仅按内核 4 KiB 验证单位切分
+- 截图使用 rootauth=0 暂时跳过 sealed root 验证；本项目尚未推进到根卷挂载，不据此提前修改根认证
+
+截图中的 NativeVirtioBlock 是 QEMU virtio-mmio 存储路径，不能直接当作 sheng 的 UFS 实现。
