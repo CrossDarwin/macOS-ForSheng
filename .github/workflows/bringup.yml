@@ -224,9 +224,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Restore pinned native source checkouts
+        id: native-sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            UniXNU/
+            UniXNU-sheng/
+            uefi-sheng/
+            xnu/
+            Snapintosh/
+            q1n1/
+            sources/macos26/
+          key: macos26-sources-v1-${{ hashFiles('sources.lock.json', 'config/macos26-sources.json') }}
       - run: python3 scripts/sources.py fetch --group core
-      - run: python3 scripts/apply_patches.py
       - run: python3 scripts/sources.py fetch --lock config/macos26-sources.json --group macos26
+      - name: Save pristine pinned source checkouts
+        if: steps.native-sources.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            UniXNU/
+            UniXNU-sheng/
+            uefi-sheng/
+            xnu/
+            Snapintosh/
+            q1n1/
+            sources/macos26/
+          key: ${{ steps.native-sources.outputs.cache-primary-key }}
+      - run: python3 scripts/apply_patches.py
       - run: brew install cmake ninja unifdef
       - uses: actions/cache@v4
         with:
