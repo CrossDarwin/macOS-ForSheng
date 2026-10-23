@@ -297,3 +297,8 @@ MMU 汇编新增临时 EL1 异常向量与阶段记录；QEMU 未定义指令实
 探针改用原本禁用的 TTBR1 窗口，以高地址 AT 做相同 A-D 区分，不修改 TTBR0/TG0、MAIR 或 SCTLR。
 同一汇编在 M/C/I 开启、MAIR 槽 3 为 Normal WB 的 QEMU 对照中通过，实机仍待观测。
 社区调查另发现高通早期 TrustZone 退出 Gunyah 的源码，记于 docs/routes.md；本机服务可用性尚未测得。
+
+TTBR1 版（0e6d102）实机照片确认全部 0-F 标记、granule16=PASS 和 firmware-restored=PASS。
+4K 有效控制、空叶控制、区分地址负对照及 16K 区分翻译均返回，未出现 trap。
+这确认 sheng 当前 EL1 环境的实际 16K 页表遍历，不证明 16K 内核代码、完整 47 位布局或 arm64e 用户空间已能运行。
+目前停在 PAC 实验前，结果另行记录。
