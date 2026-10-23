@@ -135,6 +135,8 @@ def main() -> None:
             '# sheng 原生内核早期实验\n\n'
             f'内核 UUID：`{audit["uuid"]}`，架构：`{audit["architecture"]}`。\n\n'
             '镜像只用于 RAM 启动，不执行 flash、分区或 Android 槽位切换。\n'
+            '部署使用 scripts/boot_native_experiment.py，明确指定实验前确认的 --expected-slot。\n'
+            '槽位改变或不可启动时停止；USB 状态不明时不得自动重发。\n'
             '预期到达 Image4 尚未注册的 panic；这不是恢复系统或桌面。\n\n'
             '选择 UniXNU 后，交接页停留 10 秒。拍下 kernel pa 与 panic pa。\n'
             '内核接管后应显示文本控制台，保存最后画面。\n'

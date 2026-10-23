@@ -458,3 +458,16 @@ DarwinEnter 新增直接 framebuffer 交接标记：绿色为进入、蓝色为�
 新 RAM 候选为 5f96ecce756ea1445da944a6ae3525cd83059794be19bea5d94ea51e08aa6bbd。
 发送 72015872 字节完成，但 boot 命令在 USB 断开时未收到最终状态；是否执行以实机回传为准，不将发送完成记作启动成功。
 被替代的部署镜像、固件副本和已完成 QEMU ESP 暂存另删除 104582976 字节；当前候选、有效 Android 恢复备份与诊断记录保留。
+
+该候选首次发送状态不明，随后一次重发收到 Booting OKAY；用户回传仍在 FASTBOOT 或黑屏后重启，没有确认进入 UniXNU。
+重发前实际 current-slot 已为 b，与实验前的 a 不同；一次性脚本记录了变化却没有阻止发送，这处处理有误。
+停止部署后，ABL 报告 a 的 slot-unbootable=yes、b 的 slot-unbootable=no；按 b 正常重启仍回 fastboot。
+现有命令记录没有在此前执行 set_active；槽位标记改变的具体触发点未知，不能据此判断本版 DarwinEnter 停在哪一条指令。
+经用户明确允许执行 set_active a 后，a 的不可启动标记清除，正常重启恢复 Android。
+ADB 已确认 sheng、活动槽 _a、sys.boot_completed=1；本次恢复未刷写系统镜像。
+
+新增 scripts/boot_native_experiment.py 作为后续原生内核部署入口，必须明确指定序列号、预期槽位和独立记录目录。
+槽位不同、查询失败或目标槽被标记为不可启动时，发送镜像前拒绝；boot USB 断开或超时后只记录状态不明，不自动重发。
+槽位变化、不可启动、USB 错误和超时四项定向测试通过，没有再次部署设备。
+当前 macOS 实机进度仍是加载器交接曾出现绿色条；XNU 执行尚无实机证据。
+QEMU 已完成 ARM64E 指针签名、VM、IOKit/NVRAM 和 corecrypto POST，下一处已知内核阻断仍是 Image4 接口缺失。

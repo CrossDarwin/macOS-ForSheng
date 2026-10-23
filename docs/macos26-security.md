@@ -1,9 +1,10 @@
 # macOS 26 原生安全组件
 
 当前实际阻断是 `kern_trustcache.c:584: image4 interface not available`。
-39961597801 的内核在 QEMU 完成完整 corecrypto POST 后到达这里，尚未进入 BSD。
-完整 panic、回溯和 stackshot 已保存于 `out/macos26-panic-flush-39961597801/`。
-字符环形日志与标准 panic 区分别导出；字符日志只有 panic 摘要，完整内容以独立 panic 区为准。
+39973422068 的 ARM64E 内核在 QEMU 完成完整 corecrypto POST 后到达这里，尚未进入 BSD。
+完整 panic、回溯和 stackshot 已保存于 `out/macos26-arm64e-39973422068/`。
+字符环形日志已保留完整 panic 文字；标准 panic 区另保留寄存器、回溯和压缩 stackshot。
+这些是 QEMU 结果，sheng 实机尚未确认进入该内核。
 
 ## 匹配输入与加载范围
 
@@ -46,14 +47,16 @@ Snapintosh 的 `probes/auxkc.py` 保留链式指针，由 XNU 的 `kernel_collec
 其 `tools/kc-load.py` 则为监控层准备无 PAC 的指针，再由监控层重签。
 sheng 当前没有该监控层，不能照搬后一条路径。
 
-匹配 XNU 的 `osfmk/mach/dyld_kernel_fixups.h` 在未启用 HAS_APPLE_PAC 时，遇到认证指针会停止并报告 `Unexpected authenticated fixup`。
-仅把模块放进 AuxKC，仍会留下未完成的链式重定位。
+当前内核已启用 ARM64E/HAS_APPLE_PAC，并扩展原始链式处理代码支持独立 MH_EXECUTE 的格式 7。
+QEMU 已执行 116829 个指针修复，其中 43757 个需要认证；没有删掉认证位。
+这解决了原生内核自身的启动指针，尚未实现原组件的 fileset 布局、外部符号重定位和注册时序。
 本 BootKC 的指针格式为 8，步长为四字节；实际存在跨页的八字节指针槽，不能照搬 AuxKC 检查中更窄的边界假设。
 
 ## 下一段实现契约
 
-先解决原生内核与原组件的 ARM64E 边界，再让真实初始化器注册接口。
-当前普通 ARM64 内核不具备原组件所需的认证回调和 C++ 虚表契约。
+继续使用已运行的原生 ARM64E 内核，构造原组件的 fileset 布局与重定位，再让真实初始化器注册接口。
+DarwinBoot 当前只加载 MH_EXECUTE，不能将匹配 BootKC 当作已经可执行的原生候选。
+函数回调、C++ 虚表和原组件 ABI 仍需在真实模块初始化时验证。
 不能靠删掉指针认证位、补空函数表或略过 trust_cache_init 推进。
 
 AppleImage4 的原始 `_kmod_link_init` 位于 `0xfffffe0009458e70`，调用 `_img4_interface_register`。
