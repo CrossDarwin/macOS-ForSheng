@@ -128,7 +128,7 @@ def main() -> None:
                 core = struct.unpack('<33Q', registers[:264])
                 result = dict(uuid=identity['uuid'], kernel_pa=hex(base), boot_args_pa=hex(args_pa),
                               pc=hex(core[32]), sp=hex(core[31]), x0=hex(core[0]),
-                              debug_access_trapped_by_test_host=args.trap_debug_unlock,
+                              el2_debug_trap_policy_enabled=args.trap_debug_unlock,
                               timed_out=timed_out, hardware_executed=False, c_initialization_executed=False)
 
                 def feature(name: str) -> ET.Element:

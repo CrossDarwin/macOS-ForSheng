@@ -55,3 +55,7 @@ python3 scripts/observe_native_bootstrap.py \
 ```
 
 新版构建的对照使用`--trap-debug-unlock`而不加`--expect-debug-trap`，必须在同一陷入策略下到达真实arm_init入口。
+
+Actions 39992979541构建的新内核UUID为C9819D72-7190-3DF2-877C-6F93C6F722F5。
+同一物理地址及MDCR_EL2=0x400策略下，实际到达arm_init=0xfffffe0007c87b08，入口指令及x0启动参数匹配。
+ESR_EL2=0，SCTLR=0xFC54793D；这是QEMU中对0026的实际对照结果，尚待sheng实机反馈。
