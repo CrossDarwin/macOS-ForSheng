@@ -2,16 +2,35 @@
 from dataclasses import replace
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from gates import assess, host_runtime, parse_preflight, StorageWindow
 from guestprofile import get_profile
-from check_apple import trusted_kdk_signature
+from check_apple import trusted_kdk_signature, kdk_kernel_pair
 
 
 class Gates(unittest.TestCase):
+    def test_kdk_executable_and_dwarf_share_basename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            kernel = root / 'KDK.pkg/Payload/System/Library/Kernels/kernel.release.t8140'
+            kernel.parent.mkdir(parents=True)
+            kernel.touch()
+            with self.assertRaisesRegex(ValueError, 'paired DWARF'):
+                kdk_kernel_pair(root)
+            dwarf = kernel.with_name(kernel.name + '.dSYM') / 'Contents/Resources/DWARF' / kernel.name
+            dwarf.parent.mkdir(parents=True)
+            dwarf.touch()
+            self.assertEqual(kdk_kernel_pair(root), (kernel, dwarf))
+            duplicate = root / 'unexpected/System/Library/Kernels' / kernel.name
+            duplicate.parent.mkdir(parents=True)
+            duplicate.touch()
+            with self.assertRaisesRegex(ValueError, 'found 2'):
+                kdk_kernel_pair(root)
+
     def test_apple_software_signature_status(self):
         text = 'Status: signed Apple Software\n2. Apple Software Update Certification Authority\n3. Apple Root CA\n'
         self.assertTrue(trusted_kdk_signature(text))

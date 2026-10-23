@@ -20,6 +20,19 @@ def trusted_kdk_signature(text):
             and any(line.endswith('Apple Root CA') for line in lines))
 
 
+def kdk_kernel_pair(expanded):
+    """Select executable and DWARF by package layout, not their shared basename."""
+    kernels = [p for p in expanded.rglob('kernel.release.t8140')
+               if p.is_file() and p.parent.parts[-3:] == ('System', 'Library', 'Kernels')]
+    if len(kernels) != 1:
+        raise ValueError(f'KDK must contain exactly one T8140 release executable, found {len(kernels)}')
+    kernel = kernels[0]
+    dwarf = kernel.with_name(kernel.name + '.dSYM') / 'Contents/Resources/DWARF' / kernel.name
+    if not dwarf.is_file():
+        raise ValueError('KDK T8140 release executable is missing its paired DWARF file')
+    return kernel, dwarf
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     choice = parser.add_mutually_exclusive_group()

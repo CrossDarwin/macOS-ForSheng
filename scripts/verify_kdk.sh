@@ -29,14 +29,17 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-kernels = list(Path(sys.argv[1]).rglob('kernel.release.t8140'))
-if len(kernels) != 1:
-    raise SystemExit('KDK must contain exactly one T8140 release kernel')
-identity = subprocess.check_output(['dwarfdump', '--uuid', str(kernels[0])], text=True)
+from scripts.check_apple import kdk_kernel_pair
+kernel, dwarf = kdk_kernel_pair(Path(sys.argv[1]))
 expected = 'F9F468D7-1F50-354A-BECD-6BD6C1C834AD'
-if expected not in identity.upper():
-    raise SystemExit('KDK kernel UUID differs from the pinned J700 kernel')
+identities = {}
+for name, path in (('kernel', kernel), ('dwarf', dwarf)):
+    identity = subprocess.check_output(['dwarfdump', '--uuid', str(path)], text=True)
+    if expected not in identity.upper():
+        raise SystemExit(f'KDK {name} UUID differs from the pinned J700 kernel')
+    identities[name] = str(path.relative_to(sys.argv[1]))
 result = dict(build='26A428', trusted_apple_package=True, kernel_uuid=expected,
+              paired_dwarf_uuid_verified=True, files=identities,
               source='Dortania mirror; package signature and T8140 UUID verified',
               private_iokit_abi_qualified=False, sheng_hardware_qualified=False)
 Path('out/kdk-verification.json').write_text(json.dumps(result, indent=2)+'\n')
