@@ -223,4 +223,7 @@ Actions 39927508455 已通过匹配 KDK 签名、UUID、AvailabilityVersions 构
 第一次源码编译因公开 SDK/KDK 不存在的私有 include 目录在 `-Werror` 下中止。
 已迁移独立 kernel SDK 搜索路径，暂存固定 macOS 26 libplatform/libdispatch 头，并仅保留实际存在的目录。
 缺失的实际头仍在 include 位置报错，不生成占位头，不关闭缺失目录警告。
-Actions 39928465964 正在验证该修正，尚无 macOS 26 内核编译或启动通过结果。
+Actions 39928465964 已消除不存在的 include 目录错误。下一处失败为系统保留名称告警和缺少 CoreEntitlements/V2/API.h。
+原始 25F71 KDK 的 KDK_SDK.pkg/Payload 实际包含该头及 CodeSignature/TrustCache/TXM 头，先前构建漏用了 SDK 子包。
+现已将其头文件纳入签名验证后的哈希清单，并在源码构建中逐文件核对、暂存；未引入其中的 SPTM/TXM 二进制库。
+SHENG 目标仅关闭系统 ABI 保留名称的诊断，保留 -Werror 和其余检查。尚无 macOS 26 内核编译或启动通过结果。

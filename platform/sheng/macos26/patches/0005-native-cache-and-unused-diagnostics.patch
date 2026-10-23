@@ -1,0 +1,35 @@
+--- a/osfmk/arm64/proc_reg.h
++++ b/osfmk/arm64/proc_reg.h
+@@ -242,6 +242,12 @@
+ 
+ /* D-Cache, 128KB for Acc8 PCore, 8-way. 64KB for ECore, 8-way. */
+ #define MMU_CLINE   6                      /* cache line size is 1<<MMU_CLINE (64) */
++
++#elif defined (SHENG)
++
++/* Preserve the 64-byte maintenance stride used by the tested sheng baseline. */
++#define MMU_I_CLINE 6
++#define MMU_CLINE   6
+ 
+ #elif defined (VMAPPLE)
+ 
+--- a/iokit/Kernel/IOUserServer.cpp
++++ b/iokit/Kernel/IOUserServer.cpp
+@@ -3252,7 +3252,7 @@
+ 	OSObject         * object;
+ 	OSAction         * action;
+ 	bool               oneway;
+-	uint64_t           msgid;
++	uint64_t __unused  msgid;
+ 
+ 	msgin   = (typeof(msgin))ikm_header(requestkmsg);
+ 	replyAlloc = 0;
+@@ -3557,7 +3557,7 @@
+ 	IOReturn           ret;
+ 	IORPCMessage     * message;
+ 	IORPCMessageMach * mach;
+-	mach_msg_id_t      machid;
++	mach_msg_id_t __unused machid;
+ 	uint32_t           sendSize, replySize;
+ 	bool               oneway;
+ 	uint64_t           msgid;

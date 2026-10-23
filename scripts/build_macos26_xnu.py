@@ -18,6 +18,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0001-native-sheng-target.patch',
     ROOT / 'platform/sheng/macos26/patches/0002-non-apple-machine-paths.patch',
     ROOT / 'platform/sheng/macos26/patches/0003-staged-kernel-sdk.patch',
+    ROOT / 'platform/sheng/macos26/patches/0004-system-abi-identifiers.patch',
+    ROOT / 'platform/sheng/macos26/patches/0005-native-cache-and-unused-diagnostics.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -151,12 +153,27 @@ def compile_sources(args, record: dict) -> None:
     expected_kernel = args.kdk_root / 'System/Library/Kernels/kernel.release.t8103'
     if config['kernels']['j313ap']['uuid'] not in capture('xcrun', 'dwarfdump', '--uuid', str(expected_kernel)):
         raise ValueError('selected KDK directory differs from the verified report')
+    expanded = args.kdk_root.resolve().parent.parent
+    sdk_payload = expanded / 'KDK_SDK.pkg/Payload'
+    sdk_headers = kdk_report.get('sdk_headers', {})
+    required = 'System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform/CoreEntitlements/V2/API.h'
+    if required not in sdk_headers:
+        raise ValueError('verified KDK SDK payload lacks the required CoreEntitlements V2 header')
+    for relative, digest in sdk_headers.items():
+        path = sdk_payload / relative
+        if not path.resolve().is_relative_to(sdk_payload.resolve()) or sha(path) != digest:
+            raise ValueError(f'verified KDK SDK header changed: {relative}')
     record['kdk_verification_sha256'] = sha(ROOT / 'out/kdk-verification.json')
+    record['kdk_sdk_headers'] = sdk_headers
     save(record)
     env = dict(os.environ)
     source = OUT / 'source'
     sdk = OUT / 'kernel-sdk'
     sdk.mkdir(exist_ok=True)
+    for relative in sdk_headers:
+        destination = sdk / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(sdk_payload / relative, destination)
     env['XNU_AVAILABILITY_PL'] = str(sdk / 'usr/local/libexec/availability.pl')
     run(['make', '-C', ROOT / 'sources/macos26/AvailabilityVersions', 'install',
          f'DSTROOT={sdk}', f'OBJROOT={OUT / "availability"}', f'SYMROOT={OUT / "availability"}',
@@ -192,6 +209,7 @@ def compile_sources(args, record: dict) -> None:
     # Archive the ordinary kernel translation units without substituting an
     # Apple SoC support library or producing an executable with unresolved ABI.
     run(common + ['build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=1', 'CFLAGS_KERNEL=-mkernel',
+                  'CXXFLAGS_KERNEL=-fapple-kext',
                   'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1'],
         'source-archive', record, env=env)
     archive = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a'

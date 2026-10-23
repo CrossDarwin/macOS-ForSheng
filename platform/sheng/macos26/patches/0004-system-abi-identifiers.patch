@@ -1,0 +1,15 @@
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -298,6 +298,12 @@
+ WARNFLAGS_STD := $(WARNFLAGS_STD) \
+ 	-Wpointer-arith \
+ 	-Wxnu-typed-allocators
++
++
++# XNU owns the reserved identifiers used by its system ABI.
++ifeq ($(CURRENT_MACHINE_CONFIG),SHENG)
++WARNFLAGS_STD += -Wno-reserved-identifier
++endif
+ 
+ 
+ CWARNFLAGS_STD = \

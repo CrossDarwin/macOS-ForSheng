@@ -36,6 +36,7 @@ PY
 expanded="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sheng-kdk-expanded-${GITHUB_RUN_ID:-$$}"
 pkgutil --expand-full "$kdk_mount/KernelDebugKit.pkg" "$expanded"
 python3 - "$expanded" "$kdk_config" <<'PY'
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -62,7 +63,14 @@ for board, profile in profiles.items():
             raise SystemExit(f'KDK {board} {name} ARM64 UUID differs from its paired IPSW')
         files[name] = str(path.relative_to(sys.argv[1]))
     identities[board] = dict(kernel_uuid=expected, paired_dwarf_uuid_verified=True, files=files)
-result = dict(build=config['build'], trusted_apple_package=True, kernels=identities,
+sdk_payload = Path(sys.argv[1]) / 'KDK_SDK.pkg/Payload'
+sdk_headers = {}
+for path in sorted(sdk_payload.rglob('*.h')):
+    if not path.is_file() or not path.resolve().is_relative_to(sdk_payload.resolve()):
+        raise SystemExit('Invalid SDK payload header')
+    with path.open('rb') as stream:
+        sdk_headers[str(path.relative_to(sdk_payload))] = hashlib.file_digest(stream, 'sha256').hexdigest()
+result = dict(build=config['build'], sdk_headers=sdk_headers, trusted_apple_package=True, kernels=identities,
               source='Dortania mirror; Apple package signature and paired ARM64 UUIDs verified',
               private_iokit_abi_qualified=False, sheng_hardware_qualified=False)
 Path('out/kdk-verification.json').write_text(json.dumps(result, indent=2)+'\n')
