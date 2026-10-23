@@ -31,6 +31,23 @@ class Gates(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'found 2'):
                 kdk_kernel_pair(root)
 
+    def test_distinct_kdk_soc_pairs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('kernel.release.t8103', 'kernel.release.t8140'):
+                kernel = root / 'Payload/System/Library/Kernels' / name
+                kernel.parent.mkdir(parents=True, exist_ok=True)
+                kernel.touch()
+                dwarf = kernel.with_name(name + '.dSYM') / 'Contents/Resources/DWARF' / name
+                dwarf.parent.mkdir(parents=True)
+                dwarf.touch()
+                self.assertEqual(kdk_kernel_pair(root, name), (kernel, dwarf))
+            with self.assertRaisesRegex(ValueError, 'found 0'):
+                kdk_kernel_pair(root, 'kernel.release.t6000')
+            for name in ('../kernel.release.t8103', 'kernel.release.*'):
+                with self.assertRaisesRegex(ValueError, 'invalid'):
+                    kdk_kernel_pair(root, name)
+
     def test_apple_software_signature_status(self):
         text = 'Status: signed Apple Software\n2. Apple Software Update Certification Authority\n3. Apple Root CA\n'
         self.assertTrue(trusted_kdk_signature(text))

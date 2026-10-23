@@ -5,7 +5,7 @@ on:
       target:
         description: Build target; no job deploys to hardware
         type: choice
-        options: [check, preflight, monitor, apple, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
+        options: [check, preflight, monitor, apple, apple26, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
         default: check
 permissions:
   contents: read
@@ -56,7 +56,7 @@ jobs:
             out/logs/
           retention-days: 7
   macos:
-    if: inputs.target == 'monitor' || inputs.target == 'apple' || inputs.target == 'kext' || inputs.target == 'xnu'
+    if: inputs.target == 'monitor' || inputs.target == 'apple' || inputs.target == 'apple26' || inputs.target == 'kext' || inputs.target == 'xnu'
     needs: check
     runs-on: xcode-27
     timeout-minutes: 60
@@ -77,17 +77,20 @@ jobs:
         if: inputs.target == 'monitor'
         run: brew install llvm lld
       - name: Cache exact KDK input
-        if: inputs.target == 'apple'
+        if: inputs.target == 'apple' || inputs.target == 'apple26'
         uses: actions/cache@v4
         with:
-          path: private/apple/Kernel_Debug_Kit_27.0_build_26A428.dmg
-          key: ${{ runner.os }}-${{ runner.arch }}-sdk27.0-${{ hashFiles('sources.lock.json', 'patches/**', 'config/guest.json', 'scripts/verify_kdk.sh') }}
+          path: private/apple/Kernel_Debug_Kit_*.dmg
+          key: ${{ runner.os }}-${{ runner.arch }}-sdk27.0-${{ inputs.target }}-${{ hashFiles('sources.lock.json', 'patches/**', 'config/guest.json', 'config/macos26.json', 'scripts/verify_kdk.sh', 'scripts/check_apple.py') }}
       - name: Compile monitor
         if: inputs.target == 'monitor'
         run: python3 scripts/build_monitor.py --llvm-bin "$(brew --prefix llvm)/bin"
       - name: Verify Apple package and kernel identity
         if: inputs.target == 'apple'
         run: bash scripts/verify_kdk.sh
+      - name: Verify paired macOS 26 KDK
+        if: inputs.target == 'apple26'
+        run: bash scripts/verify_kdk.sh config/macos26.json
       - name: Verify kext prerequisites
         if: inputs.target == 'kext'
         run: python3 scripts/check_apple.py --kext

@@ -3,6 +3,7 @@
 """Refuse Apple component builds until exact inputs and ABI evidence exist."""
 import argparse
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -20,16 +21,18 @@ def trusted_kdk_signature(text):
             and any(line.endswith('Apple Root CA') for line in lines))
 
 
-def kdk_kernel_pair(expanded):
+def kdk_kernel_pair(expanded, name='kernel.release.t8140'):
     """Select executable and DWARF by package layout, not their shared basename."""
-    kernels = [p for p in expanded.rglob('kernel.release.t8140')
+    if not re.fullmatch(r'kernel\.release\.[a-z0-9]+', name):
+        raise ValueError('invalid KDK kernel filename')
+    kernels = [p for p in expanded.rglob(name)
                if p.is_file() and p.parent.parts[-3:] == ('System', 'Library', 'Kernels')]
     if len(kernels) != 1:
-        raise ValueError(f'KDK must contain exactly one T8140 release executable, found {len(kernels)}')
+        raise ValueError(f'KDK must contain exactly one {name} executable, found {len(kernels)}')
     kernel = kernels[0]
     dwarf = kernel.with_name(kernel.name + '.dSYM') / 'Contents/Resources/DWARF' / kernel.name
     if not dwarf.is_file():
-        raise ValueError('KDK T8140 release executable is missing its paired DWARF file')
+        raise ValueError(f'KDK {name} executable is missing its paired DWARF file')
     return kernel, dwarf
 
 
