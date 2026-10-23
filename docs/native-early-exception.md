@@ -49,6 +49,7 @@ ELR/ESR/FAR/SPSR/SCTLR/TCR/TTBR0/TTBR1/MAIR 保存的是切换前的故障状态
 已有L2必须在原生bootstrap页表池内；缺少L2时使用独立16 KiB页，不侵占内核映射。
 映射就绪时D–F先显示蓝色，执行到各阶段才变绿；灰色表示诊断映射未准备，不能据此认定MMU卡死。
 标记不依赖栈，不切回MMU关闭状态，不修改EL2或固件。
+定向负对照把framebuffer放入已有内核32 MiB块，映射状态保持拒绝，原L2项0x40000701未被修改。
 F只能证明高位交接代码执行，尚不证明arm_init中的PAC、重定位或C初始化完成。
 arm_vm_init按原流程替换TTBR1并停用TTBR0，后续控制台使用其原有映射。
 PE_create_console完成后关闭该开关，恢复原有分发，locore保留日志继续工作。

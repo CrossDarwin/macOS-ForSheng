@@ -119,6 +119,17 @@ try:
  assert packet(f'M{halt:x},4:'+struct.pack('<I',branch).hex())=='OK'
  original_halt=symbols['Lsheng_early_halt']
  assert packet(f'Z0,{original_halt:x},4')=='OK'
+ # A framebuffer in the existing kernel block must not replace that mapping.
+ fb_field=symbols['boot_args']+40
+ assert packet(f'M{fb_field:x},8:'+struct.pack('<Q',0x41000000).hex())=='OK'
+ mapped=symbols['qemu_trace_mapped']
+ assert packet(f'Z0,{mapped:x},4')=='OK'
+ assert packet('c').startswith(('T05','S05'))
+ assert struct.unpack('<Q',memory(symbols['sheng_bootstrap_fb_trace_ready'],8))[0]==0
+ assert struct.unpack('<Q',memory(symbols['test_l2']+256,8))[0]==0x40000701
+ assert packet(f'z0,{mapped:x},4')=='OK'
+ assert packet(f'M{fb_field:x},8:'+struct.pack('<Q',0x44000000).hex())=='OK'
+ assert packet('P20='+struct.pack('<Q',target).hex())=='OK'
  assert packet('c').startswith(('T05','S05'))
  mmu=struct.unpack('<24Q',memory(symbols['sheng_early_exception_record'],192))
  high=0xffff800000000000
@@ -164,6 +175,7 @@ try:
          'first_translation_fault_without_stack_captured':True,
          'bootstrap_stage_strip_captured':True,
          'post_mmu_device_framebuffer_marks_captured':True,
+         'framebuffer_kernel_mapping_overlap_refused':True,
          'status':mmu[0],'elr':hex(mmu[1]),'esr':hex(mmu[2]),'far':hex(mmu[3]),
          'captured_sctlr':hex(mmu[5]),'captured_tcr':hex(mmu[6]),'captured_ttbr0':hex(mmu[7]),
          'record':hex(symbols['sheng_early_exception_record']),

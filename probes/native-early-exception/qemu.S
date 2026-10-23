@@ -55,6 +55,8 @@ qemu_mmu_setup:
  str x2, [x1, #256]
  mov x25, x0
  SHENG_BOOTSTRAP_MAP_TRACE
+.global qemu_trace_mapped
+qemu_trace_mapped:
  SHENG_EARLY_ADDRESS(x0, bootstrap_pagetables)
  dsb sy
  msr ttbr0_el1, x0
