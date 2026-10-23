@@ -9,20 +9,28 @@ extern UINT64 ShengEl1GranuleProbe (UINT64 *Table, UINT64 *Output, UINT64 Tcr);
 extern VOID ShengEl1GranuleProbeEnd (VOID);
 extern UINT64 ShengEl1PauthProbe (UINT64 *Output);
 
-STATIC EFI_STATUS
-Finish (EFI_STATUS Result)
+STATIC BOOLEAN
+Pause (CONST CHAR16 *Message)
 {
   EFI_INPUT_KEY Key;
   UINTN Event;
 
-  Print (L"SHENG-EL1: status=%r\r\nPress a key to return to the boot menu\r\n", Result);
+  Print (L"%s\r\n", Message);
   while (!EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key))) {
   }
   do {
     if (EFI_ERROR (gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Event))) {
-      return EFI_DEVICE_ERROR;
+      return FALSE;
     }
   } while (EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key)));
+  return TRUE;
+}
+
+STATIC EFI_STATUS
+Finish (EFI_STATUS Result)
+{
+  Print (L"SHENG-EL1: status=%r\r\n", Result);
+  Pause (L"Press a key to return to the boot menu");
   return Result;
 }
 
@@ -61,7 +69,8 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   UINT64 El, Mmfr0, Isar1, Isar2, Sp, Sctlr;
   UINT64 BeforeTcr, BeforeTtbr, BeforeMair, AfterTcr, AfterTtbr, AfterMair, AfterSctlr;
   UINT64 *Table;
-  UINT64 Result[4] = { 0 };
+  UINT64 Result[8] = { 0 };
+  UINT64 ProbeStatus;
   UINT64 Signatures[10] = { 0 };
   UINT64 PauthFlags = 0;
   UINT64 Tcr;
@@ -111,7 +120,11 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1"
                     : "=r" (BeforeTcr), "=r" (BeforeTtbr), "=r" (BeforeMair));
   Print (L"SHENG-EL1: testing page walks at EL1, MMFR0=0x%lx\r\n", Mmfr0);
-  ShengEl1GranuleProbe (Table, Result, Tcr);
+  if (!Pause (L"Press a key to run the MMU probe")) {
+    FreeAlignedPages (Table, 4);
+    return Finish (EFI_DEVICE_ERROR);
+  }
+  ProbeStatus = ShengEl1GranuleProbe (Table, Result, Tcr);
   __asm__ volatile ("mrs %0, tcr_el1; mrs %1, ttbr0_el1; mrs %2, mair_el1; mrs %3, sctlr_el1"
                     : "=r" (AfterTcr), "=r" (AfterTtbr), "=r" (AfterMair), "=r" (AfterSctlr));
   Restored = BeforeTcr == AfterTcr && BeforeTtbr == AfterTtbr &&
@@ -123,11 +136,18 @@ UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
   Print (L"SHENG-EL1: granule16=%s firmware-restored=%s\r\n",
          Granule ? L"PASS" : L"FAIL", Restored ? L"PASS" : L"FAIL");
   FreeAlignedPages (Table, 4);
-  if (!Restored) {
+  if (ProbeStatus) {
+    Print (L"SHENG-EL1: trap stage=%lu ESR=%lx FAR=%lx ELR=%lx\r\n",
+           Result[7], Result[4], Result[5], Result[6]);
+  }
+  if (!Restored || ProbeStatus) {
     return Finish (EFI_DEVICE_ERROR);
   }
   if (((Isar1 >> 4) & 255) != 0 &&
       (((Isar1 >> 24) & 255) != 0 || ((Isar2 >> 8) & 15) != 0)) {
+    if (!Pause (L"Press a key to run the PAC probe")) {
+      return Finish (EFI_DEVICE_ERROR);
+    }
     PauthFlags = ShengEl1PauthProbe (Signatures);
     Print (L"SHENG-EL1: PAC bank-switch=%s flags=0x%lx expected=0x7fff\r\n",
            PauthFlags == 0x7fff ? L"PASS" : L"FAIL", PauthFlags);

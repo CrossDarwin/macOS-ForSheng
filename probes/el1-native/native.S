@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // EL1下独立执行，临时状态期间不调用C代码或固件服务
 .text
+.arch_extension pan
 .p2align 4
 
 .macro save_frame
@@ -25,6 +26,9 @@
 .global ShengEl1GranuleProbe
 ShengEl1GranuleProbe:
     save_frame
+    sub sp,sp,#16
+    mrs x9,pan
+    str x9,[sp]
     mov x25,x0
     mov x26,x1
     mov x27,x2
@@ -34,7 +38,13 @@ ShengEl1GranuleProbe:
     mrs x22,mair_el1
     mrs x23,daif
     mrs x24,par_el1
+    mrs x28,vbar_el1
     msr daifset,#15
+    adr x9,ShengEl1ProbeVectors
+    msr vbar_el1,x9
+    isb
+    mov x9,#1
+    str x9,[x26,#56]
 
     // 4K有效控制，后续执行始终由表内的恒等映射覆盖
     mov x9,#0x741
@@ -60,6 +70,8 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26]
+    mov x9,#2
+    str x9,[x26,#56]
 
     // 空表控制仅移除低地址叶子，不移除探针执行区
     str xzr,[x25]
@@ -72,6 +84,8 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26,#8]
+    mov x9,#3
+    str x9,[x26,#56]
 
     // 与Snapintosh相同的区分地址：16K索引1，4K索引0
     mov x9,#0x741
@@ -88,6 +102,11 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26,#16]
+    mov x9,#4
+    str x9,[x26,#56]
+#ifdef SHENG_GRANULE_INJECT_FAULT
+    .inst 0
+#endif
 
     bic x9,x19,#1
     dsb sy
@@ -110,8 +129,19 @@ ShengEl1GranuleProbe:
     isb
     mrs x9,par_el1
     str x9,[x26,#24]
+    mov x9,#5
+    str x9,[x26,#56]
+    mov x0,#0
+    b .Lgranule_restore
+
+.Lgranule_fault:
+    mrs x10,esr_el1
+    mrs x11,far_el1
+    mrs x12,elr_el1
+    mov x0,#1
 
     // 两种页表解释都能执行本段，所以4K回退仍能恢复固件
+.Lgranule_restore:
     bic x9,x19,#1
     dsb sy
     msr sctlr_el1,x9
@@ -124,11 +154,24 @@ ShengEl1GranuleProbe:
     isb
     msr sctlr_el1,x19
     isb
+    cbz x0,1f
+    stp x10,x11,[x26,#32]
+    str x12,[x26,#48]
+1:
+    msr vbar_el1,x28
     msr par_el1,x24
+    ldr x9,[sp]
+    msr pan,x9
     msr daif,x23
-    mov x0,#0
+    add sp,sp,#16
     restore_frame
     ret
+.p2align 11
+ShengEl1ProbeVectors:
+.rept 16
+    b .Lgranule_fault
+    .balign 128
+.endr
 .global ShengEl1GranuleProbeEnd
 ShengEl1GranuleProbeEnd:
 

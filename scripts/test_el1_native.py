@@ -27,14 +27,14 @@ def main():
     if libraries.is_dir():
         env['LD_LIBRARY_PATH'] = str(libraries) + ':' + env.get('LD_LIBRARY_PATH', '')
     records = []
-    for fallback in (False, True):
-        name = 'fallback-4k' if fallback else 'native-16k'
+    for name, define in (('native-16k', None), ('fallback-4k', 'SHENG_GRANULE_FORCE_4K'),
+                         ('exception-recovery', 'SHENG_GRANULE_INJECT_FAULT')):
         binary = out / (name + '.elf')
         command = [str(args.clang), '--target=aarch64-none-elf', '-march=armv8.3-a',
                    '-ffreestanding', '-fno-builtin', '-mgeneral-regs-only', '-O2', '-nostdlib',
                    '-fuse-ld=lld', '-Wl,-T,' + str(linker), '-o', str(binary)]
-        if fallback:
-            command += ['-DSHENG_GRANULE_FORCE_4K=1']
+        if define:
+            command += ['-D' + define + '=1']
         command += [str(source / name) for name in ('qemu-entry.S', 'qemu.c', 'native.S')]
         subprocess.run(command, check=True, timeout=60)
         command = [str(args.qemu), '-M', 'virt,virtualization=off', '-cpu', 'max', '-m', '3G',

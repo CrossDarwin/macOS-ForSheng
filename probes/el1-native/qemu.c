@@ -5,7 +5,7 @@ extern u64 ShengEl1GranuleProbe(u64 *, u64 *, u64);
 extern u64 ShengEl1PauthProbe(u64 *);
 static u64 original[2048] __attribute__((aligned(16384)));
 static u64 trial[2048] __attribute__((aligned(16384)));
-static u64 results[4], signatures[10];
+static u64 results[8], signatures[10];
 
 static u64 rd_sctlr(void)
 { u64 v; __asm__ volatile("mrs %0,sctlr_el1" : "=r"(v)); return v; }
@@ -40,7 +40,14 @@ void qemu_main(void)
     __asm__ volatile("msr daifset,#15; msr mair_el1,%0; msr ttbr0_el1,%1; msr tcr_el1,%2;"
                      "dsb sy; tlbi vmalle1; dsb sy; isb; msr sctlr_el1,%3; isb"
                      ::"r"(0xffUL),"r"(original),"r"(tcr),"r"(control):"memory");
-    ShengEl1GranuleProbe(trial,results,tcr);
+    u64 status=ShengEl1GranuleProbe(trial,results,tcr);
+#ifdef SHENG_GRANULE_INJECT_FAULT
+    if(status!=1 || results[7]!=4 || (results[4]>>26)!=0) {
+        print("FAIL EL1 exception recovery\n");finish(7);
+    }
+    print("PASS EL1 exception recorded and recovered\n");
+#else
+    if(status) {print("FAIL unexpected EL1 exception\n");finish(8);}
     if((results[0]&1) || (results[0]&0xfffffffff000UL)!=0x1000 ||
        !(results[1]&1) || !(results[2]&1)) {
         print("FAIL page-walk controls\n"); finish(2);
@@ -53,6 +60,7 @@ void qemu_main(void)
         print("FAIL 16K discriminator\n");finish(4);
     }
     print("PASS native 16K walk\n");
+#endif
 #endif
     u64 back_tcr,back_root,back_mair;
     __asm__ volatile("mrs %0,tcr_el1; mrs %1,ttbr0_el1; mrs %2,mair_el1"
