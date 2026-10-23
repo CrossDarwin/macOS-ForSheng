@@ -17,6 +17,7 @@ OUT = ROOT / 'out/macos26-xnu'
 PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0001-native-sheng-target.patch',
     ROOT / 'platform/sheng/macos26/patches/0002-non-apple-machine-paths.patch',
+    ROOT / 'platform/sheng/macos26/patches/0003-staged-kernel-sdk.patch',
     ROOT / 'UniXNU/patches/xnu/apple-only-cpu-tunables.patch',
     ROOT / 'UniXNU/patches/xnu/native-4k-bootstrap-capacity.patch',
     ROOT / 'UniXNU/patches/xnu/native-dt-panic-region.patch',
@@ -99,6 +100,8 @@ def prepare() -> dict:
                   upstream_sheng_archives=baseline['archives'],
                   purpose='Native machine-layer source compilation; not a bootable kernel',
                   source_archive_built=False, platform_objects_built=False, runnable_kernel=False,
+                  stage='source-compilation', full_upstream_sheng_config=False,
+                  upstream_binary_archives_reused=False, boot_image_generated=False,
                   original_component_abi_qualified=False, hardware_executed=False,
                   source_diff_sha256=hashlib.sha256(subprocess.check_output(
                       ['git', '-C', source, 'diff', 'HEAD', '--binary'])).hexdigest())
@@ -158,12 +161,32 @@ def compile_sources(args, record: dict) -> None:
     run(['make', '-C', ROOT / 'sources/macos26/AvailabilityVersions', 'install',
          f'DSTROOT={sdk}', f'OBJROOT={OUT / "availability"}', f'SYMROOT={OUT / "availability"}',
          f'CMAKE={shutil.which("cmake")}', f'NINJA={shutil.which("ninja")}'], 'availability', record, env=env)
+    for relative in ('include', 'private'):
+        shutil.copytree(ROOT / 'sources/macos26/libplatform' / relative,
+                        sdk / 'usr/local/include', dirs_exist_ok=True)
+    shutil.copytree(ROOT / 'sources/macos26/libplatform/private/platform',
+                    sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform',
+                    dirs_exist_ok=True)
+    dispatch = sdk / 'usr/local/include/os'
+    dispatch.mkdir(parents=True, exist_ok=True)
+    for header in sorted((ROOT / 'sources/macos26/libdispatch/os').glob('*.h')):
+        result = subprocess.run(['unifdef', '-DKERNEL=1', '-DOS_FIREHOSE_SPI=1',
+                                 '-DOS_VOUCHER_ACTIVITY_SPI_TYPES=1',
+                                 '-UOS_VOUCHER_ACTIVITY_SPI', str(header)], capture_output=True)
+        if result.returncode not in (0, 1):
+            raise ValueError(result.stderr.decode(errors='replace'))
+        (dispatch / header.name).write_bytes(result.stdout)
+    record['staged_dependency_headers'] = {
+        str(path.relative_to(sdk)): sha(path)
+        for path in sorted(sdk.rglob('*.h')) if path.is_file()}
+    save(record)
     common = ['make', '-C', source, 'SDKROOT=macosx', f'KDKROOT={args.kdk_root}',
               'TARGET_CONFIGS=DEVELOPMENT ARM64 SHENG', 'ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG=arm64',
               'ARM64_LARGE_MEMORY=0', 'ARM64_LINK_ADDR=0xfffffff007004000',
               'RC_DARWIN_KERNEL_VERSION=25.5.0', 'RC_ProjectSourceVersion=12377.121.6',
               'DEPLOYMENT_TARGET_FLAGS=-mmacosx-version-min=26.5 -DXNU_TARGET_OS_OSX',
               'BUILD_LTO=0', 'BOUND_CHECKS=0', 'BUILD_WERROR=1', f'MAKEJOBS=-j{args.jobs}',
+              f'KERNEL_SDKROOT={sdk}',
               f'OBJROOT={OUT / "obj"}', f'SYMROOT={OUT / "sym"}', f'DSTROOT={sdk}']
     run(common + ['installhdrs'], 'install-headers', record, env=env)
     # Archive the ordinary kernel translation units without substituting an

@@ -1,0 +1,30 @@
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -914,7 +914,8 @@
+ 	-Wl,-headerpad,152
+ 
+ # LDFLAGS_KERNEL_SDK	= -L$(SDKROOT)/usr/local/lib/kernel -lfirehose_kernel
+-LDFLAGS_KERNEL_SDK	= -L$(SDKROOT)/usr/local/lib/kernel -L$(SDKROOT)/usr/local/lib/kernel/platform
++export KERNEL_SDKROOT ?= $(SDKROOT)
++LDFLAGS_KERNEL_SDK	= -L$(KERNEL_SDKROOT)/usr/local/lib/kernel -L$(KERNEL_SDKROOT)/usr/local/lib/kernel/platform
+ ifneq ($(KDKROOT),)
+ LDFLAGS_KERNEL_SDK     += -L$(KDKROOT)/usr/local/lib/kernel/platform
+ endif
+@@ -1229,11 +1230,13 @@
+ INCFLAGS_EXTERN	= -I$(SRCROOT)/EXTERNAL_HEADERS
+ INCFLAGS_GEN	= -I$(SRCROOT)/$(COMPONENT) -I$(OBJROOT)/EXPORT_HDRS/$(COMPONENT)
+ INCFLAGS_LOCAL	= -I.
+-INCFLAGS_SDK    = -I$(SDKROOT)/usr/local/include/kernel -I$(SDKROOT)/usr/local/include/iBoot -I$(SDKROOT)/$(KPINCDIR)/AppleFeatures
+-INCFLAGS_PLATFORM = -I$(SDKROOT)/$(KPINCDIR)/platform
++# Public SDKs omit internal-only directories. Search real staged source/KDK
++# headers; a genuinely missing header must still fail at its include site.
++INCFLAGS_SDK = $(addprefix -I,$(wildcard $(KERNEL_SDKROOT)/usr/local/include/kernel $(KERNEL_SDKROOT)/usr/local/include $(SDKROOT)/usr/local/include/iBoot $(KERNEL_SDKROOT)/$(KPINCDIR)/AppleFeatures))
++INCFLAGS_PLATFORM = $(addprefix -I,$(wildcard $(KERNEL_SDKROOT)/$(KPINCDIR)/platform))
+ ifneq ($(KDKROOT),)
+-INCFLAGS_SDK   += -I$(KDKROOT)/$(KPINCDIR) -I$(KDKROOT)/System/Library/KernelSupport
+-INCFLAGS_PLATFORM += -I$(KDKROOT)/$(KINCDIR)/platform -I$(KDKROOT)/$(KPINCDIR)/platform
++INCFLAGS_SDK += $(addprefix -I,$(wildcard $(KDKROOT)/$(KPINCDIR) $(KDKROOT)/System/Library/KernelSupport))
++INCFLAGS_PLATFORM += $(addprefix -I,$(wildcard $(KDKROOT)/$(KINCDIR)/platform $(KDKROOT)/$(KPINCDIR)/platform))
+ endif
+ 
+ INCFLAGS	= $(INCFLAGS_LOCAL) $(INCFLAGS_GEN) $(INCFLAGS_IMPORT) $(INCFLAGS_EXTERN) $(INCFLAGS_MAKEFILE) $(INCFLAGS_SDK) $(INCFLAGS_PLATFORM)
