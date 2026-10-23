@@ -153,7 +153,8 @@ def main() -> None:
                         ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
                         ('_sheng_early_exception_record', 192),
-                        ('_sheng_bootstrap_capture_enabled', 4)):
+                        ('_sheng_bootstrap_fb_trace_ready', 8),
+                        ('_sheng_bootstrap_capture_enabled', 4), ('_sheng_bootstrap_fb_trace_ready', 8)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
     log_requests = []

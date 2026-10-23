@@ -29,6 +29,8 @@ def main() -> None:
                         help='QEMU only: run at EL1 under an EL2 host that traps OS debug accesses')
     parser.add_argument('--expect-debug-trap', action='store_true',
                         help='Accept only an actual EL2 trap on OSLAR_EL1 as the regression control')
+    parser.add_argument('--framebuffer-trace', action='store_true',
+                        help='Provide sheng framebuffer geometry in guest RAM and require real post-MMU pixels')
     args = parser.parse_args()
     if args.expect_debug_trap and not args.trap_debug_unlock:
         parser.error('--expect-debug-trap requires --trap-debug-unlock')
@@ -55,7 +57,9 @@ def main() -> None:
     boot = bytearray(1152)
     struct.pack_into('<HH', boot, 0, 2, 2)
     struct.pack_into('<4Q', boot, 8, va, base, window, args_pa + 0x100000)
-    # No device tree or framebuffer: stop before the first C instruction.
+    if args.framebuffer_trace:
+        struct.pack_into('<6Q', boot, 40, 0xb8000000, 0, 12192, 3048, 2032, 32)
+    # No device tree: stop before the first C instruction.
     (out / 'boot-args.bin').write_bytes(boot)
     entry = base + int(identity['entry_va'], 16) - va
     stub = out / 'entry.S'
@@ -175,11 +179,22 @@ def main() -> None:
                             expected = data[offset:offset + 4].hex()
                     reached = result['entry_instruction'] == expected and core[0] == va + args_pa - base
                     result['instruction_and_args_match'] = reached
-                    if json.loads((kernel.parent / 'build.json').read_text()).get('bootstrap_trace_source_sha256'):
+                    native_build = json.loads((kernel.parent / 'build.json').read_text())
+                    if native_build.get('bootstrap_trace_source_sha256'):
                         stage = int.from_bytes(bytes.fromhex(request(
                             f'm{symbols["_sheng_early_exception_record"]+184:x},8')), 'little')
                         result['bootstrap_stage'] = hex(stage)
-                        reached = reached and stage == 12
+                        reached = reached and stage == (15 if native_build.get('bootstrap_post_mmu_stages') else 12)
+                    if args.framebuffer_trace:
+                        ready = int.from_bytes(bytes.fromhex(request(
+                            f'm{symbols["_sheng_bootstrap_fb_trace_ready"]:x},8')), 'little')
+                        result['post_mmu_framebuffer_mapping_ready'] = ready == 1
+                        pixels = []
+                        for index in range(16):
+                            pixel = 0xb8000000 + 568 * 12192 + (224 + 24 * index) * 4
+                            pixels.append(hex(int.from_bytes(bytes.fromhex(request(f'm{pixel:x},4')), 'little')))
+                        result['actual_stage_pixels'] = pixels
+                        reached = reached and ready == 1 and pixels == ['0xff00ff00'] * 16
                 (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
                 print(json.dumps(result), flush=True)
                 if not reached:

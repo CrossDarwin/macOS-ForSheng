@@ -11,6 +11,7 @@
 #define BA_VIDEO_HEIGHT 72
 #define BA_VIDEO_DEPTH 80
 #define SHENG 1
+#define BOOTSTRAP_TABLE_BYTES 32768
 #include "../../platform/sheng/macos26/log/bootstrap_sync.h"
 #include "../../platform/sheng/macos26/log/bootstrap_trace.h"
 .text
@@ -36,12 +37,13 @@ after_entry:
 // 关闭TTBR0后在高位地址触发异常，检查诊断路径能否恢复物理取指
 .global qemu_mmu_test
 qemu_mmu_test:
- mov x8, #0
+ mov x27, #0
  b qemu_mmu_setup
 .global qemu_transition_test
 qemu_transition_test:
- mov x8, #1
+ mov x27, #1
 qemu_mmu_setup:
+ mov x21, #0
  adr x0, LowExceptionVectorBase
  msr vbar_el1, x0
  isb
@@ -51,6 +53,9 @@ qemu_mmu_setup:
  str x2, [x0]
  ldr x2, =0x40000701
  str x2, [x1, #256]
+ mov x25, x0
+ SHENG_BOOTSTRAP_MAP_TRACE
+ SHENG_EARLY_ADDRESS(x0, bootstrap_pagetables)
  dsb sy
  msr ttbr0_el1, x0
  msr ttbr1_el1, x0
@@ -68,7 +73,8 @@ qemu_mmu_setup:
  orr x0, x0, #0x1000
  msr sctlr_el1, x0
  isb
- cbnz x8, qemu_transition_setup
+ SHENG_BOOTSTRAP_TRACE 13
+ cbnz x27, qemu_transition_setup
  adr x0, qemu_high
  ldr x1, =0xffff800000000000
  add x0, x0, x1
@@ -87,6 +93,7 @@ qemu_transition_setup:
 qemu_transition_fault:
  br x0
 qemu_high:
+ SHENG_BOOTSTRAP_TRACE 15
  SHENG_EARLY_ADDRESS(x0, test_stack_end)
  mov sp, x0
  adr x0, qemu_high_vectors
@@ -133,7 +140,7 @@ boot_args:
  .space 8
  .quad 0xffff800040200000,0x40200000
  .space 16
- .quad 0x41000000,0,2560,640,640,32
+ .quad 0x44000000,0,2560,640,640,32
 .global sheng_bootstrap_capture_enabled
 sheng_bootstrap_capture_enabled:
  .word 1
@@ -144,6 +151,13 @@ bootstrap_pagetables:
  .space 16384
 test_l2:
  .space 16384
+.global sheng_bootstrap_fb_l2
+sheng_bootstrap_fb_l2:
+ .space 16384
+.global sheng_bootstrap_fb_trace_ready
+sheng_bootstrap_fb_trace_ready:
+ .space 8
+.balign 16
 test_stack:
  .space 16384
 test_stack_end:

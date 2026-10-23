@@ -1,0 +1,36 @@
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -657,6 +657,7 @@
+ 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
+ 	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
+ 	SHENG_BOOTSTRAP_TRACE 5
++	SHENG_BOOTSTRAP_MAP_TRACE
+ 
+ 
+ 	b Lbootstrap_tables_ready
+@@ -815,8 +816,10 @@
+ 	MSR_SCTLR_EL1_X0
+ 	isb		sy
+ #if SHENG
++	SHENG_BOOTSTRAP_TRACE 13
+ 	msr		VBAR_EL1, x28
+ 	isb
++	SHENG_BOOTSTRAP_TRACE 14
+ #endif
+ 
+ #if !VMAPPLE
+@@ -884,6 +887,14 @@
+ #endif
+ 
+ 	// Return to arm_init()
++#if SHENG
++	adr x16, Lsheng_high_entry
++	add x16, x16, x22
++	sub x16, x16, x23
++	br x16
++Lsheng_high_entry:
++	SHENG_BOOTSTRAP_TRACE 15
++#endif
+ 	ret
+ 
+ Ltrampoline:

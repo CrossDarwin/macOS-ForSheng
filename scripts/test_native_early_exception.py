@@ -78,7 +78,7 @@ try:
  assert record[0]==1 and record[12]==symbols['boot_args']
  assert record[23]==12
  for stage in range(16):
-  pixel=0x41000000+568*2560+(224+24*stage)*4
+  pixel=0x44000000+568*2560+(224+24*stage)*4
   expected=0xff00ff00 if stage<=12 else 0xff303030
   assert struct.unpack('<I',memory(pixel,4))[0]==expected
  assert packet(f'z0,{symbols["after_entry"]:x},4')=='OK'
@@ -103,7 +103,7 @@ try:
  assert saved[0]==2 and saved[1]==trampoline+24 and saved[2]==0xf2000123, [hex(x) for x in saved]
  assert struct.unpack('<Q',memory(symbols['sheng_early_exception_record'],8))[0]==1
  screen=p/'screen.raw'
- result=packet('qRcmd,'+f'pmemsave 0x41000000 0x190000 "{screen}"'.encode().hex())
+ result=packet('qRcmd,'+f'pmemsave 0x44000000 0x190000 "{screen}"'.encode().hex())
  while result.startswith('O') and result!='OK':
   print(bytes.fromhex(result[1:]).decode(errors='replace'));result=receive()
  assert result=='OK',result
@@ -124,12 +124,17 @@ try:
  high=0xffff800000000000
  assert mmu[0]==3 and mmu[1]==high+symbols['qemu_high_fault'] and mmu[2]==0xf2000124, [hex(x) for x in mmu]
  assert mmu[5]&1 and mmu[6]&128 and mmu[7]==0
+ assert mmu[23]==15
+ assert struct.unpack('<Q',memory(symbols['sheng_bootstrap_fb_trace_ready'],8))[0]==1
  screen=p/'mmu-screen.raw'
- result=packet('qRcmd,'+f'pmemsave 0x41000000 0x190000 "{screen}"'.encode().hex())
+ result=packet('qRcmd,'+f'pmemsave 0x44000000 0x190000 "{screen}"'.encode().hex())
  while result.startswith('O') and result!='OK':
   print(bytes.fromhex(result[1:]).decode(errors='replace'));result=receive()
  assert result=='OK',result
  raw=screen.read_bytes()
+ for stage in (13,15):
+  pixel=568*2560+(224+24*stage)*4
+  assert struct.unpack_from('<I',raw,pixel)[0]==0xff00ff00
  Image.frombytes('RGBX',(640,640),raw,'raw','BGRX').convert('RGB').save(p/'mmu-screen.png')
  # The first translated branch must still reach physical vectors when TTBR1
  # and the exception stack cannot be used. Only redirect execution, not records.
@@ -153,11 +158,12 @@ try:
  assert packet(f'Z0,{normal:x},4')=='OK'
  assert packet('c').startswith(('T05','S05'))
  unchanged=struct.unpack('<24Q',memory(high+symbols['sheng_early_exception_record'],192))
- assert unchanged==transition
+ assert unchanged[:23]==transition[:23] and unchanged[23]==15
  result={'entry_returned':True,'relocated_vector_fault_captured':True,
          'mmu_on_fault_captured':True,'disabled_gate_uses_original_dispatch':True,
          'first_translation_fault_without_stack_captured':True,
          'bootstrap_stage_strip_captured':True,
+         'post_mmu_device_framebuffer_marks_captured':True,
          'status':mmu[0],'elr':hex(mmu[1]),'esr':hex(mmu[2]),'far':hex(mmu[3]),
          'captured_sctlr':hex(mmu[5]),'captured_tcr':hex(mmu[6]),'captured_ttbr0':hex(mmu[7]),
          'record':hex(symbols['sheng_early_exception_record']),

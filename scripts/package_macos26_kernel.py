@@ -44,8 +44,12 @@ def main() -> None:
         raise ValueError('requires this MMU-on diagnostic to disarm after console setup in QEMU')
     native_build = json.loads((kernel.parent / 'build.json').read_text())
     if (native_build.get('bootstrap_trace_source_sha256') and
-            observed.get('early_exception', {}).get('bootstrap_stage') != '0xc'):
+            observed.get('early_exception', {}).get('bootstrap_stage') !=
+            ('0xf' if native_build.get('bootstrap_post_mmu_stages') else '0xc')):
         raise ValueError('requires this kernel to complete the pre-MMU stage strip in QEMU')
+    if (native_build.get('bootstrap_post_mmu_stages') and
+            observed.get('observed_globals', {}).get('_sheng_bootstrap_fb_trace_ready') != '0x1'):
+        raise ValueError('requires this kernel to install the bounded framebuffer diagnostic mapping in QEMU')
     firmware = json.loads(args.firmware_build.read_text())
     patch = 'patches/UniXNU/0007-native-16k-bootstrap-congruence.patch'
     panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'

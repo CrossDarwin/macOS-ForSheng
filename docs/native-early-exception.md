@@ -39,9 +39,18 @@ ELR/ESR/FAR/SPSR/SCTLR/TCR/TTBR0/TTBR1/MAIR 保存的是切换前的故障状态
 | A | MAIR写入返回 |
 | B | 初始TLBI和I-cache维护指令返回 |
 | C | 即将写SCTLR开启MMU |
-| D–F | 当前保留，保持灰色 |
+| D | SCTLR开启MMU后的ISB返回 |
+| E | 高位正式VBAR写入及ISB完成 |
+| F | 高位交接代码已执行，即将返回arm_init |
 
 标记本身增加显存写入和DSB，可能改变时序；若只出现半格，不将它当作完整阶段通过。
+0028在MMU开启前为阶段条建立临时TTBR0 identity映射。
+范围限定为阶段条所在的至多两个32 MiB块，使用Device-nGnRnE和PXN/UXN，不覆盖已有映射。
+已有L2必须在原生bootstrap页表池内；缺少L2时使用独立16 KiB页，不侵占内核映射。
+映射就绪时D–F先显示蓝色，执行到各阶段才变绿；灰色表示诊断映射未准备，不能据此认定MMU卡死。
+标记不依赖栈，不切回MMU关闭状态，不修改EL2或固件。
+F只能证明高位交接代码执行，尚不证明arm_init中的PAC、重定位或C初始化完成。
+arm_vm_init按原流程替换TTBR1并停用TTBR0，后续控制台使用其原有映射。
 PE_create_console完成后关闭该开关，恢复原有分发，locore保留日志继续工作。
 0025修正首次开启MMU时的向量交接：先保留V=P向量，SCTLR写入和ISB完成后才安装高位正式向量。
 低位入口遇到MMU已开启时，直接进入无栈的物理恢复路径，不先写入可能只读的向量页。
@@ -68,6 +77,8 @@ python3 scripts/test_native_early_exception.py \
 通过GDB在`arm_init`第一条指令前停止，同时核对实际指令、启动参数和控制寄存器。
 该观察不经过UEFI，不提供设备树或framebuffer，不执行C初始化，也不模拟Gunyah或sheng设备。
 QEMU配置34 GiB稀疏客体RAM，仅为覆盖该物理地址；XNU收到的owned window仍是512 MiB。
+`--framebuffer-trace`提供sheng的0xB8000000、3048×2032、stride12192几何，实际读取16个标记像素并要求全绿。
+它用于验证新映射及显存写入，仍不模拟真实显示控制器或Gunyah。
 
 ```sh
 python3 scripts/observe_native_bootstrap.py \

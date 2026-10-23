@@ -564,3 +564,11 @@ Android基线sheng / _a / boot_completed=1，随后a槽可启动检查通过，�
 候选fc15ef51eab369ccc52ab49d57ab471b71730150138b4063980c4bcd7fd09069已封装。
 实机Android基线sheng / _a / boot_completed=1，部署时a槽可启动，单次RAM临时启动收到Booting OKAY；阶段条结果待回传。
 被替代的81b73787部署镜像和已完成QEMU的ESP暂存已删除，实验记录保存在private/experiments/20261024-native-arm64e/bootstrap-stage-strip。
+
+fc15ef51实机用户回复及照片确认0–C全绿，D–F为当时未实现的灰格，XNU仍为1。
+实际已越过参数/栈、启动页表清零与建立、TCR/TTBR0/TTBR1/MAIR写入，停顿缩小到SCTLR写入前后的区间；仍未确认MMU开启后执行。
+返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1，未切槽或刷写镜像。
+新增0028：只给阶段条范围补临时Device identity映射，D/E/F分别标记首次MMU ISB、高位VBAR安装和高位C入口交接前执行。
+映射就绪时D–F预先变蓝，真正执行到才变绿，避免将诊断映射失败误判为SCTLR卡死。
+相同汇编头QEMU中实际使用该映射写出MMU开启后的D/F像素，低位复制向量、同步异常和关闭诊断开关后的原分发仍通过。
+完整内核目标编译和实际设备反馈待完成。

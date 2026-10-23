@@ -48,6 +48,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0025-native-mmu-transition-vectors.patch',
     ROOT / 'platform/sheng/macos26/patches/0026-native-skip-early-debug-unlock.patch',
     ROOT / 'platform/sheng/macos26/patches/0027-native-bootstrap-stage-strip.patch',
+    ROOT / 'platform/sheng/macos26/patches/0028-native-post-mmu-stage-strip.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -169,6 +170,7 @@ def prepare() -> dict:
                   early_exception_source_sha256=sha(early_exception),
                   bootstrap_sync_source_sha256=sha(bootstrap_sync),
                   bootstrap_trace_source_sha256=sha(bootstrap_trace),
+                  bootstrap_post_mmu_stages=True,
                   crypto_image_source_sha256=sha(crypto_image),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],
