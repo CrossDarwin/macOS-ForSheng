@@ -247,6 +247,16 @@ jobs:
           path: out/macos26-xnu/
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
+        if: success() && inputs.target == 'macos26-kernel'
+        with:
+          name: macos26-sheng-kernel
+          path: |
+            out/macos26-xnu/build.json
+            out/macos26-xnu/kernel.development.sheng
+            out/macos26-xnu/kernel.development.sheng.map
+            out/macos26-xnu/kernel.development.sheng.dSYM/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: macos26-sheng-diagnostics

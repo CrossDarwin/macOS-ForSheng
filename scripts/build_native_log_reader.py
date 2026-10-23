@@ -154,6 +154,7 @@ def main():
     path.write_bytes(image)
     report = dict(kernel_uuid=native["uuid"], kernel_sha256=native["kernel_sha256"],
                   reader="sheng-native-reader-v1", physical_base=physical, log_bytes=82048,
+                  os_version=template_os_version,
                   reserved_bytes=reserved_bytes, observed_kernel_physical_base=args.kernel_physical_base,
                   image=path.name, bytes=len(image), sha256=hashlib.sha256(image).hexdigest(),
                   reader_source_sha256=hashlib.sha256((ROOT/'probes/native_log_reader.c').read_bytes()).hexdigest(),
