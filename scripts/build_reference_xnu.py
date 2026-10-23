@@ -76,6 +76,13 @@ def prepare(jobs: int, upstream_sheng: bool = False, abi_bootstrap: bool = False
     xnu['driverkit_tag'] = profile['omitted_headers']['driverkit']['commit']
     xnu['trustcache_tag'] = profile['omitted_headers']['trustcache']['commit']
     tree.assemble(ctx, modules)
+    # Board archive builders share the framebuffer font with the pinned UEFI.
+    uefi_link = ctx.tree / 'uefi-sheng'
+    if uefi_link.exists() or uefi_link.is_symlink():
+        if uefi_link.resolve() != (ROOT / 'uefi-sheng').resolve():
+            raise ValueError('refuse to replace a different existing UEFI source path')
+    else:
+        uefi_link.symlink_to(ROOT / 'uefi-sheng', target_is_directory=True)
     for entry in profile['archives']:
         if not (ctx.tree / 'scripts' / entry.split()[0]).is_file():
             raise ValueError(f'missing archive builder: {entry}')
