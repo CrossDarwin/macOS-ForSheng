@@ -409,3 +409,9 @@ ARM64E 链接改为显式生成 __thread_starts，要求该表非空且不再输
 该修正及早期 framebuffer 控制台仍待新产物运行，不作为 ARM64E 完整启动成功。
 同轮 CI 已实际命中 KDK 约 1.18 GB、ARM64E 编译产物约 172 MB，总耗时约 5 分 45 秒。
 新增固定源码缓存，锁定两份依赖清单并在打补丁前保存；编译缓存继续按架构、工具链和适配输入隔离。
+
+Actions 39970542294 在最终链接被 Xcode 27.1 明确拒绝：`-threaded_starts_section is no longer supported`。
+撤销旧链接器选项，按配套 dyld/MachOLoaded.cpp 的格式 7 VM-offset 与 PAC 元数据语义，扩展 XNU 现有链式还原函数。
+原生 MH_EXECUTE 在全局初始化前调用该函数，拒绝未解决 bind，认证指针继续由原 XNU sign_pointer 签名。
+现有实际产物的 116829 个修复位置、其中 43757 个认证指针已被构建端有界读取；无外部 bind，目标位于内核布局内。
+普通 ARM64 和已有 fileset 格式 8 路径保持原有处理；新内核执行仍待目标编译及 QEMU。

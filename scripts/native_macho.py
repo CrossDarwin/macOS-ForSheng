@@ -63,3 +63,66 @@ def symbols(path: Path) -> dict:
             raise ValueError('unterminated native symbol')
         found[names[name:end].decode()] = address
     return found
+
+
+def native_chained_fixups(data: bytes) -> dict:
+    """Admit the self-contained format-7 rebases consumed before native globals."""
+    image = macho(data, 'arm64e')
+    commands = [at for cmd, at, size in image['commands'] if cmd == 0x80000034 and size == 16]
+    if image['kind'] != 2 or len(commands) != 1:
+        raise ValueError('native ARM64E requires one chained-fixups command in MH_EXECUTE')
+    off, size = struct.unpack_from('<II', data, commands[0] + 8)
+    if size < 28 or off + size > len(data):
+        raise ValueError('native chained-fixups data outside file')
+    blob = data[off:off + size]
+    version, starts, _, _, imports, _, _ = struct.unpack_from('<7I', blob)
+    if version or imports or not 28 <= starts <= size - 4:
+        raise ValueError('native boot fixups must be self-contained rebases without imports')
+    count, = struct.unpack_from('<I', blob, starts)
+    if count != len(image['segments']) or starts + 4 + count * 4 > size:
+        raise ValueError('native fixup segment count differs from Mach-O')
+    base = next(segment['va'] for segment in image['segments'] if segment['name'] == '__TEXT')
+    visited, authenticated = set(), 0
+    for index, segment in enumerate(image['segments']):
+        relative, = struct.unpack_from('<I', blob, starts + 4 + index * 4)
+        if not relative:
+            continue
+        pos = starts + relative
+        if pos + 22 > size:
+            raise ValueError('native fixup starts outside metadata')
+        span, page_size, fmt, offset, _, pages = struct.unpack_from('<IHHQIH', blob, pos)
+        if (fmt != 7 or page_size not in (4096, 16384) or span < 22 + 2 * pages
+                or pos + span > size or base + offset != segment['va']
+                or pages * page_size > segment['size']):
+            raise ValueError('native startup requires bounded format-7 segment chains')
+        for page in range(pages):
+            start, = struct.unpack_from('<H', blob, pos + 22 + 2 * page)
+            if start == 0xffff:
+                continue
+            if start & 0x8000:
+                raise ValueError('native startup does not support multi-start chains')
+            site = page * page_size + start
+            while True:
+                if (not page * page_size <= site < (page + 1) * page_size
+                        or site & 3 or site + 8 > segment['filesize']
+                        or segment['fileoff'] + site + 8 > len(data)
+                        or (index, site) in visited):
+                    raise ValueError('native pointer chain exceeds its backing segment or page')
+                visited.add((index, site))
+                raw, = struct.unpack_from('<Q', data, segment['fileoff'] + site)
+                if raw >> 62 & 1:
+                    raise ValueError('unresolved native bind before global initialization')
+                auth = raw >> 63
+                target = base + (raw & (0xffffffff if auth else (1 << 43) - 1))
+                if not any(s['va'] <= target <= s['va'] + s['size']
+                           for s in image['segments'] if s['size']):
+                    raise ValueError('native fixup target outside linked image')
+                authenticated += auth
+                following = raw >> 51 & 0x7ff
+                if not following:
+                    break
+                site += following * 4
+    if not authenticated:
+        raise ValueError('native ARM64E has no authenticated pointer fixups')
+    return dict(format=7, pointers=len(visited), authenticated=authenticated,
+                signer='XNU native kernel_collection_slide before global initialization')

@@ -370,9 +370,6 @@ def link_kernel(args, record, common, sdk, source, env):
     crypto_input = '-Wl,-force_load,' + str(crypto) if ARCH == 'arm64e' else str(crypto)
     archives = [crypto_input, str(OUT / 'ArmDTPlatform.o'), str(OUT / 'ArmCpu.o'), str(firehose)]
     native_link_flags = '-Wl,-map,' + str(OUT / 'kernel.development.sheng.map')
-    if ARCH == 'arm64e':
-        # MH_EXECUTE takes XNU's rebase_threaded_starts path, not the fileset walker.
-        native_link_flags += ' -Wl,-no_fixup_chains,-threaded_starts_section'
     run(common + ['build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=0',
                   'CFLAGS_KERNEL=-mkernel', 'CXXFLAGS_KERNEL=-fapple-kext',
                   'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1 ' +
@@ -385,16 +382,8 @@ def link_kernel(args, record, common, sdk, source, env):
     if not binary.exists() or struct.unpack_from('<I', binary.read_bytes(), 12)[0] != 2:
         raise ValueError('the native linker did not produce an executable Mach-O kernel')
     if ARCH == 'arm64e':
-        from native_macho import macho
-        image = macho(binary.read_bytes(), ARCH)
-        starts = [section for segment in image['segments'] for section in segment['sections']
-                  if segment['name'] == '__TEXT' and section['name'] == '__thread_starts']
-        if (any(kind == 0x80000034 for kind, _, _ in image['commands'])
-                or len(starts) != 1 or starts[0]['size'] < 8 or starts[0]['size'] % 4):
-            raise ValueError('native ARM64E MH_EXECUTE requires nonempty __thread_starts; '
-                             'LC_DYLD_CHAINED_FIXUPS is not processed by this XNU boot path')
-        record['native_pointer_fixups'] = dict(format='__thread_starts',
-            bytes=starts[0]['size'], signer='XNU rebase_threaded_starts before arm_init')
+        from native_macho import native_chained_fixups
+        record['native_pointer_fixups'] = native_chained_fixups(binary.read_bytes())
     destination = OUT / 'kernel.development.sheng'
     shutil.copy2(binary, destination)
     from seal_macos26_crypto import seal
@@ -423,6 +412,7 @@ def main() -> None:
     if ARCH == 'arm64e':
         OUT = ROOT / 'out/macos26-xnu-arm64e'
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0001-native-el1-pac-abi.patch')
+        PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0002-native-arm64e-chained-startup.patch')
     # Keep helpers on this configured module when invoked as a script.
     sys.modules['build_macos26_xnu'] = sys.modules[__name__]
     record = prepare()

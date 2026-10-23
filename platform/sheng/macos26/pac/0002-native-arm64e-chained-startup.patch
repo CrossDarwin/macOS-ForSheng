@@ -1,0 +1,92 @@
+--- a/osfmk/mach/dyld_kernel_fixups.h
++++ b/osfmk/mach/dyld_kernel_fixups.h
+@@ -69,6 +69,10 @@
+ union ChainedFixupPointerOnDisk {
+ 	uint64_t raw64;
+ 	struct dyld_chained_ptr_64_kernel_cache_rebase fixup64;
++#if HAS_NATIVE_EL1_PAC
++	struct dyld_chained_ptr_arm64e_rebase native64;
++	struct dyld_chained_ptr_arm64e_auth_rebase native_auth64;
++#endif
+ };
+ 
+ static inline __attribute__((__always_inline__)) uint64_t __unused
+@@ -110,6 +114,23 @@
+ 		dyldLogFunc("[LOG] kernel-fixups: fixup_value %p\n", fixupLoc);
+ 	}
+ 	switch (segInfo->pointer_format) {
++#if HAS_NATIVE_EL1_PAC
++	case DYLD_CHAINED_PTR_ARM64E_KERNEL: {
++		if (fixupLoc->native64.bind || basePointers[0] == 0) {
++			*stop = 1;
++			return;
++		}
++		/* dyld's format 7 stores VM offsets and uses the same PAC metadata as format 8. */
++		uintptr_t target = fixupLoc->native64.auth ? fixupLoc->native_auth64.target :
++		    fixupLoc->native64.target | ((uint64_t)fixupLoc->native64.high8 << 56);
++		target += (uintptr_t)basePointers[0];
++		if (fixupLoc->native64.auth) {
++			target = sign_pointer(fixupLoc->fixup64, fixupLoc, target);
++		}
++		fixupLoc->raw64 = target;
++		break;
++	}
++#endif
+ #if __LP64__
+ 	case DYLD_CHAINED_PTR_64_KERNEL_CACHE:
+ 	case DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE: {
+@@ -168,6 +189,13 @@
+ 		dyldLogFunc("[LOG] kernel-fixups: segInfo pointer format %d\n", segInfo->pointer_format);
+ 	}
+ 	while (!stop && !chainEnd) {
++#if HAS_NATIVE_EL1_PAC
++		if (segInfo->pointer_format == DYLD_CHAINED_PTR_ARM64E_KERNEL &&
++		    ((uintptr_t)chain < pageContentStart ||
++		    (uintptr_t)chain >= pageContentStart + segInfo->page_size)) {
++			return 1;
++		}
++#endif
+ 		// copy chain content, in case handler modifies location to final value
+ 		if (LogFixups) {
+ 			dyldLogFunc("[LOG] kernel-fixups: value of chain %p", chain);
+@@ -176,6 +204,15 @@
+ 		fixup_value(chain, segInfo, slide, basePointers, &stop);
+ 		if (!stop) {
+ 			switch (segInfo->pointer_format) {
++#if HAS_NATIVE_EL1_PAC
++			case DYLD_CHAINED_PTR_ARM64E_KERNEL:
++				if (chainContent.native64.next == 0) {
++					chainEnd = 1;
++				} else {
++					chain = (union ChainedFixupPointerOnDisk*)((uintptr_t)chain + chainContent.native64.next * 4);
++				}
++				break;
++#endif
+ #if __LP64__
+ 			case DYLD_CHAINED_PTR_64_KERNEL_CACHE:
+ 				if (chainContent.fixup64.next == 0) {
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -284,6 +284,14 @@
+ 		 */
+ 		slide = (uintptr_t)k_mh - VM_KERNEL_LINK_ADDRESS;
+ 
++#if HAS_NATIVE_EL1_PAC
++		/* Current ld emits format 7 for a standalone ARM64E MH_EXECUTE. */
++		const void *base_pointers[KCNumKinds] = {[0] = k_mh, };
++		if (kernel_collection_slide((struct mach_header_64 *)k_mh, base_pointers)) {
++			/* No console or global pointer may be used until all fixups are signed. */
++			__builtin_trap();
++		}
++#else
+ 		/* rebase and sign jops */
+ 		static_kernelcache = &__thread_starts_sect_end[0] != &__thread_starts_sect_start[0];
+ 		if (static_kernelcache) {
+@@ -291,6 +299,7 @@
+ 			    &__thread_starts_sect_end[0],
+ 			    (uintptr_t)k_mh, (uintptr_t)k_mh - slide, slide);
+ 		}
++#endif /* HAS_NATIVE_EL1_PAC */
+ #if defined(HAS_APPLE_PAC)
+ 		OSRuntimeSignStructors(&_mh_execute_header);
+ #endif /* defined(HAS_APPLE_PAC) */
