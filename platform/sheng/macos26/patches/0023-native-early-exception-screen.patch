@@ -1,0 +1,125 @@
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -239,44 +239,54 @@
+  * code triggers an exception. This is copied to the second physical page
+  * during CPU bootstrap (see cpu.c).
+  */
++#if SHENG
++#define SHENG_LOW_VECTOR b Lsheng_early_exception
++#else
++#define SHENG_LOW_VECTOR b .
++#endif
+ 	.align 12, 0
+ 	.global	EXT(LowExceptionVectorBase)
+ LEXT(LowExceptionVectorBase)
+ 	/* EL1 SP 0 */
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
+ 	/* EL1 SP1 */
+ 	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
+ 	/* EL0 64 */
+ 	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
+ 	/* EL0 32 */
+ 	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
+-	.align	7
+-	b		.
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++	.align	7
++	SHENG_LOW_VECTOR
++
++#if SHENG
++#include <arm64/sheng_early_exception.h>
++	.org EXT(LowExceptionVectorBase) + 4096
++#endif
+ 	.align 12, 0
+ 
+ #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR) || defined(KERNEL_INTEGRITY_PV_CTRR)
+@@ -467,8 +476,10 @@
+ 	.globl EXT(start_first_cpu)
+ LEXT(start_first_cpu)
+ 
++#if !SHENG
+ 	// Unlock the core for debugging
+ 	msr		OSLAR_EL1, xzr
++#endif
+ 	msr		DAIFSet, #(DAIFSC_ALL)				// Disable all interrupts
+ 
+ 	mov		x20, x0
+@@ -478,6 +489,12 @@
+ 	adrp	x0, EXT(LowExceptionVectorBase)@page
+ 	add		x0, x0, EXT(LowExceptionVectorBase)@pageoff
+ 	MSR_VBAR_EL1_X0
++#if SHENG
++	isb
++	bl Lsheng_early_enter
++	// Install the low vectors before the first potentially trapped debug access.
++	msr OSLAR_EL1, xzr
++#endif
+ 
+ 
+ 	// Get the kernel memory parameters from the boot args
+--- a/osfmk/arm64/genassym.c
++++ b/osfmk/arm64/genassym.c
+@@ -368,6 +368,13 @@
+ 	DECLARE("BA_MEM_SIZE", offsetof(struct boot_args, memSize));
+ 	DECLARE("BA_TOP_OF_KERNEL_DATA", offsetof(struct boot_args, topOfKernelData));
+ 	DECLARE("BA_BOOT_FLAGS", offsetof(struct boot_args, bootFlags));
++#if SHENG
++	DECLARE("BA_VIDEO_BASE", offsetof(struct boot_args, Video.v_baseAddr));
++	DECLARE("BA_VIDEO_ROW_BYTES", offsetof(struct boot_args, Video.v_rowBytes));
++	DECLARE("BA_VIDEO_WIDTH", offsetof(struct boot_args, Video.v_width));
++	DECLARE("BA_VIDEO_HEIGHT", offsetof(struct boot_args, Video.v_height));
++	DECLARE("BA_VIDEO_DEPTH", offsetof(struct boot_args, Video.v_depth));
++#endif
+ 
+ #if XNU_MONITOR
+ 	DECLARE("PMAP_CPU_DATA_INFLIGHT_PMAP", offsetof(struct pmap_cpu_data, inflight_pmap));

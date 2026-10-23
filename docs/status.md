@@ -471,3 +471,13 @@ ADB 已确认 sheng、活动槽 _a、sys.boot_completed=1；本次恢复未刷�
 槽位变化、不可启动、USB 错误和超时四项定向测试通过，没有再次部署设备。
 当前 macOS 实机进度仍是加载器交接曾出现绿色条；XNU 执行尚无实机证据。
 QEMU 已完成 ARM64E 指针签名、VM、IOKit/NVRAM 和 corecrypto POST，下一处已知内核阻断仍是 Image4 接口缺失。
+
+恢复 a 槽后的受控复测：Android 基线为 sheng / _a / boot_completed=1，fastboot 报告 a 可启动。
+同一 5f96ecce 镜像收到 Booting OKAY，照片确认绿色、蓝色和橙色交接标记全部出现。
+kernel PA=0x881004000、panic PA=0x882A04000；屏幕保留的 SecurityLock 与交接文字来自 UEFI，不是 XNU panic。
+本次证明加载器缓存清理和 MMU 关闭后执行均已完成，仍未确认 XNU 入口或 C 初始化。
+返回 fastboot 后槽位保持 a、不可启动标记为 no，正常重启恢复 Android；ADB 已确认 _a / boot_completed=1。
+
+针对 XNU 早期低位异常向量只会循环、无法输出现场的缺口，新增 0023 和页内原生异常屏幕。
+独立 ARM64E 汇编及 QEMU 实际故障注入通过：入口正常返回，复制后的 4 KiB 向量页捕获 BRK，ELR=0x40400018、ESR=0xF2000123，屏幕能显示寄存器。
+该结果只确认新增异常路径；完整内核的目标编译与运行尚待完成，不作为 sheng 内核启动成功。
