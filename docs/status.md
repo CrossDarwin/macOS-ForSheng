@@ -489,3 +489,13 @@ Actions 39982721882（82725c4）已构建含早期现场的完整 ARM64E 内核�
 新实机候选为 ee83d0f8768c64d63043e1d5940a1c1aa3f21414a6801a128254338b1255f296。
 Android / _a 基线确认后仅临时启动，a 槽可启动，ABL 返回 Booting OKAY；早期现场实机结果待回传。
 被替代的 5f96ecce 部署镜像和已结束观察的 ESP 暂存已删除，调试现场、对应 dSYM 与有效 Android 备份保留。
+
+ee83d0f8 实机用户回传为绿色、蓝色两条，未见橙色，随后重启；没有早期 XNU 寄存器页。
+返回 fastboot 后仍为 a 且可启动，正常重启恢复 Android；未切槽或刷写分区。
+结果首先指向加载器 MMU 切换阶段，不能将这次重启归因于 Image4 或原版 kext。
+检查发现 DarwinEnter 只清理 owned kernel window，而它自身执行代码位于窗口外，且未核对关闭翻译时所需的 identity mapping。
+新增 0014：按 CTR_EL0 给出实际 cache line 大小，将交接代码写回 PoC；用 AT S1E1R 检查交接代码每页、内核入口、参数与 framebuffer 标记范围的 VA/PA 一致性。
+非一致映射在 ExitBootServices 前拒绝并打印地址；原有绿色条提示中的“kernel entry”改为“loader handoff”，避免误判执行阶段。
+该缺口是源码事实，是否解释实机停顿仍需实验。
+同一 FD9D4990 内核经修正加载器在 QEMU 完成 POST 和预期 Image4 panic，日志与标准 panic 区完整。
+当前候选为 6c98fe8cc170442741d77698a235c8995634935b72adcf9a055b88abfb06bc33，实机结果待回传。

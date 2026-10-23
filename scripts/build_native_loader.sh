@@ -28,6 +28,8 @@ if '#define BLOCK_SIZE   SIZE_32MB' not in source:
 entry = Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S').read_text()
 if entry.count('  DARWIN_HANDOFF_PROGRESS ') != 3 or 'HANDOFF: green=entered' not in source:
     raise SystemExit('native loader requires the three actual handoff progress markers')
+if 'DarwinPhysicalAddress (Cursor) != Cursor' not in source or 'adr x8, DarwinEnterEnd' not in entry:
+    raise SystemExit('native loader requires identity admission and handoff code cache cleaning')
 dsc = Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/DarwinBoot.dsc').read_text()
 dsc = dsc.replace('OUTPUT_DIRECTORY = build/DarwinBoot', 'OUTPUT_DIRECTORY = out/native-loader')
 dsc = dsc.replace('  Test/Validation.inf\n', '')
@@ -43,6 +45,7 @@ record = dict(file=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
               native_arm64e_supported=True,
               handoff_panic_address_visible=True,
               handoff_progress='green=entered blue=cache-clean orange=MMU-off',
+              handoff_identity_mapping_checked=True, handoff_code_cache_cleaned=True,
               bootstrap_block_bytes=33554432, native_panic_region_bytes=524288, hardware_tested=False,
               source_sha256=hashlib.sha256(Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c').read_bytes()).hexdigest(),
               entry_source_sha256=hashlib.sha256(Path('UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S').read_bytes()).hexdigest())

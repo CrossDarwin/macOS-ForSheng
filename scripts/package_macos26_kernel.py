@@ -45,12 +45,14 @@ def main() -> None:
     panic_patch = 'patches/UniXNU/0009-native-owned-panic-region.patch'
     handoff_patch = 'patches/UniXNU/0012-native-handoff-log-addresses.patch'
     progress_patch = 'patches/UniXNU/0013-native-handoff-progress.patch'
+    coherency_patch = 'patches/UniXNU/0014-native-handoff-code-coherency.patch'
     arm64e_patch = 'patches/UniXNU/0011-native-arm64e-loader.patch'
     if (firmware.get('preflight_only') is not False or firmware.get('native_el1')
             or firmware['bootimg']['compression'] != 'none'
             or firmware.get('patches_sha256', {}).get(panic_patch) != hashlib.sha256((ROOT / panic_patch).read_bytes()).hexdigest()
             or firmware.get('patches_sha256', {}).get(handoff_patch) != hashlib.sha256((ROOT / handoff_patch).read_bytes()).hexdigest()
             or firmware.get('patches_sha256', {}).get(progress_patch) != hashlib.sha256((ROOT / progress_patch).read_bytes()).hexdigest()
+            or firmware.get('patches_sha256', {}).get(coherency_patch) != hashlib.sha256((ROOT / coherency_patch).read_bytes()).hexdigest()
             or (audit['architecture'] == 'arm64e' and firmware.get('patches_sha256', {}).get(arm64e_patch)
                 != hashlib.sha256((ROOT / arm64e_patch).read_bytes()).hexdigest())
             or firmware.get('patches_sha256', {}).get(patch) != hashlib.sha256((ROOT / patch).read_bytes()).hexdigest()):
