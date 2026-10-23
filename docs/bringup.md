@@ -83,6 +83,24 @@ UEFIExtract 源码版本也在锁文件中；需要 CMake 3.22+，或由 uvx 获
 加 `--bootimg` 可以封装只含 UEFI 的 Android 容器，验证 header、gzip、FD 和追加 DTB 的往返一致性。
 无 QEMU 时明确记录执行测试未运行。它不含 macOS 内核或用户态，也没有证明 ABL 会接受该镜像。
 
+实机探针采用 `--bootimg --preflight-only --boot-header 4 --compression none`，并通过
+`--boot-template private/backups/run-name/boot_a.img` 传入当前槽的已验证备份。
+此模板只提供 loader metadata，不附带 Android 内核；必须拒绝声称包含但未提供的 ramdisk 和签名。
+本机 ABL 已证实会因缺少可用安全补丁元数据且 header OS 字段为 0 而拒绝 RAM 启动。
+ARM64 Image 的 text_offset 与 FD 目标地址分开维护，本机采用 text_offset=0、flags=0xA。
+独立探针保存在 FV，通过原有 UniXNU 菜单入口进入，摘要等待新按键后才返回菜单。
+
+在 root Recovery 中捕获固件日志：
+
+```sh
+python3 scripts/capture_boot_logs.py --serial DEVICE_SERIAL --output private/device/boot-logs-run-name
+```
+
+工具只读取 logfs、xbl_sc_logs 和 rawdump 前 1 MiB，比较设备与本地 SHA-256，
+并从 FAT 日志卷中提取固定的 UefiLog0..4.txt。文件编号不能当作绝对时间顺序。
+离线解析可使用 `--decode-only private/device/saved-raw-capture`；不会覆盖既有解析文件。
+rawdump 可能残留旧启动，必须用版本和具体启动记录建立关联。
+
 ## 构建与状态
 
 GitHub Actions 只接受手动触发。`check` 运行输入拒绝测试；`preflight` 构建 EFI；
