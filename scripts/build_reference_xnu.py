@@ -29,16 +29,24 @@ def sha(path: Path) -> str:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def prepare(jobs: int, upstream_sheng: bool = False) -> tuple:
+def prepare(jobs: int, upstream_sheng: bool = False, abi_bootstrap: bool = False) -> tuple:
     for group in ('core', 'feeds'):
         subprocess.run([sys.executable, ROOT / 'scripts/sources.py', 'verify', '--group', group], check=True)
-    output = ROOT / ('out/sheng-xnu' if upstream_sheng else 'out/reference-xnu')
+    output = ROOT / ('out/sheng-xnu' if upstream_sheng else
+                     'out/sheng-abi-bootstrap' if abi_bootstrap else 'out/reference-xnu')
     command = ['tree', '-D', str(ROOT / 'UniXNU-sheng'), '--out', str(output / 'work'), '-j', str(jobs)]
     for name, path in REFERENCES.items():
         command += ['--local-module', f'refer:{name}={ROOT / path}']
     ctx = Context(cli.parser().parse_args(command))
     config_path = ROOT / ('config/sheng_defconfig' if upstream_sheng else 'config/reference-xnu_defconfig')
     config = config_path.read_text()
+    if abi_bootstrap:
+        upstream = parse_config((ROOT / 'config/sheng_defconfig').read_text())
+        if upstream['XNU_CRYPTO_BOOTSTRAP'] != 'prelinked':
+            raise ValueError('upstream original-component bootstrap contract changed')
+        # Original corecrypto must own PRNG registration in the ABI laboratory.
+        config = config.replace('CONFIG_XNU_CRYPTO_BOOTSTRAP="source"',
+                                'CONFIG_XNU_CRYPTO_BOOTSTRAP="prelinked"')
     if upstream_sheng:
         baseline = json.loads((ROOT / 'config/sheng-baseline.json').read_text())
         if (config_path.read_bytes() != (ROOT / 'UniXNU-sheng/configs/sheng_defconfig').read_bytes()
@@ -49,6 +57,8 @@ def prepare(jobs: int, upstream_sheng: bool = False) -> tuple:
     ctx.work.mkdir(parents=True, exist_ok=True)
     ctx.config_path.write_text(config)
     profile = json.loads((ROOT / 'config/reference-xnu.json').read_text())
+    if abi_bootstrap:
+        profile['purpose'] = 'Temporary prelinked-crypto bootstrap for rebuilding original-component ABI evidence; not a device image'
     if upstream_sheng:
         profile['archives'] = list(ctx.board['kernel']['archives'])
         profile['purpose'] = 'Complete pinned upstream sheng kernel baseline; iPadOS 17 ABI, not macOS userspace'
@@ -76,7 +86,8 @@ def prepare(jobs: int, upstream_sheng: bool = False) -> tuple:
     record = {
         'purpose': profile['purpose'], 'xnu': profile['xnu'], 'darwin': profile['darwin'],
         'profile_sha256': sha(ROOT / 'config/reference-xnu.json'),
-        'defconfig_sha256': sha(config_path), 'sources_lock_sha256': sha(ROOT / 'sources.lock.json'),
+        'defconfig_sha256': hashlib.sha256(config.encode()).hexdigest(),
+        'base_defconfig_sha256': sha(config_path), 'sources_lock_sha256': sha(ROOT / 'sources.lock.json'),
         'sources': identity, 'omitted_headers': profile['omitted_headers'],
         'patches': {str(p.relative_to(ROOT)): sha(p) for p in sorted((ROOT / 'patches').glob('*/*.patch'))},
         'upstream_kernel_patches': {
@@ -87,6 +98,7 @@ def prepare(jobs: int, upstream_sheng: bool = False) -> tuple:
         'config': ctx.config, 'archives': profile['archives'], 'jobs': jobs,
         'built': False, 'hardware_executed': False, 'macos27_abi_qualified': False,
         'full_upstream_sheng_config': upstream_sheng,
+        'original_abi_bootstrap_only': abi_bootstrap,
         'upstream_defconfig_sha256': sha(ROOT / 'UniXNU-sheng/configs/sheng_defconfig'),
         'upstream_board_sha256': sha(ROOT / 'UniXNU-sheng/board.toml'),
         'output_directory': str(output.relative_to(ROOT)),
@@ -117,13 +129,16 @@ def prepare(jobs: int, upstream_sheng: bool = False) -> tuple:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prepare-only', action='store_true', help='validate and assemble without compiling')
-    parser.add_argument('--upstream-sheng', action='store_true',
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--upstream-sheng', action='store_true',
                         help='use every upstream sheng option and archive without overrides')
+    mode.add_argument('--abi-bootstrap', action='store_true',
+                      help='temporary upstream prelinked-crypto mode for rebuilding ABI evidence, never a device payload')
     parser.add_argument('-j', '--jobs', type=int, default=min(os.cpu_count() or 2, 4))
     args = parser.parse_args()
     if not 1 <= args.jobs <= 32:
         parser.error('jobs must be between 1 and 32')
-    ctx, modules, record = prepare(args.jobs, args.upstream_sheng)
+    ctx, modules, record = prepare(args.jobs, args.upstream_sheng, args.abi_bootstrap)
     if args.prepare_only:
         print(json.dumps(record, indent=2))
         return

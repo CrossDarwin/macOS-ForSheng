@@ -5,7 +5,7 @@ on:
       target:
         description: Build target; no job deploys to hardware
         type: choice
-        options: [check, preflight, monitor, apple, kext, xnu, sheng-xnu, reference-xnu]
+        options: [check, preflight, monitor, apple, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
         default: check
 permissions:
   contents: read
@@ -109,7 +109,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
   reference-xnu:
-    if: inputs.target == 'reference-xnu' || inputs.target == 'sheng-xnu'
+    if: inputs.target == 'reference-xnu' || inputs.target == 'sheng-xnu' || inputs.target == 'abi-bootstrap'
     needs: check
     runs-on: xcode-27
     timeout-minutes: 120
@@ -137,6 +137,8 @@ jobs:
             out/reference-xnu/work/sheng/tree/build/
             out/sheng-xnu/work/sheng/tree/.cache/
             out/sheng-xnu/work/sheng/tree/build/
+            out/sheng-abi-bootstrap/work/sheng/tree/.cache/
+            out/sheng-abi-bootstrap/work/sheng/tree/build/
           key: xnu-${{ inputs.target }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.reference-toolchain.outputs.identity }}-${{ hashFiles('sources.lock.json', 'patches/**', 'config/reference-xnu*', 'config/sheng*', 'scripts/build_reference_xnu.py') }}
       - name: Build the selected sheng baseline
         env:
@@ -144,13 +146,15 @@ jobs:
         run: |
           if [ "$SHENG_BUILD_TARGET" = sheng-xnu ]; then
             python3 scripts/build_reference_xnu.py --upstream-sheng -j 4
+          elif [ "$SHENG_BUILD_TARGET" = abi-bootstrap ]; then
+            python3 scripts/build_reference_xnu.py --abi-bootstrap -j 4
           else
             python3 scripts/build_reference_xnu.py -j 4
           fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ inputs.target == 'sheng-xnu' && 'sheng-upstream-xnu' || 'sheng-el1-reference-xnu' }}
+          name: ${{ inputs.target == 'sheng-xnu' && 'sheng-upstream-xnu' || inputs.target == 'abi-bootstrap' && 'sheng-abi-bootstrap' || 'sheng-el1-reference-xnu' }}
           path: |
             out/reference-xnu/kernel.macho
             out/reference-xnu/build.json
@@ -163,5 +167,10 @@ jobs:
             out/sheng-xnu/kernel-audit.json
             out/sheng-xnu/restored-headers.json
             out/sheng-xnu/work/sheng/logs/
+            out/sheng-abi-bootstrap/kernel.macho
+            out/sheng-abi-bootstrap/build.json
+            out/sheng-abi-bootstrap/kernel-audit.json
+            out/sheng-abi-bootstrap/restored-headers.json
+            out/sheng-abi-bootstrap/work/sheng/logs/
           if-no-files-found: warn
           retention-days: 7
