@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
-| 原生 25F71 ARM64E QEMU | CI40084664897；原版安全组件、pthread、IOStorageFamily与NativeVirtioBlock已启动；恢复盘首扇区实际读取及SHA256比对通过；根卷及launchd未启动 |
+| 原生 25F71 ARM64E QEMU | CI40084664897；原版安全组件、pthread、IOStorageFamily与NativeVirtioBlock已启动；只读恢复根卷已实际挂载，8520次读取无失败，到达load_init_program；launchd执行尚未验证 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -787,3 +787,20 @@ CSR对照实测csr_config=0x800，但APFS仍在同一缺少payload处拒绝，�
 system-volume-auth-blob传入APFS，同时声明实际recoveryos环境。
 新脚本prepare_macos26_root_hash.py核对配对磁盘SHA256和原IPSW Manifest后提取，
 输入摘要检查不等于已有个性化IM4M签名，运行结果仍待实测。
+
+### 恢复根卷已实际挂载，进入init程序装载入口
+
+给VirtIO驱动的实际IOKit personality补上Protocol Characteristics：
+Physical Interconnect=Virtual Interface、Physical Interconnect Location=External。
+这与IOStorageFamily公开常量一致，配套APFS的nx_is_virtual读取同一属性，
+先前漏报时设备被当作内部系统盘并强制寻找本不存在的命名根快照。
+原版APFS代码保持原样。
+
+实际候选SHA256 eabed116ad70800359e8407532ce1e97a3afe7530475d1b869eef413e9f98be7，
+内核UUID01273EEF-6B10-3279-86C6-748ABB6C39A8。
+QEMU输出mount-complete volume macOS Base System，卷UUID与输入一致，
+8520次磁盘读取成功、失败0次，随后完成BSD根卷流程与swap初始化，
+断点实际命中load_init_program，指令字节及16K/47位页表检查通过。
+根哈希原始数据已导入；本次采用显式QEMU开发CSR策略，不能称为个性化生产启动。
+尚未执行launchd，下一观测点跟随thread_setentrypoint传出的真实EL0地址。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/mounted-40084664897。

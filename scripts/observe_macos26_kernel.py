@@ -87,7 +87,10 @@ def main() -> None:
     parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot',
-                        'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program'), default='arm_init')
+                        'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program',
+                        'thread_setentrypoint'), default='arm_init')
+    parser.add_argument('--follow-init-entry', action='store_true',
+                        help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--root-hash-payload', type=Path,
@@ -116,6 +119,8 @@ def main() -> None:
             if name in addresses and addresses[name] != value:
                 raise ValueError('transport symbol collides with the native kernel')
             addresses[name] = value
+    if args.follow_init_entry and args.checkpoint != 'thread_setentrypoint':
+        parser.error('following init requires the thread_setentrypoint checkpoint')
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
     root_hash = None
@@ -220,6 +225,8 @@ def main() -> None:
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        if args.follow_init_entry:
+            command += ['--follow-entrypoint-arg', '1', '--step-followed-entry', '16']
         if not args.let_vector_log:
             command += ['--also-stop', hex(addresses['_panic'])]
         if args.capture_screen:
@@ -404,6 +411,14 @@ def main() -> None:
     passed = (instruction_match and not snapshot['bounded_timeout_interrupted'] and int(snapshot['pc'], 16) == checkpoint
               and tcr >> 14 & 3 == 2 and tcr >> 30 & 3 == 1
               and tcr & 63 == 17 and tcr >> 16 & 63 == 17 and regs['SCTLR_EL1'] & 1)
+    if args.follow_init_entry:
+        entry = snapshot.get('followed_user_entry', {})
+        record['followed_init_entry'] = entry
+        passed = (instruction_match and entry.get('observed') is True
+                  and int(entry.get('pstate', '0xf'), 16) & 15 == 0)
+        record['userland_started'] = bool(passed)
+        record['el0_steps_observed'] = sum(int(step['pstate'], 16) & 15 == 0
+                                            for step in entry.get('steps', []))
     record.update(checkpoint=args.checkpoint, checkpoint_va=hex(checkpoint),
                   reached=bool(passed), snapshot='gdb-stop.json')
     (args.output / 'result.json').write_text(json.dumps(record, indent=2) + '\n')
