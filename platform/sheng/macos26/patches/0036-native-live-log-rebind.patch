@@ -1,0 +1,42 @@
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -55,6 +55,9 @@
+ #include <machine/machine_cpc.h>
+ 
+ #include <pexpert/arm/protos.h>
++#if SHENG
++#include <pexpert/pexpert.h>
++#endif
+ #if defined(APPLE_ARM64_ARCH_FAMILY)
+ #include <pexpert/arm64/apple_arm64_cpu.h>
+ #endif
+@@ -672,6 +675,9 @@
+ {
+ 	esr_exception_class_t  class = ESR_EC(esr);
+ 	arm_saved_state_t    * state = &context->ss;
++#if SHENG
++	sheng_log_exception(get_saved_state_pc(state), esr, far, get_saved_state_sp(state));
++#endif
+ 
+ 	switch (class) {
+ 	case ESR_EC_UNCATEGORIZED:
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -168,6 +168,7 @@
+ void sheng_log_stage(const char *message);
+ void sheng_log_status(const char *message);
+ void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp);
++void sheng_log_repaint_panel(void);
+ extern volatile uint64_t sheng_panel_ready;
+ extern volatile uint64_t sheng_status_pixels;
+ #endif
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -598,6 +598,7 @@
+ 		/* Use the validated boot GOP until a real display driver takes ownership. */
+ 		SHENG_CONSOLE_LOG("console acquire enter");
+ 		PE_initialize_console(NULL, kPEAcquireScreen);
++		sheng_log_repaint_panel();
+ 		SHENG_CONSOLE_LOG("console acquire returned");
+ 		printf("SHENG: early framebuffer console acquired\n");
+ 	}

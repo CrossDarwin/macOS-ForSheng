@@ -7,7 +7,7 @@ extern volatile uint64_t sheng_bootstrap_vm_pixels;
 extern uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
 extern volatile uint64_t sheng_bootstrap_vm_witness;
 extern volatile uint64_t sheng_status_pixels;
-extern uint64_t sheng_status_row_pa, sheng_status_scale;
+extern uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns;
 
 static __attribute__((always_inline)) inline void
 sheng_vm_trace(unsigned stage)
@@ -42,6 +42,7 @@ sheng_vm_trace_begin(const boot_args *args)
     sheng_status_pixels = 0;
     sheng_status_row_pa = 0;
     sheng_status_scale = 0;
+    sheng_console_columns = 0;
     sheng_bootstrap_vm_pixels = 0;
     sheng_bootstrap_vm_row_pa = 0;
     sheng_bootstrap_vm_witness = 0;
@@ -56,12 +57,15 @@ sheng_vm_trace_begin(const boot_args *args)
             const uint64_t scale = video->v_width >= 960 ? 2 : 1;
             const uint64_t top = video->v_height >= 1024 ? 608 : 32;
             const uint64_t status = video->v_baseAddr + top * stride + 896;
-            const uint64_t status_end = status + (32 * scale - 1) * stride + 44 * 8 * scale * 4;
+            const uint64_t available = (video->v_width - 224) / (8 * scale);
+            const uint64_t columns = available > 88 ? 88 : available;
+            const uint64_t status_end = status + (128 * scale - 1) * stride + columns * 8 * scale * 4;
             if (video->v_width >= 224 + 44 * 8 * scale &&
-                top + 32 * scale <= video->v_height && status >= video->v_baseAddr &&
+                top + 128 * scale <= video->v_height && status >= video->v_baseAddr &&
                 status_end > status && status_end < (1ull << 47)) {
                 sheng_status_row_pa = status;
                 sheng_status_scale = scale;
+                sheng_console_columns = columns;
             }
             if (sheng_bootstrap_fb_trace_ready) {
                 sheng_bootstrap_vm_pixels = first;

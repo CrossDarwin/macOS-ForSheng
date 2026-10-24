@@ -1,0 +1,137 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -167,6 +167,7 @@
+ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
+ void sheng_log_stage(const char *message);
+ void sheng_log_status(const char *message);
++void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp);
+ extern volatile uint64_t sheng_panel_ready;
+ extern volatile uint64_t sheng_status_pixels;
+ #endif
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -367,13 +367,13 @@
+ 		const uintptr_t start = status && status < first ? status : first;
+ 		uintptr_t end = first + 11 * sheng_bootstrap_vm_stride + 1460;
+ 		if (status) {
+-			const uintptr_t status_end = status + (32 * sheng_status_scale - 1) *
+-			    sheng_bootstrap_vm_stride + 44 * 8 * sheng_status_scale * 4;
++			const uintptr_t status_end = status + (128 * sheng_status_scale - 1) *
++			    sheng_bootstrap_vm_stride + sheng_console_columns * 8 * sheng_status_scale * 4;
+ 			if (status_end > end) end = status_end;
+ 		}
+ 		const uintptr_t offset = start & 16383;
+ 		const vm_size_t bytes = (offset + end - start + 16383) & ~(vm_size_t)16383;
+-		if (end > start && bytes <= 2 * 1048576) {
++		if (end > start && bytes <= 4 * 1048576) {
+ 			const vm_offset_t mapped = ml_io_map(start - offset, bytes);
+ 			if (mapped) {
+ 				sheng_bootstrap_vm_pixels = mapped + offset + first - start;
+@@ -382,7 +382,12 @@
+ 		}
+ 	}
+ 	sheng_vm_trace(11);
+-	sheng_log_status("arm_vm_init returned");
++	if (sheng_status_pixels) {
++		sheng_log_bind_panel(sheng_status_pixels + 32 * sheng_status_scale * sheng_bootstrap_vm_stride,
++		    (unsigned)sheng_bootstrap_vm_stride, (unsigned)sheng_console_columns, 6,
++		    (unsigned)sheng_status_scale);
++	}
++	sheng_log_stage("arm_vm_init returned - live RAM log");
+ }
+ static void
+ sheng_native_log_panel(const boot_args *args)
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -773,6 +773,11 @@
+ {
+ 	esr_exception_class_t  class   = ESR_EC(esr);
+ 	arm_saved_state_t    * state   = &context->ss;
++#if SHENG
++	if (!PSR64_IS_USER(get_saved_state_cpsr(state))) {
++		sheng_log_exception(get_saved_state_pc(state), esr, far, get_saved_state_sp(state));
++	}
++#endif
+ 	thread_t               thread  = current_thread();
+ #if MACH_ASSERT
+ 	int                    preemption_level = sleh_get_preemption_level();
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -125,6 +125,12 @@
+ 	}
+ }
+ 
++#if SHENG
++#define SHENG_CONSOLE_LOG(message) sheng_log_stage(message)
++#else
++#define SHENG_CONSOLE_LOG(message) ((void)0)
++#endif
++
+ static void
+ check_for_panic_log(void)
+ {
+@@ -176,7 +182,9 @@
+ 		return;
+ 	}
+ 
++	SHENG_CONSOLE_LOG("panic RAM map enter");
+ 	gPanicBase = ml_io_map_wcomb(reg_prop[0], panic_region_length[0]);
++	SHENG_CONSOLE_LOG("panic RAM map returned");
+ 	if (!gPanicBase) {
+ 		return;
+ 	}
+@@ -220,8 +228,12 @@
+ 	}
+ 
+ 	/* Clear panic region */
++	SHENG_CONSOLE_LOG("panic RAM clean enter");
+ 	CleanPoC_DcacheRegion_Force(gPanicBase, gPanicSize);
++	SHENG_CONSOLE_LOG("panic RAM clean returned");
++	SHENG_CONSOLE_LOG("panic RAM zero enter");
+ 	bzero((void *)gPanicBase, gPanicSize);
++	SHENG_CONSOLE_LOG("panic RAM zero returned");
+ }
+ 
+ int
+@@ -559,7 +571,9 @@
+ 	 * Check the head of VRAM for a panic log saved on last panic.
+ 	 * Do this before the VRAM is trashed.
+ 	 */
++	SHENG_CONSOLE_LOG("panic region initialize enter");
+ 	check_for_panic_log();
++	SHENG_CONSOLE_LOG("panic region initialize returned");
+ #if SHENG
+ 	bool early_console = false;
+ 	if (PE_parse_boot_argn("-sheng-early-console", &early_console, sizeof(early_console)) &&
+@@ -571,14 +585,20 @@
+ #endif
+ 
+ 	if (PE_state.video.v_display) {
++		SHENG_CONSOLE_LOG("graphics console initialize enter");
+ 		PE_initialize_console(&PE_state.video, kPEGraphicsMode);
++		SHENG_CONSOLE_LOG("graphics console initialize returned");
+ 	} else {
++		SHENG_CONSOLE_LOG("text console initialize enter");
+ 		PE_initialize_console(&PE_state.video, kPETextMode);
++		SHENG_CONSOLE_LOG("text console initialize returned");
+ 	}
+ #if SHENG
+ 	if (early_console) {
+ 		/* Use the validated boot GOP until a real display driver takes ownership. */
++		SHENG_CONSOLE_LOG("console acquire enter");
+ 		PE_initialize_console(NULL, kPEAcquireScreen);
++		SHENG_CONSOLE_LOG("console acquire returned");
+ 		printf("SHENG: early framebuffer console acquired\n");
+ 	}
+ #endif
+@@ -828,7 +848,9 @@
+ 	 */
+ 	if (gPanicBase) {
+ 		#if !HAS_UCNORMAL_MEM
+-		CleanPoC_DcacheRegion_Force(gPanicBase, gPanicSize);
++		SHENG_CONSOLE_LOG("panic RAM clean enter");
++	CleanPoC_DcacheRegion_Force(gPanicBase, gPanicSize);
++	SHENG_CONSOLE_LOG("panic RAM clean returned");
+ 		#endif
+ 	}
+ }

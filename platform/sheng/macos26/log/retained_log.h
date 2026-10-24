@@ -84,7 +84,7 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
     if (!address || stride < 2560 || stride > 65536 || columns < 32 || columns > 100 ||
-        rows != 8 || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride ||
+        (rows != 6 && rows != 8) || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride ||
         !__atomic_compare_exchange_n(&r->writer, &expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
     sheng_panel.base = address;
     sheng_panel.stride = stride;
@@ -102,6 +102,43 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     }
     for (; start < total; start++) sheng_panel_putc(r->tail[start % SHENG_LOG_TAIL]);
     __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+}
+
+void sheng_log_repaint_panel(void)
+{
+    if (sheng_panel_ready && !sheng_status_pinned) {
+        sheng_log_bind_panel(sheng_panel.base, sheng_panel.stride, sheng_panel.columns,
+            sheng_panel.rows, sheng_panel.scale);
+    }
+}
+
+volatile uint64_t sheng_first_sync_displayed;
+static void sheng_exception_text(const char *message)
+{
+    /* 首异常即使打断日志writer，也先把寄存器写到独立显示通路 */
+    while (*message) sheng_panel_putc((unsigned char)*message++);
+}
+
+static void sheng_exception_hex(const char *name, uint64_t value)
+{
+    sheng_exception_text(name);
+    for (unsigned n = 0; n < 16; n++) {
+        const unsigned digit = (unsigned)((value >> ((15 - n) * 4)) & 15);
+        sheng_panel_putc((unsigned char)(digit < 10 ? '0' + digit : 'A' + digit - 10));
+    }
+    sheng_panel_putc('\n');
+}
+
+void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp)
+{
+    if (!sheng_panel_ready || __atomic_exchange_n(&sheng_first_sync_displayed, 1, __ATOMIC_RELAXED)) return;
+    sheng_status_panic("first EL1 sync - registers below");
+    sheng_panel_reset();
+    sheng_exception_hex("ELR=", pc);
+    sheng_exception_hex("ESR=", esr);
+    sheng_exception_hex("FAR=", far);
+    sheng_exception_hex("SP =", sp);
+    sheng_panel_pin_panic();
 }
 
 void sheng_log_stage(const char *message)

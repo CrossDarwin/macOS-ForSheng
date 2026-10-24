@@ -55,6 +55,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0032-native-panel-bounded-conversions.patch',
     ROOT / 'platform/sheng/macos26/patches/0033-native-mapped-status-line.patch',
     ROOT / 'platform/sheng/macos26/patches/0034-native-status-panel-layout.patch',
+    ROOT / 'platform/sheng/macos26/patches/0035-native-preconsole-live-log.patch',
+    ROOT / 'platform/sheng/macos26/patches/0036-native-live-log-rebind.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

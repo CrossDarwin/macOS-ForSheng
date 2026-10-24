@@ -59,6 +59,11 @@ def main() -> None:
         if (observed.get('observed_globals', {}).get('_sheng_status_witness') != '0x1'
                 or not observed.get('mapped_status_text', '').startswith('PANIC: image4 interface not available')):
             raise ValueError('requires mapped status glyph readback and pinned Image4 panic text in QEMU')
+    if '_sheng_console_columns' in symbols:
+        panel = observed.get('observed_globals', {})
+        if (panel.get('_sheng_panel_ready') != '0x1' or panel.get('_sheng_panel_witness') != '0x1'
+                or int(panel.get('_sheng_panel_characters', '0x0'), 16) < 100):
+            raise ValueError('requires the pre-console live RAM log mirror to bind and print actual glyphs')
     if (native_build.get('bootstrap_c_trace_source_sha256') and
             observed.get('observed_globals', {}).get('_sheng_bootstrap_c_stage') != '0xf'):
         raise ValueError('requires this kernel to complete the early C stage strip in QEMU')

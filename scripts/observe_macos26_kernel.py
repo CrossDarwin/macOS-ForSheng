@@ -160,6 +160,7 @@ def main() -> None:
                         ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
                         ('_sheng_status_witness', 8), ('_sheng_status_message', 45),
                         ('_sheng_status_pixels', 8), ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
+                        ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8),
                         ('_sheng_bootstrap_capture_enabled', 4)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
@@ -217,7 +218,8 @@ def main() -> None:
                         ('_sheng_bootstrap_vm_witness', 8),
                         ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
                         ('_sheng_status_witness', 8), ('_sheng_status_pixels', 8),
-                        ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8)):
+                        ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
+                        ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')

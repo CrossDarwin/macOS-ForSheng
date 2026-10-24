@@ -10,7 +10,7 @@ char sheng_status_message[45];
 static unsigned sheng_status_pinned;
 
 volatile uint64_t sheng_status_pixels;
-uint64_t sheng_status_row_pa, sheng_status_scale;
+uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns;
 
 /* 同一次原生映射覆盖独立文字区，旧阶段条不再与文字共用像素 */
 static void sheng_status_render(const char *prefix, const char *message)
@@ -88,7 +88,20 @@ static void sheng_panel_reset(void)
 static void sheng_panel_newline(void)
 {
     sheng_panel.x = 0;
-    if (++sheng_panel.y == sheng_panel.rows) sheng_panel.y = sheng_panel.pinned;
+    if (++sheng_panel.y == sheng_panel.rows) {
+        /* I/O映射逐字访问，不调用可能使用SIMD或DC ZVA的内存例程 */
+        const unsigned pixels = sheng_panel.columns * 8 * sheng_panel.scale;
+        for (unsigned row = sheng_panel.pinned; row + 1 < sheng_panel.rows; row++) {
+            for (unsigned y = 0; y < 16 * sheng_panel.scale; y++) {
+                volatile uint32_t *dst = (volatile uint32_t *)(sheng_panel.base +
+                    (row * 16 * sheng_panel.scale + y) * sheng_panel.stride);
+                volatile uint32_t *src = (volatile uint32_t *)((uintptr_t)dst +
+                    16 * sheng_panel.scale * sheng_panel.stride);
+                for (unsigned x = 0; x < pixels; x++) dst[x] = src[x];
+            }
+        }
+        sheng_panel.y = sheng_panel.rows - 1;
+    }
     sheng_panel_clear_row(sheng_panel.y);
 }
 

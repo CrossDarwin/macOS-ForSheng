@@ -652,3 +652,15 @@ Actions 40064245546（01b1239）成功构建0034，UUID 85932C1F-1D24-340B-B242-
 新候选943db4197fe17b3fbe64152b9cebbf6e69319574b451d9c77115acc5e21d7c88已封装，实机部署前Android仍为sheng / _a / boot_completed=1。
 单次RAM临时启动前a槽可启动检查通过，ABL返回Booting OKAY，无刷写或切槽。
 记录位于private/experiments/20261024-native-arm64e/status-panel-layout；旧b4904504部署镜像及本次QEMU ESP已删除，实机文字结果待回传。
+
+943db419实机新照片可清楚读取SHENG - BOOT LOG及SHENG: PE_create_console enter，未出现returned。原紫色F与旧入口寄存器不能继续作为本次控制台已返回的证明，实机尚未确认Image4或corecrypto阶段。
+用户返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1。照片与结构化结果位于private/experiments/20261024-native-arm64e/status-panel-layout。
+0035/0036将原RAM日志在arm_vm_init返回后立即镜像至独立六行区域，位于标题和末函数摘要下方；不等待PE_create_console，不再依赖单行函数名逐个定位。
+一次有界原生映射同时覆盖阶段条、标题及连续日志，上限4 MiB；字体沿用实机已读到的2倍大小，最多88列，屏幕不足时按实际宽度限制。
+接入控制台创建全段的原有调用边界，并在首个内核同步异常进入sleh时直接绘制ELR/ESR/FAR/SP；不改原异常分发，早期汇编RAM寄存器记录继续保留。
+定向运行确认进入控制台前已有滚动文字、清屏后能从RAM尾部恢复；writer占用时仍显示首个异常，后续80条消息不覆盖四项寄存器，区域外哨兵未变。此项为共享渲染器测试，不是实机异常结果。
+
+用户明确授权建立日志分区。root Recovery当前GPT确认sde尾部空闲，新增第78项macoslog，LBA 448512–464895，4096字节扇区，共64 MiB，FAT16标签MACOSLOG。
+主备GPT、现有分区条目及当前boot_a/boot_b属性保留；未缩小userdata，未刷写启动/固件分区。最新GPT与待使用空闲区已备份至private/backups/20261024-macoslog-partition，写入后逐范围读回一致。
+Recovery重新启动后识别/dev/block/sde78与/dev/block/by-name/macoslog，实际挂载vfat、写入OBSERVED.JSON并读回一致，已卸载。
+OBSERVED.JSON仅为实机照片观察记录，不能当作原始RAM日志。当前XNU UFS写入、跨重启RAM读取及自动落盘尚未接通，日志分区本身不改变这些边界。
