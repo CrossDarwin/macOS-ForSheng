@@ -464,6 +464,8 @@ def main():
             if (recovery_contract['build'] != '25F71' or recovery_contract['xnu'] != '12377.121.6'
                     or recovery_contract['architecture'] != identity['architecture']):
                 raise ValueError('recovery component contract differs from the paired native kernel')
+            if '_sheng_native_boot_prelink_version' not in names:
+                raise ValueError('recovery startup requires native boot prelink identity support')
             modules += recovery_contract['original_modules']
         candidate, report = emit(kernel.read_bytes(), args.bootkc.read_bytes(), names, identity,
                                  args.slide, (*ROOTS, *modules), args.storage_driver)

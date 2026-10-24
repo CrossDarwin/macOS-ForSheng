@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | CI40105000086已越过data-protection、启动模式提交及auto-pivot-root；当前restore-datapartition中的sh触发PAC失败；已确认原版keys-off任务策略未在EL0边界执行，修复由CI40106907035构建 |
+| 原生 25F71 ARM64E QEMU | CI40106907035已执行sh、bash及恢复系统Data卷脚本；tmpfs已封装，当前被旧预链接容器的KC身份判定拒绝加载；修复由CI40108221784构建 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -1068,9 +1068,39 @@ ESR=0x72000000、指令BLRAAZ x8，目标为缓存dyld的lldb_image_notifier，�
 独立补丁pac/0005在最后EL0返回边界按原版线程标志设置SCTLR的IA/DA开关，
 B密钥保持开启；从EL0进入内核时，在任何内核认证前恢复IA/DA。
 这是EL1边界实现，未照搬Snapintosh的EL2根切换处理。
-847a791已提交，CI40106907035构建中，尚未完成新内核运行验证。
+847a791已提交，CI40106907035构建及运行验证通过，见下节。
 
 完整启动现场保存在private/experiments/20261025-native-arm64e/bootstrap-address/full-40105000086，
 首次PAC异常及任务策略保存在同日期shell-pac目录。两个原始磁盘仍以只读底图打开，
 一次性写入层已删除，已替代的CI40100580890实验候选也已删除，原始内核及配套符号保留。
 512条系统调用预算已耗尽，但后续原版控制台和panic完整保存；不能把计数截止当成任务不再运行。
+
+### sh及bash已执行恢复脚本，tmpfs加载身份修复中
+
+CI40106907035的内核UUID0387A9C5-C7CD-330D-9867-E4BF1A40B09E。
+原版sh成功转入bash，输出rc.temporaryDataVolume -- Arguments:[]，随后实际执行
+bs-data-tasks -P 1、umount及mount_tmpfs。此前BLRAAZ的PAC失败没有再次出现。
+内核停止处SCTLR仍开启IA/DA，PAC计数kernel_entries=user_returns=17390、
+completed_signing_windows=288839、signing_active=0。此处只证明已通过这段脚本执行路径。
+
+首次脚本运行因com.apple.filesystems.tmpfs未封装而返回exit(71)。
+增加原版tmpfs及其依赖后，候选SHA256为
+781d96fb7e9acc8e1873fbea91a01d8a7e72a8dd56cae064892ab8e01588c57e。
+内核已注册该模块，但原版kmutil的LoadFromKC请求被拒绝：
+Access Failure - client not entitled to manage kext in non-primary KC。
+
+源码确认：本次外层是旧式MH_EXECUTE预链接容器，因此KLDBootstrap传入KCKindUnknown；
+原版组件则保留MH_DYLIB_IN_CACHE文件集标记。kmutil只允许管理BootKC，
+因组件带文件集标记且类型不是Primary而被拒绝。这不是tmpfs挂载函数的运行结果。
+
+0049与封装器增加配套版本标记及_NativePrelinkPrimary元数据。
+只让本次已预链接、类型为Unknown且带该标记的启动组件通过原BootKC范围检查；
+根权限、任务entitlement检查、其他KC限制和原版模块代码继续保留。
+c87c97a已提交，CI40108221784构建中，尚未验证tmpfs实际加载及Data卷挂载。
+
+config/macos26-recovery-modules.json固定配套恢复系统所需的pthread、APFS、
+FSCompression和tmpfs，封装器使用--recovery-components，自动带入原版依赖。
+旧内核缺少启动容器身份契约时，完整恢复配置会在生成镜像前拒绝。
+观察器现会在完整panic输出后的halt_all_cpus处收集现场，避免继续等满观察期限；
+实际stopped_at_halt=true已确认，reached只表示请求的检查点，不代表系统完成启动。
+上述两轮证据位于private/experiments/20261025-native-arm64e/user-a-policy。
