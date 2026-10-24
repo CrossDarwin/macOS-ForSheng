@@ -90,6 +90,8 @@ def main() -> None:
                         'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program'), default='arm_init')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
+    parser.add_argument('--qemu-development-root', action='store_true',
+                        help='explicit QEMU CSR policy allowing the unauthenticated experiment root')
     parser.add_argument('--kext-log', type=lambda value: int(value, 0),
                         help='enable the existing XNU kextlog filter for this QEMU run')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
@@ -190,7 +192,9 @@ def main() -> None:
             if args.root_volume_uuid:
                 dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
         subprocess.run(dt_command, check=True)
-        configure_native_text_state(payload / 'kernel.macho.adt')
+        configure_native_text_state(payload / 'kernel.macho.adt',
+                                    development_root=args.qemu_development_root)
+        record['qemu_development_root'] = args.qemu_development_root
         record['kernel_ctrr_to_be_enabled'] = 0
         command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
                    '--fixture', args.output, '--esp', esp, '--kernel', kernel,
@@ -216,7 +220,7 @@ def main() -> None:
                             ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                             ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                             ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
-                            ('_pthread_functions', 8),
+                            ('_pthread_functions', 8), ('_csr_config', 4),
                             ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                             ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
                             ('_native_virtio_mmio_physical', 8), ('_native_virtio_first_sector_sha256', 32),
@@ -291,7 +295,7 @@ def main() -> None:
     observed_globals = {}
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
-                        ('_pthread_functions', 8),
+                        ('_pthread_functions', 8), ('_csr_config', 4),
                         ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                         ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
                         ('_native_virtio_mmio_physical', 8),
@@ -312,7 +316,7 @@ def main() -> None:
                         ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
-            value = snapshot['memory'][key]
+            value = snapshot['memory'].get(key, 'not captured')
             try:
                 raw = bytes.fromhex(value)
                 if len(raw) != width:

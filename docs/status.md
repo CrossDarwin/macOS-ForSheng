@@ -760,3 +760,18 @@ read_failures=0、capacity=3080259扇区、实际MMIO=0xa003e00。
 与配套只读磁盘首扇区一致。断点处指令字节、16K/47位页表及安全组件指针检查通过。
 这确认VM映射修正和实际块设备读取；不等于APFS挂载、launchd或sheng UFS已通过。
 证据保存在private/experiments/20261024-native-arm64e/virtio-storage/firstread-40084664897。
+
+### APFS识别配套恢复卷，原策略拒绝未认证根卷
+
+同一CI40084664897候选继续运行到实际APFS挂载，IOGUIDPartitionScheme与APFS均正常加载。
+121次块设备读取成功、失败0次，APFS识别disk1s1、macOS Base System、4096字节块和xid105。
+随后因缺少root-snapshot-name及个性化根认证payload，报Need authenticator(81)，
+panic为The global payload bytes pointer is NULL @apfs_vfsops.c:2893。
+实际512KiB panic区已读出，头部CRC与当前内核UUID一致，包含5901字节压缩stackshot。
+这证明实际GPT/APFS读取与卷识别，尚未完成根挂载或launchd。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/root-auth-40084664897。
+
+配套kern_csr.c明确支持/chosen/asmb的lp-sip0(u64)与lp-sip1(u32)。
+新增--qemu-development-root仅对显式QEMU实验树设置sip0=0、sip1=1，
+交由原有csr_bootstrap生成CSR_ALLOW_UNAUTHENTICATED_ROOT，不修改APFS代码，
+不放开其他SIP位，不修改真实磁盘，也不进入实机封装。默认路径继续原认证策略。

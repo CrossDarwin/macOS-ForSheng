@@ -91,7 +91,7 @@ VMAPPLE 的 HVC 密钥接口不能用于现有 sheng EL1 启动链。
 - IOBlockStorageDevice 的宏分支影响虚表；除 XNU_TARGET_OS_OSX 外，还需对照 TARGET_OS_OSX，逐槽核对原版 ABI
 - 原版 kext 的 kalloc 类型信息可能包含真实签名，应按实际类型区分 KT_DATA_ONLY，不能统一当作数据指针
 - 用户空间的 16 KiB 签名页需要匹配真实 CodeDirectory，不能仅按内核 4 KiB 验证单位切分
-- 截图使用 rootauth=0 暂时跳过 sealed root 验证；本项目尚未推进到根卷挂载，不据此提前修改根认证
+- 截图使用rootauth=0跳过sealed root验证；本项目已实测到APFS根认证拒绝，QEMU现使用配套CSR设备树接口做显式开发策略对照，尚未证明根挂载或launchd
 
 截图中的 NativeVirtioBlock 是 QEMU virtio-mmio 存储路径，不能直接当作 sheng 的 UFS 实现。
 
