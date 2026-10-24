@@ -691,3 +691,5 @@ QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发�
 2026-10-24 原版安全组件QEMU集成：CI 40075022559通过，UUID 8E5415E1-ECF6-361D-A502-DE18C23B24E3。预链接保留认证指针，由XNU格式7链完成签名；原版corecrypto只初始化一次、完整POST通过、PRNG就绪。原版AppleImage4启动、注册真实接口并加载MAC策略，旧Image4缺失阻断已在QEMU越过。额外注册入口造成的重复注册已从生成元数据移除。当前停止于kern_trustcache.c:589的amfi interface not available，AMFI和CoreEntitlements接口仍为0。组件候选仅供QEMU，尚未部署sheng；日志、panic和截图保存在image4-relink。
 
 同版内核接入原版amfi_register_mac_policy后，QEMU确认AMFI和CoreEntitlements真实接口均非空，AMFI策略加载，trust_cache_init及machine_lockdown完成。当前阻断转为平台驱动匹配失败：Unable to find driver for this platform: xiaomi,sheng。仍未进入BSD或用户空间，未对平板部署。
+
+0044修正内建ArmDTPlatform的匹配表，保留device-tree并增加xiaomi,sheng。XNU的IODeviceTreeAlloc会把根服务名称改为compatible，而IODTPlatformExpert::probe通过IODTCompareNubName匹配name、compatible、device_type及model；旧匹配项未覆盖当前根服务。只扩展本平台的已知兼容字符串，不移除IOPanicPlatform或平台配置检查。新增QEMU读取现有平台配置、CPU、设备nub及NVRAM计数，构建与启动结果待验证。

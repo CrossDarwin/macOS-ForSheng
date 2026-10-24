@@ -1,0 +1,11 @@
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -43,7 +43,7 @@
+     "   {"
+     "     'IOClass'         = ArmDTPlatform;"
+     "     'IOProviderClass' = IOPlatformExpertDevice;"
+-    "     'IONameMatch'     = 'device-tree';"
++    "     'IONameMatch'     = ( 'device-tree', 'xiaomi,sheng' );"
+     "     'IOProbeScore'    = 5000:32;"
+     "   },"
+ #endif
