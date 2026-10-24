@@ -1316,3 +1316,22 @@ SHNGROOT及预期摘要只限定传输布局，不被描述为认证；原版APF
 已修正至UniXNU-sheng目录，CI40120646478正在构建匹配ARM64E组件。
 新封装入口会拒绝旧UFS组件、不同内核的观察结果、非零硬件访问计数及错误根分区，
 不会把QEMU准入或原版组件注册当作UFS硬件已通过。
+
+CI40120646478构建成功，新UFS组件SHA256为
+3368c6884320a2463af595ca5fe3463addde7675ded90bb497a9d1c1ae2b0557。
+原版恢复组件及新传输重定位候选SHA256为
+76f7302e40972e53613ee0ac32862e07692bff38a7d3516baa5e2e02b37779c2，
+基核UUID A9A489DF-8ED4-3534-997A-C047F765BA5A。
+同版通过物理入口/MMU后写屏以及IOFindBSDRoot观察，原版组件注册及source crypto初始化通过。
+第一次观察器在OSKext摘要bzero的写页异常入口暂停；这是向量断点现场，不等于panic。
+后续允许原版异常处理继续执行，实际到达IOFindBSDRoot，未修改内核规避该页异常。
+
+独立调用观察中NativeUfs::start真实返回false，返回栈匹配，matched=1，
+probe_requested=mapped=root_step=blocks_published=0。
+150663168字节实机实验容器已封装，SHA256为
+305ea914ea6ac33ae98720668ea1b2c83f0724f2d232fef27c10dea39d406d67。
+它只经fastboot临时启动，要求3 GiB自有内存窗口；硬件是否能分配该窗口仍待设备验证。
+显式启用native-ufs-root=1及诊断，根分区只读，不传QEMU-only启动参数或合成VM身份。
+实机UFS读取、原版APFS挂载、launchd及RAM日志恢复仍没有通过记录。
+当前可开始这一轮sheng实验，需现场按键和视频配合。
+现场和匹配资格记录在private/experiments/20261025-native-arm64e/ufs-recovery。
