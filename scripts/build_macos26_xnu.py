@@ -57,6 +57,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0034-native-status-panel-layout.patch',
     ROOT / 'platform/sheng/macos26/patches/0035-native-preconsole-live-log.patch',
     ROOT / 'platform/sheng/macos26/patches/0036-native-live-log-rebind.patch',
+    ROOT / 'platform/sheng/macos26/patches/0037-native-panic-io-zero.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -154,6 +155,8 @@ def prepare() -> dict:
         if reverse.returncode:
             subprocess.run(['git', '-C', source, 'apply', '--check', patch], check=True)
             subprocess.run(['git', '-C', source, 'apply', patch], check=True)
+    io_zero = ROOT / 'platform/sheng/macos26/log/io_zero.h'
+    stage_file(io_zero, source / 'pexpert/arm/pe_sheng_io_zero.h')
     retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
     stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
     panel_console = ROOT / 'platform/sheng/macos26/log/panel_console.h'
@@ -176,7 +179,8 @@ def prepare() -> dict:
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
                     'osfmk/arm64/sheng_c_trace.h', 'osfmk/arm64/sheng_vm_trace.h',
-                    'pexpert/arm/pe_sheng_panel.h', 'pexpert/arm/pe_sheng_font.h'], check=True)
+                    'pexpert/arm/pe_sheng_panel.h', 'pexpert/arm/pe_sheng_font.h',
+                    'pexpert/arm/pe_sheng_io_zero.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -184,6 +188,7 @@ def prepare() -> dict:
                   pac_key_origin='unchanged EL1 firmware handoff banks' if ARCH == 'arm64e' else None,
                   hardware_source_commit=upstream['commit'],
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
+                  io_zero_source_sha256=sha(io_zero),
                   retained_log_source_sha256=sha(retained_log),
                   panel_console_source_sha256=sha(panel_console),
                   panel_font_source_sha256=sha(panel_font),

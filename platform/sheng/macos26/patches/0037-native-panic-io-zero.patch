@@ -1,0 +1,37 @@
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -131,6 +131,10 @@
+ #define SHENG_CONSOLE_LOG(message) ((void)0)
+ #endif
+ 
++#if SHENG
++#include "pe_sheng_io_zero.h"
++#endif
++
+ static void
+ check_for_panic_log(void)
+ {
+@@ -232,7 +236,11 @@
+ 	CleanPoC_DcacheRegion_Force(gPanicBase, gPanicSize);
+ 	SHENG_CONSOLE_LOG("panic RAM clean returned");
+ 	SHENG_CONSOLE_LOG("panic RAM zero enter");
++#if SHENG
++	sheng_zero_panic_region((volatile void *)gPanicBase, gPanicSize);
++#else
+ 	bzero((void *)gPanicBase, gPanicSize);
++#endif
+ 	SHENG_CONSOLE_LOG("panic RAM zero returned");
+ }
+ 
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -3252,6 +3252,9 @@
+ void
+ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t far __unused)
+ {
++#if SHENG
++	sheng_log_exception(get_saved_state_pc(&context->ss), esr, far, get_saved_state_sp(&context->ss));
++#endif
+ 	thread_t thread = current_thread();
+ 	vm_offset_t kernel_stack_bottom, sp;
+ 
