@@ -6,6 +6,7 @@
     "com.apple.kec.pthread",
     "com.apple.filesystems.apfs",
     "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
-    "com.apple.filesystems.tmpfs"
+    "com.apple.filesystems.tmpfs",
+    "com.apple.security.sandbox"
   ]
 }

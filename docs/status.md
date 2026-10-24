@@ -1153,3 +1153,17 @@ launchd开始运行系统域服务，已见recoveryosd、InstallerProgress、con
 sheng准入还需独立解决根盘路径、配套内核硬件初始化和可读日志回收。
 VirtIO根盘的QEMU通过不能代替平板UFS；首轮也可评估只读内存盘路径。
 硬件封装器目前仍只准入先前记录的Image4早期实验，未对新版用户空间候选放行。
+
+### 原版Seatbelt策略接入，继续补齐服务启动依赖
+
+同内核加入原版com.apple.security.sandbox及依赖AppleEffaceableStorage，
+候选SHA256 e516d193b67626cf269d33f515bc8a85f456b1b58f8e42758345a55672d49272。
+实际加载Seatbelt sandbox policy，先前全局Sandbox restriction查询拒绝没有再出现。
+180秒观察期没有再次进入关机流程，也没有最终panic头，但仍有多个服务退出，不能称为稳定恢复系统。
+PAC计数kernel_entries=user_returns=366516、completed_signing_windows=558160。
+
+cfprefsd多次exit(254)。原版25F71二进制在0x100000604调用_qtn_proc_apply_to_self，
+非零返回经0x10000065c保存后原样传给_exit；该故障路径会记录Failure to configure quarantine。
+当前容器没有原版Quarantine策略。下一轮加入配套com.apple.security.quarantine作运行对照，
+不把系统偏好服务退出直接归因于平台UUID；后者另用只读函数入口/返回观察验证。
+恢复组件清单已加入通过加载验证的原版Sandbox，Quarantine尚未纳入固定清单。
