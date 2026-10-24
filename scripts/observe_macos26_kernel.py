@@ -91,6 +91,8 @@ def main() -> None:
                         'thread_setentrypoint'), default='arm_init')
     parser.add_argument('--follow-init-entry', action='store_true',
                         help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
+    parser.add_argument('--follow-launchd-main', action='store_true',
+                        help='follow the paired launchd LC_MAIN from the actual dyld startup stack')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--root-hash-payload', type=Path,
@@ -123,6 +125,22 @@ def main() -> None:
         parser.error('following init requires the thread_setentrypoint checkpoint')
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
+    launchd_main = None
+    if args.follow_launchd_main:
+        if not args.follow_init_entry:
+            parser.error('launchd main observation requires --follow-init-entry')
+        directory = ROOT / 'private/apple/macos26/recovery-check'
+        launchd = (directory / 'sbin/launchd').read_bytes()
+        recovery = json.loads((directory / 'verification.json').read_text())
+        expected = recovery['artifacts']['sbin/launchd']['sha256']
+        if hashlib.sha256(launchd).hexdigest() != expected:
+            raise ValueError('launchd differs from the paired recovery input')
+        executable = macho(launchd, 'arm64e')
+        main = [at for kind, at, size in executable['commands'] if kind == 0x80000028 and size == 24]
+        if len(main) != 1:
+            raise ValueError('requires one original launchd LC_MAIN')
+        launchd_main = struct.unpack_from('<Q', launchd, main[0] + 8)[0]
+        record['launchd_main_input'] = dict(sha256=expected, entry_offset=launchd_main)
     root_hash = None
     if args.root_hash_payload:
         if not args.virtio_block_image or not args.root_volume_uuid:
@@ -226,7 +244,11 @@ def main() -> None:
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
         if args.follow_init_entry:
-            command += ['--follow-entrypoint-arg', '1', '--step-followed-entry', '16']
+            command += ['--follow-entrypoint-arg', '1']
+            if launchd_main is not None:
+                command += ['--follow-main-entry-offset', str(launchd_main)]
+            else:
+                command += ['--step-followed-entry', '16']
         if not args.let_vector_log:
             command += ['--also-stop', hex(addresses['_panic'])]
         if args.capture_screen:
@@ -419,6 +441,14 @@ def main() -> None:
         record['userland_started'] = bool(passed)
         record['el0_steps_observed'] = sum(int(step['pstate'], 16) & 15 == 0
                                             for step in entry.get('steps', []))
+        if args.follow_launchd_main:
+            main = snapshot.get('followed_main_entry', {})
+            record['launchd_main'] = main
+            record['launchd_main_started'] = (main.get('observed') is True
+                and main.get('first_instruction_completed') is True
+                and int(main.get('pstate', '0xf'), 16) & 15 == 0)
+            passed = passed and record['launchd_main_started']
+
     record.update(checkpoint=args.checkpoint, checkpoint_va=hex(checkpoint),
                   reached=bool(passed), snapshot='gdb-stop.json')
     (args.output / 'result.json').write_text(json.dumps(record, indent=2) + '\n')

@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
-| 原生 25F71 ARM64E QEMU | CI40084664897；原版安全组件、pthread、IOStorageFamily与NativeVirtioBlock已启动；只读恢复根卷已实际挂载，8520次读取无失败，到达load_init_program；launchd执行尚未验证 |
+| 原生 25F71 ARM64E QEMU | CI40084664897；原版安全组件、pthread、IOStorageFamily与NativeVirtioBlock已启动；只读恢复根卷已挂载；AppleFSCompression已接入，PID1进入配套dyld的真实EL0入口；launchd主函数尚未命中 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -822,3 +822,16 @@ Adler32的40字节向量权重/模约简常量位于RET后的数据区。
 扫描器仅对该UUID、固定段内偏移、完整SHA256和紧随的BTI函数边界匹配时排除数据，
 所有真实指令继续原有检查。封装候选422f457e7254553b44f8ffffbf0327679cad9095f006c435100252389099d8c2，
 143044个格式7指针、62232个认证指针，指令阻断0，尚待运行。
+
+### 原版dyld首次在EL0实际执行
+
+加入原版AppleFSCompressionTypeZlib后，不再报压缩类型8未注册，PID1成功装载程序。
+QEMU命中thread_setentrypoint(x1=0x1031289c0)，随后只读断点观察到同一EL0入口，
+PSTATE=0，16字节指令e00300911fec7c921d0080d21e0080d2与配套/usr/lib/dyld
+文件偏移0x49c0逐字节一致，实际slide=0x103124000；launchd文件没有这段入口字节。
+实际单步完成5条用户指令，随后跳到dyld 0x1e2b0位置触发取指缺页进入正常EL1向量，
+不将尚未处理完的缺页当成已证实崩溃，也不把16次混合EL0/EL1单步全计为用户执行。
+这证明PID1的dyld用户态已进入；尚未证明dyld初始化完成、launchd LC_MAIN运行或UI可用。
+下一次观察由真实启动栈中的Mach header和原版launchd的LC_MAIN(95360)确定目标，
+等待主函数及其首条指令完成，不修改进程寄存器或跳过执行。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/dyld-entry-40084664897。
