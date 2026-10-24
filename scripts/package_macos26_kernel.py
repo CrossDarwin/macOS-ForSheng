@@ -48,6 +48,12 @@ def main() -> None:
     if (native_build.get('bootstrap_c_trace_source_sha256') and
             observed.get('observed_globals', {}).get('_sheng_bootstrap_c_stage') != '0xf'):
         raise ValueError('requires this kernel to complete the early C stage strip in QEMU')
+    if native_build.get('bootstrap_vm_trace_source_sha256'):
+        vm = observed.get('observed_globals', {})
+        if (vm.get('_sheng_bootstrap_vm_stage') != '0xf'
+                or int(vm.get('_sheng_bootstrap_vm_pixels', '0x0'), 16) == 0
+                or int(vm.get('_sheng_bootstrap_vm_witness', '0x0'), 16) & 0xf800 != 0xf800):
+            raise ValueError('requires native I/O mapping and real VM-to-console stage pixel readback in QEMU')
     if (native_build.get('bootstrap_trace_source_sha256') and
             observed.get('early_exception', {}).get('bootstrap_stage') !=
             ('0xf' if native_build.get('bootstrap_post_mmu_stages') else '0xc')):

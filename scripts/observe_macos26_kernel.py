@@ -155,6 +155,8 @@ def main() -> None:
                         ('_sheng_early_exception_record', 192),
                         ('_sheng_bootstrap_fb_trace_ready', 8),
                         ('_sheng_bootstrap_c_stage', 8),
+                        ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
+                        ('_sheng_bootstrap_vm_witness', 8),
                         ('_sheng_bootstrap_capture_enabled', 4)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
@@ -207,7 +209,9 @@ def main() -> None:
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
                         ('_sheng_bootstrap_capture_enabled', 4), ('_sheng_bootstrap_fb_trace_ready', 8),
-                        ('_sheng_bootstrap_c_stage', 8)):
+                        ('_sheng_bootstrap_c_stage', 8),
+                        ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
+                        ('_sheng_bootstrap_vm_witness', 8)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')

@@ -595,3 +595,9 @@ Actions 40001339282（d924ef5）成功构建0029，UUID 7ECEED9F-1220-3FA5-8182-
 候选88b607ff20b2a73462e86f7c4c158a9258b2d1d195903f70aa188505b8a92d1f已封装。
 Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次RAM启动收到Booting OKAY。实机青色阶段结果待用户反馈。
 旧762f7dda部署镜像和本次已完成观察的ESP暂存已删除，恢复备份、dSYM、字符日志和panic现场保留。
+
+88b607ff实机照片与用户回复确认C阶段0–F全青色，XNU仍为1。实际完成重定位/签名、保留日志、静态条件、CPU拓扑、启动线程、定时器和DRAM设备树读取，到达arm_vm_init调用前。
+不能把显示停留直接归因于arm_vm_init内部；页表切换后旧identity framebuffer不可再访问，后续执行缺少可读标记。
+返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1，无切槽或分区写入。
+新增0030沿用UniXNU的VM入口/返回进度与framebuffer重绑定思路，分阶段记录VM页表建立/切换，再通过原生ml_io_map映射至多1 MiB的阶段行页面，观察到PE_create_console返回。
+诊断物理指针在TTBR0撤销前停用，不修改原生页表切换策略；紫色像素只在写后实际读回时设置witness。完整QEMU目标构建和新实机结果待完成。

@@ -28,6 +28,10 @@ volatile uint32_t sheng_bootstrap_capture_enabled = 1;
 uint64_t sheng_bootstrap_fb_l2[2048] __attribute__((aligned(16384)));
 uint64_t sheng_bootstrap_fb_trace_ready;
 volatile uint64_t sheng_bootstrap_c_stage = UINT64_MAX;
+volatile uint64_t sheng_bootstrap_vm_stage = UINT64_MAX;
+volatile uint64_t sheng_bootstrap_vm_pixels;
+uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
+volatile uint64_t sheng_bootstrap_vm_witness;
 
 void sheng_bootstrap_capture_end(void)
 {

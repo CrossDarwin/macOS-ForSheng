@@ -50,6 +50,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0027-native-bootstrap-stage-strip.patch',
     ROOT / 'platform/sheng/macos26/patches/0028-native-post-mmu-stage-strip.patch',
     ROOT / 'platform/sheng/macos26/patches/0029-native-c-bootstrap-stage-strip.patch',
+    ROOT / 'platform/sheng/macos26/patches/0030-native-vm-console-stage-strip.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -157,12 +158,14 @@ def prepare() -> dict:
     stage_file(bootstrap_trace, source / 'osfmk/arm64/sheng_bootstrap_trace.h')
     c_trace = ROOT / 'platform/sheng/macos26/log/c_trace.h'
     stage_file(c_trace, source / 'osfmk/arm64/sheng_c_trace.h')
+    vm_trace = ROOT / 'platform/sheng/macos26/log/vm_trace.h'
+    stage_file(vm_trace, source / 'osfmk/arm64/sheng_vm_trace.h')
     crypto_image = ROOT / 'platform/sheng/macos26/crypto/native_image.h'
     stage_file(crypto_image, source / 'osfmk/prng/sheng_crypto_image.h')
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
-                    'osfmk/arm64/sheng_c_trace.h'], check=True)
+                    'osfmk/arm64/sheng_c_trace.h', 'osfmk/arm64/sheng_vm_trace.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -176,6 +179,7 @@ def prepare() -> dict:
                   bootstrap_trace_source_sha256=sha(bootstrap_trace),
                   bootstrap_post_mmu_stages=True,
                   bootstrap_c_trace_source_sha256=sha(c_trace),
+                  bootstrap_vm_trace_source_sha256=sha(vm_trace),
                   crypto_image_source_sha256=sha(crypto_image),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],

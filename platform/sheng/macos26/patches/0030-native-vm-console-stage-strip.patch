@@ -1,0 +1,155 @@
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -355,9 +355,32 @@
+ 
+ #if SHENG
+ #include <arm64/sheng_c_trace.h>
++#include <arm64/sheng_vm_trace.h>
++
++static void
++sheng_vm_trace_remap(void)
++{
++	sheng_vm_trace(10);
++	const uintptr_t first = sheng_bootstrap_vm_row_pa;
++	if (first) {
++		const uintptr_t offset = first & 16383;
++		const vm_size_t bytes = (offset + 11 * sheng_bootstrap_vm_stride + 1460 + 16383) & ~(vm_size_t)16383;
++		if (bytes <= 1048576) {
++			const vm_offset_t mapped = ml_io_map(first - offset, bytes);
++			if (mapped) {
++				sheng_bootstrap_vm_pixels = mapped + offset;
++			}
++		}
++	}
++	sheng_vm_trace(11);
++}
++#define SHENG_VM_TRACE(stage) sheng_vm_trace(stage)
++#define SHENG_VM_REMAP() sheng_vm_trace_remap()
+ #define SHENG_C_TRACE(stage) sheng_bootstrap_c_trace(args, stage)
+ #else
+ #define SHENG_C_TRACE(stage) ((void)0)
++#define SHENG_VM_TRACE(stage) ((void)0)
++#define SHENG_VM_REMAP() ((void)0)
+ #endif
+ 
+ __startup_func
+@@ -605,6 +628,7 @@
+ 
+ 	SHENG_C_TRACE(15);
+ 	arm_vm_init(xmaxmem, args);
++	SHENG_VM_REMAP();
+ 
+ 	if (debug_boot_arg) {
+ 		patch_low_glo();
+@@ -618,8 +642,11 @@
+ 
+ 	/* Setup debugging output. */
+ 	const unsigned int serial_exists = serial_init();
++	SHENG_VM_TRACE(12);
+ 	kernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
++	SHENG_VM_TRACE(13);
+ 	kprintf("kprintf initialized\n");
++	SHENG_VM_TRACE(14);
+ 
+ 	serialmode = 0;
+ 	if (PE_parse_boot_argn("serial", &serialmode, sizeof(serialmode))) {
+@@ -660,6 +687,7 @@
+ 		disableConsoleOutput = FALSE;     /* Allow printfs to happen */
+ 	}
+ 	PE_create_console();
++	SHENG_VM_TRACE(15);
+ 
+ 	/* setup console output */
+ 	PE_init_printf(FALSE);
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1807,6 +1807,13 @@
+ #define ARM64_PHYSMAP_SLIDE_RANGE (1ULL << 30) // 1 GB
+ #define ARM64_PHYSMAP_SLIDE_MASK  (ARM64_PHYSMAP_SLIDE_RANGE - 1)
+ 
++#if SHENG
++#include <arm64/sheng_vm_trace.h>
++#define SHENG_VM_TRACE(stage) sheng_vm_trace(stage)
++#else
++#define SHENG_VM_TRACE(stage) ((void)0)
++#endif
++
+ void
+ arm_vm_init(uint64_t memory_size, boot_args * args)
+ {
+@@ -1819,6 +1826,9 @@
+ 	uint64_t         mem_segments;
+ 	vm_offset_t      ptpage_vaddr;
+ 	vm_map_address_t dynamic_memory_begin;
++#if SHENG
++	sheng_vm_trace_begin(args);
++#endif
+ 
+ 	/*
+ 	 * Get the virtual and physical kernel-managed memory base from boot_args.
+@@ -1918,6 +1928,7 @@
+ 		panic("Unsupported memory configuration %lx", mem_size);
+ 	}
+ 
++	SHENG_VM_TRACE(1);
+ 	boot_tte = (tt_entry_t *)&bootstrap_pagetables;
+ 	boot_ttep = kvtophys((vm_offset_t)boot_tte);
+ 
+@@ -1977,6 +1988,7 @@
+ 	 *
+ 	 *   the so called physical aperture should be statically mapped
+ 	 */
++	SHENG_VM_TRACE(2);
+ 	init_ptpages(cpu_tte, gVirtBase, dynamic_memory_begin, TRUE, ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA));
+ 
+ #if defined(ARM_LARGE_MEMORY)
+@@ -2097,6 +2109,7 @@
+ 
+ 	vm_kernel_base = segTEXTB;
+ 	vm_kernel_top = (vm_offset_t) &last_kernel_symbol;
++	SHENG_VM_TRACE(3);
+ 	vm_kext_base = segPRELINKTEXTB;
+ 	if (!segSizePLKTEXTEXEC && !segSizePLKDATACONST) {
+ 		vm_kext_top = vm_kext_base + segSizePRELINKTEXT;
+@@ -2128,6 +2141,7 @@
+ 	vm_prelink_edata = segPRELINKDATAB + segSizePRELINKDATA;
+ 
+ 	arm_vm_prot_init(args);
++	SHENG_VM_TRACE(4);
+ 
+ 	/*
+ 	 * Initialize the page tables for the low globals:
+@@ -2168,12 +2182,17 @@
+ #endif /* KASAN */
+ 
+ 	arm_vm_physmap_init(args);
++	SHENG_VM_TRACE(5);
+ 	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
++	SHENG_VM_TRACE(6);
+ 
+ #if XNU_MONITOR
+ 	ml_enable_monitor();
+ #endif
+ 
++#if SHENG
++	sheng_vm_trace_drop_identity();
++#endif
+ 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
+ 
+ 	flush_mmu_tlb();
+@@ -2182,6 +2201,7 @@
+ 	cpu_tte = (tt_entry_t*)(phystokv(cpu_ttep));
+ 	invalid_tte = (tt_entry_t*)(phystokv(invalid_ttep));
+ 
++	SHENG_VM_TRACE(8);
+ 	// From here on out, we're off the bootstrap translation tables.
+ 
+ 
+@@ -2274,6 +2294,7 @@
+ #endif
+ #endif
+ 	pmap_bootstrap(dynamic_memory_begin);
++	SHENG_VM_TRACE(9);
+ 
+ 	disable_preemption();
+ 

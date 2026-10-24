@@ -112,3 +112,30 @@ python3 scripts/observe_native_bootstrap.py \
 | F | DRAM设备树读取完成，即将调用`arm_vm_init` |
 
 `sheng_bootstrap_c_stage`独立记录最后C阶段，不改写原汇编阶段记录。显示要求原临时映射就绪；800×600 QEMU仍只记录阶段值。辅助函数强制内联，在重定位之前不调用运行时函数。ARM64E对象定向编译已确认无调用指令，完整目标编译和运行结果另行记录。
+
+0030增加VM至控制台阶段条，紫色与先前C阶段的青色区分。
+它沿用UniXNU在VM入口/返回处记录进度、在控制台映射后重新绑定framebuffer的思路。
+正式VM仍按原顺序替换TTBR1、撤销TTBR0；撤销之前清除诊断物理指针，盲区期间只写保留阶段值。
+`arm_vm_init`返回后，使用原生`ml_io_map`的启动期分配路径映射阶段条所在页面。映射按16 KiB对齐，最多1 MiB，不映射整块DRAM，不更改EL2或延长identity映射寿命。
+800×600 QEMU的高度足够容纳568–579行，允许在VM返回后单独映射这行，不要求此前的启动汇编面板映射已启用。
+
+| VM字符 | 已完成的执行点 |
+|---|---|
+| 0 | `arm_vm_init`进入 |
+| 1 | 物理内存、physmap与动态区几何计算 |
+| 2 | invalid与kernel页表根分配 |
+| 3 | 初始kernel及physmap页表层级建立 |
+| 4 | `arm_vm_prot_init`返回 |
+| 5 | `arm_vm_physmap_init`返回 |
+| 6 | TTBR1切换返回，TTBR0仍为旧identity |
+| 7 | 即将撤销TTBR0，之后停用物理地址写屏 |
+| 8 | TLB刷新完成，新页表指针重定位完成 |
+| 9 | `pmap_bootstrap`返回 |
+| A | `arm_vm_init`返回，即将建立诊断I/O映射 |
+| B | 诊断I/O映射步骤完成 |
+| C | `serial_init`返回 |
+| D | `STARTUP_SUB_KPRINTF`初始化返回 |
+| E | 第一条`kprintf`返回 |
+| F | `PE_create_console`返回 |
+
+映射无效时仍记录阶段，不宣称写屏成功。`sheng_bootstrap_vm_witness`只在实际写入并读回当前紫色像素后设置对应位；封装要求完整QEMU的B–F读回均通过。
