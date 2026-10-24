@@ -7,6 +7,10 @@ on:
         type: choice
         options: [check, preflight, monitor, apple, apple26, macos26-xnu, macos26-kernel, kext, xnu, sheng-xnu, abi-bootstrap, reference-xnu]
         default: check
+      native_ufs:
+        description: Compile the default-off UFS companion; no hardware deployment
+        type: boolean
+        default: false
       native_arch:
         description: Native kernel ABI; ARM64E is EL1 bringup only
         type: choice
@@ -277,7 +281,7 @@ jobs:
         run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
       - name: Link native macOS 26 SHENG kernel
         if: inputs.target == 'macos26-kernel'
-        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
+        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel ${{ inputs.native_ufs && '--build-ufs-driver' || '' }} --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
       - uses: actions/cache/save@v4
         if: always() && steps.native-cache.outputs.cache-hit != 'true'
         with:
@@ -293,6 +297,7 @@ jobs:
             ${{ env.NATIVE_OUT }}/kernel.development.sheng.map
             ${{ env.NATIVE_OUT }}/kernel.development.sheng.dSYM/
             ${{ env.NATIVE_OUT }}/storage-driver/
+            ${{ env.NATIVE_OUT }}/ufs-driver/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
@@ -314,6 +319,7 @@ jobs:
             ${{ env.NATIVE_OUT }}/ArmCpu.o
             ${{ env.NATIVE_OUT }}/ArmDTPlatform.o
             ${{ env.NATIVE_OUT }}/storage-driver/
+            ${{ env.NATIVE_OUT }}/ufs-driver/
             ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a
             ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/compile_commands.json
             ${{ env.NATIVE_OUT }}/kernel.development.sheng

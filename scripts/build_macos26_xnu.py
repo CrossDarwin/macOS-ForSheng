@@ -404,6 +404,8 @@ def compile_sources(args, record: dict) -> None:
         if ARCH == 'arm64e':
             from build_macos26_storage import build as build_storage
             build_storage(ROOT, OUT, compile_record, source, run, record, env)
+            if args.build_ufs_driver:
+                build_storage(ROOT, OUT, compile_record, source, run, record, env, transport='ufs')
             save(record)
 
 
@@ -486,10 +488,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--link-kernel', action='store_true', help='build runtime and attempt the native executable link')
+    parser.add_argument('--build-ufs-driver', action='store_true',
+                        help='compile the default-off sheng UFS transport with the paired ARM64E ABI')
     parser.add_argument('--arch', choices=('arm64', 'arm64e'), default='arm64')
     parser.add_argument('--kdk-root', type=Path)
     parser.add_argument('-j', '--jobs', type=int, default=4, choices=range(1, 33))
     args = parser.parse_args()
+    if args.build_ufs_driver and (not args.link_kernel or args.arch != 'arm64e'):
+        parser.error('--build-ufs-driver requires --link-kernel --arch arm64e')
     ARCH = args.arch
     if ARCH == 'arm64e':
         OUT = ROOT / 'out/macos26-xnu-arm64e'

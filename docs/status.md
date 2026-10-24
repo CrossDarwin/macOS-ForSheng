@@ -1216,3 +1216,11 @@ gIOPlatformUUIDAndSerialDone=1。该身份只属于自建VM，不是Apple设备�
 上述正负对照、连续控制台和匹配布局保存在recovery-services/uuid-native-*目录。
 下一次sheng实验仍需配套26.5 UFS根盘读取路径、硬件初始化及可回收日志；
 不能用QEMU的VirtIO根盘替代UFS，也不能只因VM平台身份通过就放开硬件准入。
+
+
+### sheng UFS配套构建入口
+
+增加显式--build-ufs-driver，使用固定UniXNU NativeUfs源码及25F71配套IOStorageFamily头，
+构建独立ARM64E传输组件。它与QEMU VirtIO组件分别输出，不自动替换根盘。
+CI通过native_ufs=true启用，默认关闭；组件仍保留原版boot-arg硬件开关和只读根盘行为。
+当前只建立编译入口，尚未确认构建、原版存储ABI链接或实机运行；硬件准入继续关闭。
