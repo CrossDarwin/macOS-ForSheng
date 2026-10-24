@@ -1,0 +1,159 @@
+--- a/drivers/NativeVirtioBlock/NativeVirtioBlock.cpp
++++ b/drivers/NativeVirtioBlock/NativeVirtioBlock.cpp
+@@ -52,6 +52,9 @@
+ #endif
+ volatile uint32_t native_virtio_read_requests = 0;
+ volatile uint32_t native_virtio_read_failures = 0;
++volatile uint32_t native_virtio_write_requests = 0;
++volatile uint32_t native_virtio_write_failures = 0;
++volatile uint32_t native_virtio_flush_requests = 0;
+ volatile uint64_t native_virtio_sectors = 0;
+ volatile uint64_t native_virtio_mmio_physical = 0;
+ unsigned char native_virtio_first_sector_sha256[32] = {};
+@@ -83,6 +86,8 @@
+   uint64_t capacity = 0;
+   uint16_t availableIndex = 0;
+   uint16_t usedIndex = 0;
++  bool scratchWritable = false;
++  IOReturn submitScratchRequest(uint32_t, uint64_t, uint32_t);
+ #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
+   struct vr_view verified = {};
+   vm_offset_t verifiedStorage = 0;
+@@ -136,8 +141,15 @@
+     *present = online; if (changed) *changed = false; return kIOReturnSuccess;
+   }
+   IOReturn reportRemovability(bool *value) override { *value = false; return kIOReturnSuccess; }
+-  IOReturn reportWriteProtection(bool *value) override { *value = true; return kIOReturnSuccess; }
+-  IOReturn doSynchronizeCache() override { return online ? kIOReturnSuccess : kIOReturnNotReady; }
++  IOReturn reportWriteProtection(bool *value) override { *value = !scratchWritable; return kIOReturnSuccess; }
++  IOReturn doSynchronizeCache() override {
++    if (!online) return kIOReturnNotReady;
++    if (!scratchWritable) return kIOReturnSuccess;
++    IOLockLock(gate);
++    IOReturn result = submitScratchRequest(4, 0, 0);
++    IOLockUnlock(gate);
++    return result;
++  }
+   IOReturn doSynchronize(UInt64, UInt64, IOOptionBits) override { return doSynchronizeCache(); }
+   IOReturn getWriteCacheState(bool *value) override { *value = false; return kIOReturnSuccess; }
+   IOReturn setWriteCacheState(bool) override { return kIOReturnUnsupported; }
+@@ -176,10 +188,13 @@
+   uint32_t lowFeatures = read32(0x10);
+   write32(0x14, 1);
+   uint32_t highFeatures = read32(0x10);
+-  // A read-only backend and VIRTIO_F_VERSION_1 are mandatory for this driver.
+-  if (!(lowFeatures & (1U << 5)) || !(highFeatures & 1)) return false;
++  if (!(highFeatures & 1)) return false;
++  if (scratchWritable) {
++    // Only explicitly described scratch media can negotiate writes and flush.
++    if ((lowFeatures & (1U << 5)) || !(lowFeatures & (1U << 9))) return false;
++  } else if (!(lowFeatures & (1U << 5))) return false;
+   write32(0x24, 0);
+-  write32(0x20, 1U << 5);
++  write32(0x20, scratchWritable ? (1U << 9) : (1U << 5));
+   write32(0x24, 1);
+   write32(0x20, 1);
+   write32(0x70, 11);
+@@ -496,6 +511,57 @@
+   return kIOReturnSuccess;
+ }
+ 
++IOReturn NativeVirtioBlock::submitScratchRequest(uint32_t operation, uint64_t sector, uint32_t bytes)
++{
++  if (!online || !scratchWritable) return kIOReturnNotWritable;
++  if ((operation == 1 && (!bytes || bytes > transferSize || (bytes & 511) ||
++       sector >= capacity || bytes / 512 > capacity - sector)) ||
++      (operation == 4 && (sector || bytes)) || (operation != 1 && operation != 4))
++    return kIOReturnBadArgument;
++  auto *queue = static_cast<unsigned char *>(queueMemory->getBytesNoCopy());
++  auto *descriptors = reinterpret_cast<Descriptor *>(queue);
++  auto *request = reinterpret_cast<Request *>(queue + 512);
++  volatile uint8_t *status = queue + 528;
++  *request = {operation, 0, sector};
++  *status = 0xff;
++  descriptors[0] = {queuePhysical + 512, sizeof(Request), 1, static_cast<uint16_t>(bytes ? 1 : 2)};
++  descriptors[1] = {transferPhysical, bytes, 1, 2};
++  descriptors[2] = {queuePhysical + 528, 1, 2, 0};
++  auto *available = reinterpret_cast<volatile uint16_t *>(queue + 128);
++  available[2 + availableIndex % queueSize] = 0;
++  dmaBarrier();
++  available[1] = ++availableIndex;
++  dmaBarrier();
++  write32(0x50, 0);
++  auto *used = reinterpret_cast<volatile uint16_t *>(queue + 256);
++  uint64_t deadline;
++  clock_interval_to_deadline(1000, kMillisecondScale, &deadline);
++  while (used[1] == usedIndex) {
++    if (mach_absolute_time() >= deadline) {
++      reset();
++      __atomic_fetch_add(&native_virtio_write_failures, 1, __ATOMIC_RELAXED);
++      return kIOReturnTimeout;
++    }
++    dmaBarrier();
++    IODelay(1);
++  }
++  dmaBarrier();
++  auto *element = reinterpret_cast<volatile Used *>(queue + 260) + usedIndex % queueSize;
++  bool valid = used[1] == static_cast<uint16_t>(usedIndex + 1) && element->id == 0 &&
++               element->length == 1 && *status == 0;
++  ++usedIndex;
++  uint32_t interrupts = read32(0x60) & 3;
++  if (interrupts) write32(0x64, interrupts);
++  if (!valid) {
++    reset();
++    __atomic_fetch_add(&native_virtio_write_failures, 1, __ATOMIC_RELAXED);
++    return kIOReturnIOError;
++  }
++  __atomic_fetch_add(operation == 4 ? &native_virtio_flush_requests : &native_virtio_write_requests,
++                     1, __ATOMIC_RELAXED);
++  return kIOReturnSuccess;
++}
++
+ bool NativeVirtioBlock::start(IOService *provider)
+ {
+   if (!IOBlockStorageDevice::start(provider) || !provider->getProperty("dma-coherent") ||
+@@ -504,6 +570,15 @@
+   if (!mapping || mapping->getLength() < 0x108) return false;
+   registers = static_cast<uintptr_t>(mapping->getVirtualAddress());
+   if (read32(0x00) != 0x74726976 || read32(0x04) != 2 || read32(0x08) != 2) return false;
++#if defined(NATIVE_QEMU_SCRATCH_BLOCK) && NATIVE_QEMU_SCRATCH_BLOCK
++#if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
++#error Scratch writes cannot be combined with the immutable verified block transport
++#endif
++  OSData *scratch = OSDynamicCast(OSData, provider->getProperty("native,qemu-scratch"));
++  static const unsigned char enabled[4] = {1, 0, 0, 0};
++  scratchWritable = scratch && scratch->getLength() == sizeof(enabled) &&
++                    !memcmp(scratch->getBytesNoCopy(), enabled, sizeof(enabled));
++#endif
+   ownsDevice = true;
+   gate = IOLockAlloc();
+   if (!gate || !configureQueue()) return false;
+@@ -531,7 +606,9 @@
+ {
+   if (!buffer || !completion || !completion->action || !count || block >= capacity ||
+       count > capacity - block || count > UINT64_MAX / 512 || buffer->getLength() < count * 512) return kIOReturnBadArgument;
+-  if (buffer->getDirection() != kIODirectionIn) return kIOReturnNotWritable;
++  bool writing = buffer->getDirection() == kIODirectionOut;
++  if (writing && !scratchWritable) return kIOReturnNotWritable;
++  if (!writing && buffer->getDirection() != kIODirectionIn) return kIOReturnBadArgument;
+   uint64_t actual = 0;
+   IOReturn result = kIOReturnNotReady;
+   IOLockLock(gate);
+@@ -542,9 +619,15 @@
+     constexpr unsigned chunkSize = transferSize;
+ #endif
+     uint32_t bytes = static_cast<uint32_t>(count * 512 - actual > chunkSize ? chunkSize : count * 512 - actual);
+-    result = readSectors(block + actual / 512, bytes);
++    if (writing) {
++      if (buffer->readBytes(actual, transferMemory->getBytesNoCopy(), bytes) != bytes) {
++        result = kIOReturnIOError;
++        break;
++      }
++      result = submitScratchRequest(1, block + actual / 512, bytes);
++    } else result = readSectors(block + actual / 512, bytes);
+     if (result) break;
+-    if (buffer->writeBytes(actual, readBuffer(), bytes) != bytes) {
++    if (!writing && buffer->writeBytes(actual, readBuffer(), bytes) != bytes) {
+       result = kIOReturnIOError;
+       break;
+     }

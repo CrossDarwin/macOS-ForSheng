@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Build the pinned read-only VirtIO transport as a standalone ARM64E module."""
+"""Build the pinned VirtIO transport with explicit QEMU scratch-media support."""
 import hashlib
 import json
 from pathlib import Path
@@ -51,7 +51,7 @@ def build(root, out, compile_record, source, run, record, env):
         elif arg not in ('-MMD', '-MD', '-MP'):
             command.append(arg)
         index += 1
-    command[1:1] = ['-I', str(destination / 'include')]
+    command[1:1] = ['-I', str(destination / 'include'), '-DNATIVE_QEMU_SCRATCH_BLOCK=1']
     sdk = Path(subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
     command += ['-I', str(source / 'osfmk'), '-I', str(sdk / 'usr/include'),
                 '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
@@ -81,7 +81,8 @@ def build(root, out, compile_record, source, run, record, env):
     (destination / 'Info.plist').write_bytes(plistlib.dumps(info))
     evidence = dict(bundle=BUNDLE, upstream_source_sha256=hashlib.sha256(upstream.read_bytes()).hexdigest(),
                     binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
-                    architecture='arm64e', deployment='macOS 26.5', read_only_transport=True,
+                    architecture='arm64e', deployment='macOS 26.5', read_only_transport=False,
+                    explicit_qemu_scratch_writes=True, root_transport_read_only=True,
                     original_storage_runtime_qualified=False, hardware_admitted=False)
     (destination / 'build.json').write_text(json.dumps(evidence, indent=2) + '\n')
     record['storage_driver'] = evidence
