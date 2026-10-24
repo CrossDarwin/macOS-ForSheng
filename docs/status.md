@@ -1,4 +1,4 @@
-# 实施状态 - 2026-10-23
+# 实施状态 - 2026-10-24
 
 系统目标已改为配对的 macOS 26.5 / 25F71。旧 XNU 独立验证 EL1 硬件交接，不能作为 macOS 26/27 用户空间的替代内核。
 
@@ -8,6 +8,8 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
+| 原生 25F71 ARM64E QEMU | CI 40080070590；原版安全组件与pthread注册，16次定时器中断，BSD线程调度通过，已到IOFindBSDRoot入口；根卷及launchd未启动 |
+| 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
 | 26A428 KDK | 下载哈希、Apple 包签名、T8140 内核及配对 DWARF UUID 验证通过 |
@@ -16,11 +18,11 @@
 | 完整 sheng UEFI | 本地构建及 FV 检查通过；fastboot 临时启动成功，菜单和探针输出已由照片及视频确认 |
 | 设备备份 | 六个 LUN 主备 GPT、16 个引导分区已读取并校验，userdata 未备份 |
 | 完整上游 sheng 配置 | 35 项与上游字节一致，19 步及两个外部归档、预链接全部通过，Actions 39919525158 成功 |
-| 完整内核实机 | 控制台、BSD 入口、BSD 缓冲区、IOKitBSDInit 前与 IOFindBSDRoot 前检查点均实机通过；Android 恢复到槽 a |
-| 完整内核 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
+| 旧 XNU 完整配置实机 | 控制台、BSD 入口、BSD 缓冲区、IOKitBSDInit 前与 IOFindBSDRoot 前检查点均实机通过；Android 恢复到槽 a；不代表25F71通过 |
+| 旧 XNU 完整配置 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
-| macOS 实机启动 / 双系统 | 未实现；未刷写分区镜像或调整分区；当前进行临时启动实验，槽 a |
+| macOS 实机启动 / 双系统 | 未实现；实验使用临时启动，Android槽a；已获授权在空闲区建立64 MiB macoslog，自动RAM日志落盘尚未成功 |
 
 ## 已定位的引导问题
 
