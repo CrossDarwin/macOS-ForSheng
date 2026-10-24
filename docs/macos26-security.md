@@ -49,7 +49,7 @@ sheng 当前没有该监控层，不能照搬后一条路径。
 
 当前内核已启用 ARM64E/HAS_APPLE_PAC，并扩展原始链式处理代码支持独立 MH_EXECUTE 的格式 7。
 QEMU 已执行 116829 个指针修复，其中 43757 个需要认证；没有删掉认证位。
-这解决了原生内核自身的启动指针，尚未实现原组件的 fileset 布局、外部符号重定位和注册时序。
+这解决了原生内核自身的启动指针。原组件的实验映像、外部重定位及实际注册结果见下文；整体ABI尚未验收。
 本 BootKC 的指针格式为 8，步长为四字节；实际存在跨页的八字节指针槽，不能照搬 AuxKC 检查中更窄的边界假设。
 
 ## 下一段实现契约
@@ -98,10 +98,24 @@ VMAPPLE 的 HVC 密钥接口不能用于现有 sheng EL1 启动链。
 
 `emit_macos26_security.py --qemu-only`将六个原版组件放入独立的只读、可执行和可写段，重建统一的格式7链；认证key、diversity和addrDiv保留，由XNU在实际运行地址签名。内嵌Mach-O头、符号表、kmod地址和预链接元数据同步移动。原生内核UUID和dSYM继续对应未移动的内核代码，组件集合另有KCID及完整SHA-256。硬件封装器拒绝尚未验收的组件候选。
 
-0038–0039提供稀疏组件索引及真实初始化入口。存在原版corecrypto描述时，EARLY_BOOT执行该原版模块，后续OSKext只复用同一模块真实成功的初始化结果，避免重复注册PRNG；普通无组件内核保留现有源码提供者。0040使用XNU原有OSRuntimeSignStructors处理组件构造器，0041修正索引表与组件头分区的边界，0042按内核函数类型discriminator签名注册入口。
+0038–0039提供稀疏组件索引及真实初始化入口。存在原版corecrypto描述时使用该原版模块；0043让IOKit与EARLY_BOOT共享同一模块真实初始化结果，避免重复注册PRNG。普通无组件内核保留现有源码提供者。0040使用XNU原有OSRuntimeSignStructors处理组件构造器，0041修正索引表与组件头分区的边界，0042按内核函数类型discriminator签名注册入口。
 
 CI 40072559556已成功构建基础接口。首轮QEMU越过映像加载和VM，但旧prelink解析器拒绝缺少split-info描述的原fileset组件。生成器在经验证的头部空隙添加空split-info描述，实际重定位仍由外层格式7链负责。
 
 第二轮QEMU调用原版corecrypto，模块标识为Apple corecrypto Module v26.0，原始HMAC已知答案自检通过。随后完整性遍历在AccelerateCrypto_SHA256_compress+0x30读取未映射地址，ELR=0xfffffe000d429600、ESR=0x96000007、FAR=0xfffffe000dcef5c0。反汇编确认，清除MH_DYLIB_IN_CACHE会让原版fipspost_get_hmac选择header+fileoff路径；已保留原标记。原始输入的代码HMAC与内嵌32字节字段相等，分支重定位后按同一算法更新字段，不略过POST。
 
-修正缓存视图和重叠section后，第三轮停在稀疏索引的边界检查。0041针对这处实际错误修正了边界；完整POST、Image4和AMFI注册仍待新内核运行结果。阶段记录位于private/experiments/20261024-native-arm64e/image4-relink/。
+修正缓存视图和重叠section后，第三轮停在稀疏索引的边界检查。0041针对这处实际错误修正了边界。
+
+CI 40074008556对应的QEMU实验中，原版corecrypto完整POST通过，包括代码完整性、AES、RSA、ECDSA、ECDH、HKDF、PBKDF及DRBG；真实start返回成功，prng_ready=1，g_crypto_funcs指向原版组件映射。该结果仅覆盖QEMU，不代表Image4、AMFI或实机已经通过。
+
+随后修正预链接XML的编码声明与自闭合标签格式，OSUnserializeXML已成功解析。真实启动顺序显示，IOKit先启动原版corecrypto，EARLY_BOOT随后再次调用它，导致sysctl 431重复注册。0043让两个入口解析同一原版模块并共享初始化状态；只记录真实start结果，失败保持失败，递归或并发初始化仍报错。
+
+CI 40075022559构建成功，UUID 8E5415E1-ECF6-361D-A502-DE18C23B24E3。QEMU确认原版corecrypto只启动一次、完整POST通过，状态为2、返回值为0且PRNG就绪。原版AppleImage4正常start已注册接口0xfffffe000a0b4780，并输出版本及MAC策略初始化日志；随后附加的_kmod_link_init再次注册，触发img4 interface already set。生成器已停止注入这一额外入口，沿用匹配组件的原始start流程；AMFI接口此时仍为0。
+
+阶段记录位于private/experiments/20261024-native-arm64e/image4-relink/。
+
+移除附加入口后，同版内核成功越过Image4接口检查，进入trust_cache_init；当前真实停止原因为amfi interface not available @kern_trustcache.c:589。AMFI与CoreEntitlements指针均为0，Image4保持原版接口地址。下一项是通过XNU已有kextlog读取AMFI的依赖与启动错误，不伪造接口或略过检查。
+
+完整kextlog确认六个原版组件依赖全部解析成功，CoreAnalyticsFamily、CoreTrust、IOCryptoAcceleratorFamily、AppleImage4和AMFI的模块start均成功；AMFI只注册了C++类。固定输入中AMFI的__start读取__realmain，原值为0，因此返回成功但未调用安全策略注册。局部符号amfi_register_mac_policy调用真实_initializeAppleMobileFileIntegrity；生成器仅为AMFI设置该早期策略入口，Image4仍使用正常start。入口由当前组件自己的符号表解析，执行地址继续经过既有RX边界与PAC检查。
+
+AMFI真实入口接入后的QEMU结果：amfi=0xfffffe000a151dc0，libCoreEntitlements=0xfffffe000a154858，原版AMFI策略加载成功。trust_cache_init返回，OSKextRemoveKextBootstrap、machine_lockdown和kernel_do_post完成。下一处panic为Unable to find driver for this platform: xiaomi,sheng，未进入BSD；当前只是QEMU组件启动验证，硬件封装仍拒绝该实验候选。

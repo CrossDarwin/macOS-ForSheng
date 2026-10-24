@@ -86,10 +86,14 @@ def main() -> None:
     parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot'), default='arm_init')
+    parser.add_argument('--kext-log', type=lambda value: int(value, 0),
+                        help='enable the existing XNU kextlog filter for this QEMU run')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
     args = parser.parse_args()
     if not 15 <= args.timeout <= 180:
         parser.error('--timeout must be between 15 and 180 seconds')
+    if args.kext_log is not None and not 0 <= args.kext_log <= 0xffffffff:
+        parser.error('--kext-log must be a 32-bit unsigned filter')
     kernel, addresses, record = identify(args.kernel_build.resolve())
     checkpoint = addresses['_' + args.checkpoint]
     args.output.mkdir(parents=True, exist_ok=False)
@@ -111,6 +115,8 @@ def main() -> None:
     record['loader_sha256'] = loader['sha256']
     shutil.copy2(kernel, payload / 'kernel.macho')
     boot_args = NATIVE_BOOT_ARGS
+    if args.kext_log is not None:
+        boot_args += f' kextlog={args.kext_log:#x}'
     if args.early_console:
         boot_args += ' -sheng-early-console'
     if args.handoff_pause:
@@ -151,6 +157,9 @@ def main() -> None:
                         ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
                         ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                         ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
+                        ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
+                        ('_sheng_native_crypto_kmod', 8),
+                        ('_sheng_native_crypto_state', 4),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
                         ('_sheng_early_exception_record', 192),
                         ('_sheng_bootstrap_fb_trace_ready', 8),
@@ -211,6 +220,9 @@ def main() -> None:
     tcr = regs['TCR_EL1']
     observed_globals = {}
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
+                        ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
+                        ('_sheng_native_crypto_kmod', 8),
+                        ('_sheng_native_crypto_state', 4),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
                         ('_sheng_bootstrap_capture_enabled', 4), ('_sheng_bootstrap_fb_trace_ready', 8),
                         ('_sheng_bootstrap_c_stage', 8),

@@ -687,3 +687,7 @@ QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发�
 2026-10-24 panic区域标量清零修正版CI 40070434490通过，内核UUID 66B40866-E424-3221-B3F2-A02D6F2AB308。实际链接函数sheng_zero_panic_region使用strb/str wzr与dsb sy，没有DC ZVA。QEMU读到panic RAM zero returned、控制台获取成功和corecrypto初始化完成；停止原因仍是Image4接口未接入，完整panic的CRC/UUID匹配，屏幕标题与原因可读。相同内核的sheng高PA交接、C入口及16个阶段像素通过。候选32e3a9700efe14aefcc872ee98e15ff8e5361f89c11588d6b4bdab0bb2038945已封装，实机清零修复尚待验证。
 
 2026-10-24 用户视频确认清零修正版实机到达kern_trustcache.c:584的image4 interface not available，与QEMU停止点一致。首次panic摘要持续可读，原来的panic区域DC ZVA异常不再阻断；未进入BSD或用户空间。原始视频、最后画面及摘要保存在panic-io-zero/hardware-result。被替代的两版部署镜像已删除，恢复备份、dSYM与日志保留。
+
+2026-10-24 原版安全组件QEMU集成：CI 40075022559通过，UUID 8E5415E1-ECF6-361D-A502-DE18C23B24E3。预链接保留认证指针，由XNU格式7链完成签名；原版corecrypto只初始化一次、完整POST通过、PRNG就绪。原版AppleImage4启动、注册真实接口并加载MAC策略，旧Image4缺失阻断已在QEMU越过。额外注册入口造成的重复注册已从生成元数据移除。当前停止于kern_trustcache.c:589的amfi interface not available，AMFI和CoreEntitlements接口仍为0。组件候选仅供QEMU，尚未部署sheng；日志、panic和截图保存在image4-relink。
+
+同版内核接入原版amfi_register_mac_policy后，QEMU确认AMFI和CoreEntitlements真实接口均非空，AMFI策略加载，trust_cache_init及machine_lockdown完成。当前阻断转为平台驱动匹配失败：Unable to find driver for this platform: xiaomi,sheng。仍未进入BSD或用户空间，未对平板部署。

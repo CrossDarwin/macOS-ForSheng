@@ -161,7 +161,12 @@ def emit(native_data, original, native_names, identity, slide):
         pending[target] = blob
 
     # Read local registration symbols from each selected image's own symbol slice.
-    initializers = {}
+    registration_symbols = {}
+    early_initializers = {}
+    registration_names = {
+        'com.apple.security.AppleImage4': b'_kmod_link_init',
+        'com.apple.driver.AppleMobileFileIntegrity': b'_amfi_register_mac_policy',
+    }
     symbol_slices = []
     for n, module in modules.items():
         at = next(o for c, o, _ in module['commands'] if c == 2)
@@ -171,8 +176,15 @@ def emit(native_data, original, native_names, identity, slide):
         for index in range(count):
             strx, kind, _, _, address = struct.unpack_from('<IBBHQ', original, symoff + index * 16)
             end = strings.find(b'\0', strx)
-            if not kind & 0xe0 and kind & 0xe == 0xe and strings[strx:end] == b'_kmod_link_init':
-                initializers[n] = address + slide
+            if (not kind & 0xe0 and kind & 0xe == 0xe
+                    and strings[strx:end] == registration_names.get(n)):
+                if n in registration_symbols:
+                    raise ValueError(f'ambiguous original security registration symbol: {n}')
+                registration_symbols[n] = address + slide
+    amfi = 'com.apple.driver.AppleMobileFileIntegrity'
+    if amfi not in registration_symbols:
+        raise ValueError('matched AMFI has no original policy registration entry')
+    early_initializers[amfi] = registration_symbols[amfi]
 
     selected_entries = []
     for n in [*report['kernel_interfaces'], *sorted(modules)]:
@@ -180,8 +192,13 @@ def emit(native_data, original, native_names, identity, slide):
         if n in modules:
             for key in ('_PrelinkExecutableLoadAddr', '_PrelinkExecutableSourceAddr', '_PrelinkKmodInfo'):
                 entry[key] = (entry[key] & MASK64) + slide
-            if entry.get('AppleSecurityExtension') and n in initializers:
-                entry['_NativePrelinkEarlySecurityInit'] = initializers[n]
+            # Image4 registers during normal start; AMFI's null __realmain
+            # requires its real policy entry before MAC lockdown.
+            entry.pop('_NativePrelinkEarlySecurityInit', None)
+            if n in early_initializers:
+                if entry.get('AppleSecurityExtension') is not True:
+                    raise ValueError(f'early policy entry is not a security extension: {n}')
+                entry['_NativePrelinkEarlySecurityInit'] = early_initializers[n]
         selected_entries.append(entry)
     cache_id = hashlib.sha256(native_data + original + struct.pack('<Q', slide)).digest()[:16]
     xml = ET.tostring(to_xml(dict(_PrelinkInfoDictionary=selected_entries,
@@ -337,7 +354,8 @@ def emit(native_data, original, native_names, identity, slide):
     fixup_summary = native_chained_fixups(final_data)
     report.update(candidate_bytes=len(output), candidate_sha256=hashlib.sha256(output).hexdigest(),
         original_corecrypto_hmac=digest.hex(), native_pointer_fixups=fixup_summary,
-        early_security_initializers=initializers, cache_id=cache_id.hex(),
+        original_security_registration_symbols=registration_symbols,
+        early_security_initializers=early_initializers, cache_id=cache_id.hex(),
         source_inputs_modified=False, qemu_only=True, hardware_admitted=False,
         runtime_qualified=False, loadable=False)
     report['pending'] = ['validate instruction dataflow and native callback ABI',
