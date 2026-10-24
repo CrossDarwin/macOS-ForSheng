@@ -24,7 +24,7 @@ class UfsPackage(unittest.TestCase):
         self.identity = dict(kernel_sha256='kernel', uuid='uuid')
         self.observed = dict(self.identity, reached=True, checkpoint='IOFindBSDRoot',
             source_crypto_initialized=True, bootstrap_diagnostic_disarmed=True,
-            observed_globals=dict(_sheng_panel_ready='0x1', _sheng_panel_witness='0x1'),
+            observed_globals=dict(_sheng_panel_ready='0x1', _sheng_panel_witness='0x1', _sheng_console_rows='0x18'),
             original_component_interfaces={n: dict(registered=True, within_original_module=True)
                 for n in ('_g_crypto_funcs', '_img4if', '_amfi', '_libCoreEntitlements', '_pthread_functions')})
         self.bootstrap = dict(self.identity, reached_c_entry=True, instruction_and_args_match=True,

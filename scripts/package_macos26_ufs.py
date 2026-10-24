@@ -34,6 +34,7 @@ def qualify(build, observation, bootstrap, default_off, installed, plan, root_bu
             or observed.get('source_crypto_initialized') is not True
             or observed.get('bootstrap_diagnostic_disarmed') is not True
             or observed.get('observed_globals', {}).get('_sheng_panel_ready') != '0x1'
+            or observed.get('observed_globals', {}).get('_sheng_console_rows') != '0x18'
             or observed.get('observed_globals', {}).get('_sheng_panel_witness') != '0x1'):
         raise ValueError('requires this exact native kernel at the qualified root-discovery checkpoint')
     for name in ('_g_crypto_funcs', '_img4if', '_amfi', '_libCoreEntitlements', '_pthread_functions'):

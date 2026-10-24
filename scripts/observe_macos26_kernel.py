@@ -155,7 +155,7 @@ def main() -> None:
         if component_map['candidate_sha256'] != record['kernel_sha256']:
             raise ValueError('component symbol map differs from the actual candidate')
         for name, value in component_map.get('storage_driver', {}).get('symbols', {}).items():
-            if not name.startswith('_native_virtio_'):
+            if not name.startswith(('_native_virtio_', '_native_ufs_')):
                 continue
             if name in addresses and addresses[name] != value:
                 raise ValueError('transport symbol collides with the native kernel')
@@ -452,7 +452,7 @@ def main() -> None:
                             ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
                             ('_sheng_status_witness', 8), ('_sheng_status_message', 45),
                             ('_sheng_status_pixels', 8), ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
-                            ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8),
+                            ('_sheng_console_columns', 8), ('_sheng_console_rows', 8), ('_sheng_first_sync_displayed', 8),
                             ('_sheng_bootstrap_capture_enabled', 4)):
             if name in addresses:
                 command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
@@ -530,7 +530,7 @@ def main() -> None:
                         ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
                         ('_sheng_status_witness', 8), ('_sheng_status_pixels', 8),
                         ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
-                        ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8)):
+                        ('_sheng_console_columns', 8), ('_sheng_console_rows', 8), ('_sheng_first_sync_displayed', 8)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
             value = snapshot['memory'].get(key, 'not captured')
