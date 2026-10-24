@@ -12,11 +12,13 @@ static void sheng_zero_panic_region(volatile void *address, size_t length)
         *cursor++ = 0;
         length--;
     }
+    volatile void *aligned = cursor;
+    volatile uint32_t *words = aligned;
     while (length >= sizeof(uint32_t)) {
-        *(volatile uint32_t *)cursor = 0;
-        cursor += sizeof(uint32_t);
+        *words++ = 0;
         length -= sizeof(uint32_t);
     }
+    cursor = (volatile uint8_t *)words;
     while (length--) *cursor++ = 0;
 #if defined(__aarch64__)
     __asm__ volatile("dsb sy" ::: "memory");
