@@ -1,0 +1,40 @@
+diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -387,13 +387,13 @@
+ 		const uintptr_t start = status && status < first ? status : first;
+ 		uintptr_t end = first + 11 * sheng_bootstrap_vm_stride + 1460;
+ 		if (status) {
+-			const uintptr_t status_end = status + (128 * sheng_status_scale - 1) *
++			const uintptr_t status_end = status + ((32 + 16 * sheng_console_rows) * sheng_status_scale - 1) *
+ 			    sheng_bootstrap_vm_stride + sheng_console_columns * 8 * sheng_status_scale * 4;
+ 			if (status_end > end) end = status_end;
+ 		}
+ 		const uintptr_t offset = start & 16383;
+ 		const vm_size_t bytes = (offset + end - start + 16383) & ~(vm_size_t)16383;
+-		if (end > start && bytes <= 4 * 1048576) {
++		if (end > start && bytes <= 16 * 1048576) {
+ 			const vm_offset_t mapped = ml_io_map(start - offset, bytes);
+ 			if (mapped) {
+ 				sheng_bootstrap_vm_pixels = mapped + offset + first - start;
+@@ -404,7 +404,7 @@
+ 	sheng_vm_trace(11);
+ 	if (sheng_status_pixels) {
+ 		sheng_log_bind_panel(sheng_status_pixels + 32 * sheng_status_scale * sheng_bootstrap_vm_stride,
+-		    (unsigned)sheng_bootstrap_vm_stride, (unsigned)sheng_console_columns, 6,
++		    (unsigned)sheng_bootstrap_vm_stride, (unsigned)sheng_console_columns, (unsigned)sheng_console_rows,
+ 		    (unsigned)sheng_status_scale);
+ 	}
+ 	sheng_log_stage("arm_vm_init returned - live RAM log");
+diff --git a/osfmk/kern/debug.c b/osfmk/kern/debug.c
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1254,7 +1254,7 @@
+ #pragma clang diagnostic pop
+ 
+ #if SHENG
+-	char sheng_panic_message[512];
++	char sheng_panic_message[4096];
+ 	va_list sheng_panic_args;
+ 	va_copy(sheng_panic_args, *panic_args);
+ 	vsnprintf(sheng_panic_message, sizeof(sheng_panic_message), panic_format_str, sheng_panic_args);

@@ -16,6 +16,7 @@ import uuid
 from observe_macos26_kernel import identify, ROOT, NATIVE_BOOT_ARGS
 from package_reference_xnu import vendor_dtbs
 from native_devtree import configure_native_text_state
+from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 
 
 def qualify(build, observation, bootstrap, default_off, installed, plan, root_build):
@@ -53,6 +54,7 @@ def qualify(build, observation, bootstrap, default_off, installed, plan, root_bu
             or driver['build'].get('root_lun') != 0
             or driver['build'].get('android_userdata_used') is not False
             or driver['build'].get('recovery_root') != recovery
+            or driver['build'].get('recovery_disk_image_protocol') != PROTOCOL_CHARACTERISTICS
             or driver['build'].get('recovery_transport_is_not_authentication') is not True
             or driver['vtable_abi'].get('block_class') != 'NativeUfsBlock'
             or driver['vtable_abi'].get('pac_metadata_matches') is not True

@@ -124,6 +124,7 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
         evidence.update(root_partition='macosroot', root_lun=0,
                         android_userdata_used=False, root_media_layout_qualified=False,
                         recovery_root=recovery_root,
+                        recovery_disk_image_protocol=dict(PROTOCOL_CHARACTERISTICS),
                         recovery_root_header_sha256=hashlib.sha256((root / 'platform/sheng/macos26/storage/recovery_root.h').read_bytes()).hexdigest(),
                         root_publication_sha256=hashlib.sha256((upstream.parent / 'RootPublication.h').read_bytes()).hexdigest(),
                         recovery_transport_is_not_authentication=True)

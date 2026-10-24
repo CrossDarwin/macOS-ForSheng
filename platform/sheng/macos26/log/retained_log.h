@@ -84,7 +84,7 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
     if (!address || stride < 2560 || stride > 65536 || columns < 32 || columns > 100 ||
-        (rows != 6 && rows != 8) || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride ||
+        (rows < 6 || rows > 24) || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride ||
         !__atomic_compare_exchange_n(&r->writer, &expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
     sheng_panel.base = address;
     sheng_panel.stride = stride;
@@ -206,18 +206,20 @@ void sheng_log_panic(uint64_t caller, const char *message)
     if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
         __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
         sheng_panel_reset();
+        sheng_panel_capture_panic = 1;
         __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
     }
     {
         const char *prefix = "\nSHENG-LOG: panic: ";
         while (*prefix) sheng_log_putc(*prefix++);
-        for (unsigned n = 0; message && message[n] && n < 511; n++)
+        for (unsigned n = 0; message && message[n] && n < 4095; n++)
             sheng_log_putc(message[n]);
         sheng_log_putc('\n');
     }
     expected = 0;
     if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
         __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        sheng_panel_capture_panic = 0;
         sheng_panel_pin_panic();
         __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
     }

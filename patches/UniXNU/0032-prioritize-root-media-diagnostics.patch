@@ -1,0 +1,31 @@
+diff --git a/drivers/NativeUfs/NativeUfs.cpp b/drivers/NativeUfs/NativeUfs.cpp
+--- a/drivers/NativeUfs/NativeUfs.cpp
++++ b/drivers/NativeUfs/NativeUfs.cpp
+@@ -1258,7 +1258,7 @@
+ volatile uint64_t native_ufs_block_failures = 0;
+ }
+ 
+-static char gRootDiagnosticText[2500];
++static char gRootDiagnosticText[4096];
+ static char gRootMediaText[1000];
+ // Passive diagnostic reader: cached software values only. It must remain safe
+ // when called from an IRQ while the transport is busy: no locks, allocations,
+@@ -1281,8 +1281,16 @@
+   gRootDiagnostic.published = native_ufs_blocks_published;
+   gRootDiagnostic.reads = native_ufs_block_reads;
+   gRootDiagnostic.failures = native_ufs_block_failures;
+-  formatUfsRootDiagnostics (gRootDiagnosticText, sizeof (gRootDiagnosticText), gRootDiagnostic, reason);
+-  strlcat (gRootDiagnosticText, gRootMediaText, sizeof (gRootDiagnosticText));
++  // 媒体列表和I/O计数先显示，避免完整控制器现场挤掉根卷失败原因
++  int used = snprintf (gRootDiagnosticText, sizeof (gRootDiagnosticText),
++    "UFS ROOT FAILURE: %s\nstage=%s prepared=%u published=%u reads=%llu failures=%llu\n%s",
++    reason, gRootDiagnostic.stage, gRootDiagnostic.prepared, gRootDiagnostic.published,
++    static_cast<unsigned long long> (gRootDiagnostic.reads),
++    static_cast<unsigned long long> (gRootDiagnostic.failures), gRootMediaText);
++  if (used > 0 && static_cast<size_t> (used) < sizeof (gRootDiagnosticText)) {
++    formatUfsRootDiagnostics (gRootDiagnosticText + used, sizeof (gRootDiagnosticText) - used,
++                             gRootDiagnostic, reason);
++  }
+   panic ("%s", gRootDiagnosticText);
+ }
+ 

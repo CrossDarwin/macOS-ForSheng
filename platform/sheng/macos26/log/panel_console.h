@@ -10,7 +10,7 @@ char sheng_status_message[45];
 static unsigned sheng_status_pinned;
 
 volatile uint64_t sheng_status_pixels;
-uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns;
+uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns, sheng_console_rows;
 
 /* 同一次原生映射覆盖独立文字区，旧阶段条不再与文字共用像素 */
 static void sheng_status_render(const char *prefix, const char *message)
@@ -69,6 +69,7 @@ static struct {
     uintptr_t base;
     unsigned stride, columns, rows, scale, x, y, pinned;
 } sheng_panel;
+static unsigned sheng_panel_capture_panic;
 
 static void sheng_panel_clear_row(unsigned row)
 {
@@ -110,7 +111,7 @@ static void sheng_panel_newline(void)
 
 static void sheng_panel_putc(unsigned char byte)
 {
-    if (!sheng_panel_ready) return;
+    if (!sheng_panel_ready || (sheng_panel_capture_panic && sheng_panel.y >= sheng_panel.rows - 2)) return;
     if (byte == '\r') { sheng_panel.x = 0; return; }
     if (byte == '\n') { sheng_panel_newline(); return; }
     if (byte < 32 || byte > 126) return;

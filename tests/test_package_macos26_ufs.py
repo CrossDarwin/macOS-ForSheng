@@ -9,6 +9,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from package_macos26_ufs import qualify
+from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 
 
 class UfsPackage(unittest.TestCase):
@@ -35,6 +36,7 @@ class UfsPackage(unittest.TestCase):
             vtable_abi=dict(block_class='NativeUfsBlock', pac_metadata_matches=True, slots=326),
             symbols={name: index for index, name in enumerate(('_native_ufs_probe_requested',
                 '_native_ufs_mapped', '_native_ufs_root_step', '_native_ufs_blocks_published'))})
+        self.driver['build']['recovery_disk_image_protocol'] = dict(PROTOCOL_CHARACTERISTICS)
         self.off = dict(kernel_sha256='kernel', function_return_stack_matched=True, x0='0x0',
                         memory={f'{i:x}:4': '00000000' for i in range(4)})
         self.media = dict(status='verified', readback_verified=True, destination='/dev/block/by-name/macosroot',

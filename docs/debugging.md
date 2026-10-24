@@ -1,7 +1,10 @@
 # sheng 内核现场与 KDP
 
-当前实机已可读取独立黑底文字，最后确认状态为`PE_create_console enter`，尚未出现返回。0035/0036把现有保留RAM字符在正式VM返回后立即镜像到标题下方的六行滚动区域，控制台创建和panic初始化尚未完成时也能输出。
-共享渲染器定向运行覆盖清屏后回放、writer占用时首次异常寄存器显示及原因固定；实际设备仍需验证。KDP和UART没有因此取得实机传输能力。
+当前25F71 ARM64E实机已进入UFS根卷发布等待，照片记录UFS ROOT FAILURE及期望APFS卷UUID。
+按唯一诊断路径，UFS接管、GPT/清单读取和块服务发布已经走过，APFS卷匹配尚未通过。
+本轮macoslog只读导出没有新增RAM捕获文件，完整实机日志仍未恢复。
+下一版面板按屏幕高度显示6..24行并固定首次panic前部；24行字体和后续日志防覆盖已通过QEMU，尚待实机验证。
+KDP和UART仍没有实机传输能力。
 
 内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
 root Recovery已经实测挂载、普通文件写入和读回，并完成capture_persistent_log.py只读导出；`OBSERVED.JSON`是人工读取屏幕后的结构化记录，不是RAM导出。XNU仍没有已验证的UFS写入后端。新增DarwinBoot保存流程使用固件文件系统，宿主EFI服务测试已通过，跨重启RAM留存与实机UEFI文件系统枚举仍未验证。

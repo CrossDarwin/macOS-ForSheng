@@ -1335,3 +1335,30 @@ probe_requested=mapped=root_step=blocks_published=0。
 实机UFS读取、原版APFS挂载、launchd及RAM日志恢复仍没有通过记录。
 当前可开始这一轮sheng实验，需现场按键和视频配合。
 现场和匹配资格记录在private/experiments/20261025-native-arm64e/ufs-recovery。
+
+### 25F71实机已进入UFS根卷发布等待
+
+40120646478候选临时启动收到Booting OKAY；用户照片显示
+SHENG - FIRST PANIC及UFS ROOT FAILURE: root window volume，正在等待
+808EAC5E-8275-478D-814C-2229D8EB8D07。
+按该诊断唯一源码路径，控制器初始化、LUN0 GPT/根盘清单读取、配套单OS窗口身份检查、
+NativeUfsBlock配置及服务发布已经走过，30秒后仍未找到具有预期UUID及父链的APFS媒体。
+这不证明全部BaseSystem内容读取正确或APFS已挂载，详细读取计数尚未取得。
+
+仅恢复日志的临时UEFI容器随后尝试NativeLogSave，再拒绝不可执行标记并返回菜单，
+没有运行下一份内核、重设RAM请求或改写系统分区。用户多次选择恢复入口。
+原Recovery对macoslog只读导出，只有先前OBSERVED.JSON，没有NEXTLOG.BIN或CAP目录；
+因此本轮未取得完整RAM日志，不能把屏幕照片当成日志分区写入成功。
+a槽仍可启动，macosroot仍为64 GiB，Android sys.boot_completed=1。
+本轮照片、传输及只读导出记录保存在private/device/ufs-recovery-40120646478。
+已使用完毕的日志恢复部署镜像已销毁，元数据及诊断保留。
+
+下一版0031只在恢复模式为NativeUfsBlock这个磁盘映像子设备声明Virtual Interface/External，
+不把底层UFS控制器描述成VirtIO。前序QEMU中原版APFS nx_is_virtual曾读取同一属性，
+漏报时进入真实系统盘的命名快照分支；这是本轮APFS等待失败的待验证解释。
+0032把媒体列表及prepared/published/read/failure计数放在panic前部。
+0051及渲染器把面板高度按屏幕计算为6..24行，映射覆盖对应像素区，
+panic文本保留上限从511扩至4095字节；满屏后固定首段，后续回溯只使用末两行。
+实际AArch64 QEMU渲染24行，逐像素确认80行后续日志不覆盖首段，
+RAM中保留511字节以后的消息尾标记，真实字体画面已检查。
+该布局及子盘属性尚未部署sheng，不能称作APFS修复已通过。

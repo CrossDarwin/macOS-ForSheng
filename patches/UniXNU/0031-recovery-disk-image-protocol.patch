@@ -1,0 +1,24 @@
+diff --git a/drivers/NativeUfs/NativeUfs.cpp b/drivers/NativeUfs/NativeUfs.cpp
+--- a/drivers/NativeUfs/NativeUfs.cpp
++++ b/drivers/NativeUfs/NativeUfs.cpp
+@@ -1294,6 +1294,20 @@
+   strlcpy (label, name, sizeof (label));
+   absolute = absoluteOffset;
+   bytes = size;
++#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++  // 这里发布的是分区中保存的BaseSystem磁盘映像，不是底层UFS控制器
++  OSDictionary *protocol = OSDictionary::withCapacity (2);
++  OSString *interconnect = OSString::withCString (kIOPropertyPhysicalInterconnectTypeVirtual);
++  OSString *location = OSString::withCString (kIOPropertyExternalKey);
++  bool described = protocol && interconnect && location &&
++    protocol->setObject (kIOPropertyPhysicalInterconnectTypeKey, interconnect) &&
++    protocol->setObject (kIOPropertyPhysicalInterconnectLocationKey, location) &&
++    setProperty (kIOPropertyProtocolCharacteristicsKey, protocol);
++  OSSafeReleaseNULL (location);
++  OSSafeReleaseNULL (interconnect);
++  OSSafeReleaseNULL (protocol);
++  if (!described) return false;
++#endif
+   windowLock = IOLockAlloc ();
+   if (!windowLock) return false;
+   bounce = static_cast<uint8_t *> (IOMalloc (kDataMax));
