@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -107,6 +108,26 @@ class NativeTree(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'complete generated'):
             configure_native_text_state(self.path, development_root=True, platform_uuid=self.vm)
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_actual_sheng_recovery_tree_preserves_hardware_identity(self):
+        generator = Path(__file__).resolve().parents[1] / 'UniXNU-sheng/scripts/make-sheng-adt.py'
+        if not generator.exists():
+            self.skipTest('requires the pinned hardware tree generator')
+        subprocess.run([sys.executable, str(generator), '--output', str(self.path),
+                        '--dram-size', '0x200000000', '--owned-memory-size', '0xc0000000',
+                        '--os-environment', 'recoveryos', '--panic-log',
+                        '--root-match-volume-uuid', str(self.root)],
+                       check=True, capture_output=True, timeout=10)
+        configure_native_text_state(self.path, development_root=True,
+                                    root_hash=bytes(range(32)), boot_volume_uuid=self.root)
+        tree = read_tree(self.path.read_bytes())
+        chosen = tree[('device-tree', 'chosen')]
+        self.assertEqual(chosen['osenvironment'], b'recoveryos\0')
+        self.assertEqual(chosen['darwinboot-memory-size'], struct.pack('<Q', 0xc0000000))
+        self.assertEqual(chosen['embedded-panic-log-size'], struct.pack('<I', 0x80000))
+        self.assertEqual(chosen['boot-uuid'], str(self.root).upper().encode() + b'\0')
+        self.assertNotIn('platform-uuid', tree[('device-tree', 'options')])
+        self.assertEqual(tree[('device-tree', 'product')]['model'], b'xiaomi,sheng\0')
 
 
 if __name__ == '__main__':
