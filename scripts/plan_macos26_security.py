@@ -15,6 +15,15 @@ from observe_macos26_kernel import identify
 PAGE = 16384
 MASK64 = (1 << 64) - 1
 SHA256_WORDS = '74ef7306e7452d6859b6463ce496b8df30925f69e1b2969e1f3f34bbc9c6af04'
+# 原版汇编把查表数据放在__text中，必须按实际UUID与完整字节区分
+COMPRESSION_UUID = 'EE081FA4-270B-3359-9DFD-61B9D6DBFAB1'
+COMPRESSION_LITERALS = (
+    (0xec0, 528, 'f7bb30778915b574b63a17573babfdeb97251ae92fb57e7302e69783f454f92a',
+     'LZ4 SIMD shuffle and advance tables'),
+    (0x6060, 40, '48bdf8e57f8647f2ef3cfda5b500209c4be9b5742632db0ff3614aca8d7ee63d',
+     'Adler32 vector weights and reduction constants'),
+)
+
 
 
 def relative(word: int, pc: int):
@@ -92,6 +101,16 @@ def plan(data: bytes, native: dict, identity: dict, slide: int, roots=ROOTS) -> 
                 continue
             blob = data[seg['fileoff']:seg['fileoff'] + seg['filesize']]
             excluded = set()
+            if (name == 'com.apple.AppleFSCompression.AppleFSCompressionTypeZlib'
+                    and modules[name]['uuid'] == COMPRESSION_UUID and seg['name'] == '__TEXT_EXEC'):
+                for offset, size, digest, purpose in COMPRESSION_LITERALS:
+                    literal = blob[offset:offset + size]
+                    if (hashlib.sha256(literal).hexdigest() != digest
+                            or blob[offset + size:offset + size + 4] != bytes.fromhex('5f2403d5')):
+                        raise ValueError('paired compression inline table changed')
+                    excluded.update(range(offset, offset + size, 4))
+                    literals.append(dict(module=name, va=seg['va'] + offset,
+                                         bytes=size, sha256=digest, purpose=purpose))
             position = 0
             while (position := blob.find(bytes.fromhex('982f8a42'), position)) >= 0:
                 literal = blob[position:position + 256]

@@ -814,3 +814,11 @@ QEMU输出mount-complete volume macOS Base System，卷UUID与输入一致，
 下一候选补入同一BootKC的com.apple.AppleFSCompression.AppleFSCompressionTypeZlib
 及自动解析出的真实依赖，保留原文件压缩内容，不在宿主改写系统盘。
 证据保存在private/experiments/20261024-native-arm64e/virtio-storage/init-compression-missing-40084664897。
+
+压缩组件封装扫描发现三处疑似跨模块分支，实际均为__text内的汇编常量表。
+配套模块UUID EE081FA4-270B-3359-9DFD-61B9D6DBFAB1：
+LZ4的528字节SIMD shuffle/步长表由前方ADR引用，
+Adler32的40字节向量权重/模约简常量位于RET后的数据区。
+扫描器仅对该UUID、固定段内偏移、完整SHA256和紧随的BTI函数边界匹配时排除数据，
+所有真实指令继续原有检查。封装候选422f457e7254553b44f8ffffbf0327679cad9095f006c435100252389099d8c2，
+143044个格式7指针、62232个认证指针，指令阻断0，尚待运行。
