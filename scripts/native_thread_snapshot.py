@@ -41,6 +41,8 @@ def capture(packet, processes, plan):
                 raise ValueError('process owner mismatch')
             task = pointer(ro + layout['proc_task'])
             row.update(task=hex(task), thread_count=word(task + layout['task_thread_count'], 4))
+            if 'task_disable_user_jop' in layout:
+                row['task_disable_user_jop'] = word(task + layout['task_disable_user_jop'], 1)
             head = task + layout['task_threads']
             thread = pointer(head)
             seen = set()
@@ -55,6 +57,8 @@ def capture(packet, processes, plan):
                     continuation=hex(pointer(thread + layout['continuation'])),
                     wait_event=hex(word(thread + layout['wait_event'])), kernel_frames=[])
                 row['threads'].append(item)
+                if 'machine_flags' in layout:
+                    item['machine_flags'] = hex(word(thread + layout['machine_flags'], 4))
                 upcb = pointer(thread + layout['upcb'])
                 if upcb:
                     state = read(upcb, 304)

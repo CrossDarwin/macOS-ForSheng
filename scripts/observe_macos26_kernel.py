@@ -93,6 +93,8 @@ def main() -> None:
                         'sheng_mmu_sync_fault'), default='arm_init')
     parser.add_argument('--checkpoint-start', choices=('load_init_program',),
                         help='arm the checkpoint only after this real kernel entry')
+    parser.add_argument('--read-saved-user-register', action='append', default=[], metavar='HEX_REGISTER:HEX_BYTES',
+                        help='read bounded saved user memory at the real handle_pac_fail entry')
     parser.add_argument('--follow-init-entry', action='store_true',
                         help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
     parser.add_argument('--follow-launchd-main', action='store_true',
@@ -127,11 +129,14 @@ def main() -> None:
     args = parser.parse_args()
     if args.capture_threads and not args.process_layout:
         parser.error('--capture-threads requires --process-layout')
+    if args.read_saved_user_register and args.checkpoint != 'handle_pac_fail':
+        parser.error('--read-saved-user-register requires the handle_pac_fail checkpoint')
     if not 15 <= args.timeout <= 180:
         parser.error('--timeout must be between 15 and 180 seconds')
     if args.kext_log is not None and not 0 <= args.kext_log <= 0xffffffff:
         parser.error('--kext-log must be a 32-bit unsigned filter')
     kernel, addresses, record = identify(args.kernel_build.resolve())
+    component_map = {}
     security_path = args.kernel_build / 'security-relink.json'
     if security_path.is_file():
         component_map = json.loads(security_path.read_text())
@@ -145,6 +150,12 @@ def main() -> None:
             addresses[name] = value
     if args.follow_init_entry and args.checkpoint != 'thread_setentrypoint':
         parser.error('following init requires the thread_setentrypoint checkpoint')
+    if args.follow_init_entry and args.root_hash_payload:
+        required = {'com.apple.kec.pthread', 'com.apple.filesystems.apfs',
+                    'com.apple.AppleFSCompression.AppleFSCompressionTypeZlib'}
+        missing = required - component_map.get('modules', {}).keys()
+        if missing:
+            parser.error('paired BaseSystem launchd requires original components: ' + ', '.join(sorted(missing)))
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
     if args.isc_write_overlay:
@@ -327,6 +338,8 @@ def main() -> None:
         if args.checkpoint == 'handle_pac_fail':
             command += ['--arm64-saved-state-count', '74' if record['architecture'] == 'arm64e' else '72',
                         '--inspect-entry-user-state']
+            for request in args.read_saved_user_register:
+                command += ['--read-saved-user-register', request]
         if args.checkpoint == 'vm_shared_region_slide_page':
             command += ['--read-entry-region', '0:0:48']
         if args.checkpoint == 'shared_region_pager_match':

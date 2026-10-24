@@ -495,6 +495,7 @@ def main() -> None:
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0002-native-arm64e-chained-startup.patch')
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0003-native-user-pac-lifecycle.patch')
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0004-native-signing-window-failure.patch')
+        PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0005-native-user-a-key-policy.patch')
     # Keep helpers on this configured module when invoked as a script.
     sys.modules['build_macos26_xnu'] = sys.modules[__name__]
     record = prepare()
