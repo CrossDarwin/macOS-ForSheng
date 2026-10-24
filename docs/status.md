@@ -1193,3 +1193,26 @@ gIOPlatformUUIDAndSerialDone仍为0。这证伪了仅补设备树属性就够用
 不能宣称该参数修复了所有服务。0050修复后的函数返回值尚待新内核验证。
 设备树检查覆盖卷UUID字符串和平台UUID二进制的不同ABI，冲突及缺少options时拒绝改写，
 并保证此合成身份不能通过默认路径进入硬件树。
+
+
+### 平台UUID已读回，CHRP代理保留身份
+
+CI40111511884构建0050，内核UUID5F1E31A9-98DD-33C6-8E3D-191D83FDCBF7。
+15个原版组件候选SHA256为565d7418bcefee163b2916e62cb37ec8776b0b5d82612850e5087d84ac8c7ccd。
+仅写/options的新版内核对照仍返回0x31；不是0050未编译。
+IODTNVRAM::init会用空字典替换/options属性表，直接注入的属性在查询前已经被清除。
+改在本工具新建的易失CHRP代理common分区写入platform-uuid，按原版编码转义零字节和FF，
+更新Adler校验。拒绝覆盖已有变量或不同身份，默认硬件路径不注入合成VM身份。
+
+只读函数入口/真实返回对照已确认：IOBSDGetPlatformUUID返回0，调用栈匹配，
+返回16字节与显式VM UUID 7e8b064b-8ddb-54c4-b332-6fe0c34f937c完全一致，
+gIOPlatformUUIDAndSerialDone=1。该身份只属于自建VM，不是Apple设备身份。
+同版180秒启动记录173次采样，101498字节，missing_bytes=0、guest_dropped_bytes=0、complete=true。
+原版recoveryosd继续建立Aqua会话；停止快照中opendirectoryd和cfprefsd仍存在。
+没有最终panic或完整关机流程，但截图仍只有文本面板，WindowServer的退出原因继续单独取证。
+普通logd被launchd以158排除，原文为Service cannot be loaded on current os variant；
+恢复系统有recoverylogd定义，因此不把普通logd缺失解释为服务崩溃，也不强行启动错误类型服务。
+
+上述正负对照、连续控制台和匹配布局保存在recovery-services/uuid-native-*目录。
+下一次sheng实验仍需配套26.5 UFS根盘读取路径、硬件初始化及可回收日志；
+不能用QEMU的VirtIO根盘替代UFS，也不能只因VM平台身份通过就放开硬件准入。

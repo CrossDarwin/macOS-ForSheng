@@ -4,6 +4,28 @@
 from pathlib import Path
 import struct
 import uuid
+import zlib
+
+
+def seed_vm_nvram_uuid(image: bytes, identity: uuid.UUID) -> bytes:
+    # 只修改本工具创建的空CHRP代理，不接受已有固件变量
+    if (len(image) != 8192 or image[4:16] != b'nvram' + bytes(7)
+            or image[36:48] != b'common' + bytes(6)
+            or struct.unpack_from('<H', image, 34)[0] * 16 != 2064
+            or struct.unpack_from('<I', image, 16)[0] != zlib.adler32(image[20:])):
+        raise ValueError('requires the generated volatile CHRP bank')
+    encoded = bytearray()
+    for value in identity.bytes:
+        encoded.extend((255, 1 if value == 0 else 129) if value in (0, 255) else (value,))
+    record = b'platform-uuid=' + encoded + b'\0'
+    existing = image[48:2096]
+    expected = record + bytes(2048 - len(record))
+    if existing != bytes(2048) and existing != expected:
+        raise ValueError('refusing to replace existing NVRAM variables or VM identity')
+    result = bytearray(image)
+    result[48:2096] = expected
+    struct.pack_into('<I', result, 16, zlib.adler32(result[20:]))
+    return bytes(result)
 
 
 def configure_native_text_state(path: Path, *, development_root: bool = False,
@@ -11,7 +33,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
                                 boot_volume_uuid: uuid.UUID | None = None,
                                 platform_uuid: uuid.UUID | None = None) -> None:
     data = path.read_bytes()
-    chosen = asmb = auth = options = 0
+    chosen = asmb = auth = options = proxies = 0
     if root_hash is not None and not 16 <= len(root_hash) <= 16384:
         raise ValueError('invalid raw root-hash payload size')
 
@@ -24,7 +46,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
         raise ValueError('synthetic platform UUID is restricted to the development fixture')
 
     def node(at: int, parents: tuple[str, ...] = ()) -> tuple[bytes, int]:
-        nonlocal chosen, asmb, auth, options
+        nonlocal chosen, asmb, auth, options, proxies
         if len(parents) > 32 or at + 8 > len(data):
             raise ValueError('invalid generated device-tree node')
         count, children = struct.unpack_from('<II', data, at)
@@ -34,7 +56,6 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
         properties = {}
         encoded = bytearray()
         for _ in range(count):
-            start = at
             if at + 36 > len(data):
                 raise ValueError('truncated device-tree property')
             key, size = struct.unpack_from('<32sI', data, at)
@@ -43,8 +64,12 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
             end = at + ((size + 3) & ~3)
             if end > len(data) or key in properties:
                 raise ValueError('invalid or repeated device-tree property')
-            properties[key] = data[at:at + size]
-            encoded.extend(data[start:end])
+            value = data[at:at + size]
+            if platform_uuid is not None and parents == ('device-tree',) and key == 'nvram-proxy-data':
+                value = seed_vm_nvram_uuid(value, platform_uuid)
+                proxies += 1
+            properties[key] = value
+            encoded.extend(struct.pack('<32sI', key.encode(), size) + value + bytes(-size % 4))
             at = end
         name = properties.get('name', b'').rstrip(b'\0').decode('ascii')
         location = (*parents, name)
@@ -104,6 +129,6 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
     result, end = node(0)
     if (end != len(data) or chosen != 1 or development_root and asmb != 1
             or root_hash is not None and auth != 1
-            or platform_uuid is not None and options != 1):
+            or platform_uuid is not None and (options != 1 or proxies != 1)):
         raise ValueError('requires one complete generated /chosen node')
     path.write_bytes(result)

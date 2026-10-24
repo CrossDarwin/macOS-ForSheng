@@ -5,9 +5,10 @@ import sys
 import tempfile
 import unittest
 import uuid
+import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from native_devtree import configure_native_text_state
+from native_devtree import configure_native_text_state, seed_vm_nvram_uuid
 
 
 def node(name, properties=(), children=()):
@@ -37,12 +38,25 @@ def read_tree(data):
     return result
 
 
+def empty_bank():
+    bank = bytearray(8192)
+    for offset, name, size in ((0, b'nvram', 32), (32, b'common', 2064), (2096, b'free', 6096)):
+        header = bytearray(struct.pack('<BBH12s', 0x70, 0, size // 16, name))
+        checksum = sum(header)
+        while checksum > 255:
+            checksum = (checksum & 255) + (checksum >> 8)
+        header[1] = checksum
+        bank[offset:offset + 16] = header
+    struct.pack_into('<I', bank, 16, zlib.adler32(bank[20:]))
+    return bytes(bank)
+
+
 class NativeTree(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'kernel.adt'
-        self.path.write_bytes(node('device-tree', children=(node('chosen'), node('options'))))
+        self.path.write_bytes(node('device-tree', children=(node('chosen', (('nvram-proxy-data', empty_bank()),)), node('options'))))
         self.root = uuid.UUID('808eac5e-8275-478d-814c-2229d8eb8d07')
         self.vm = uuid.UUID('7e8b064b-8ddb-54c4-b332-6fe0c34f937c')
 
@@ -56,10 +70,13 @@ class NativeTree(unittest.TestCase):
         self.assertEqual(chosen['boot-uuid'], str(self.root).upper().encode() + b'\0')
         self.assertEqual(chosen['apfs-preboot-uuid'], chosen['boot-uuid'])
         self.assertEqual(tree[('device-tree', 'options')]['platform-uuid'], self.vm.bytes)
+        bank = chosen['nvram-proxy-data']
+        self.assertEqual(struct.unpack_from('<I', bank, 16)[0], zlib.adler32(bank[20:]))
+        self.assertEqual(bank[48:79], b'platform-uuid=' + self.vm.bytes + b'\0')
         self.assertEqual(tree[('device-tree', 'chosen', 'secure-boot-hashes')]['system-volume-auth-blob'], bytes(range(32)))
         configure_native_text_state(self.path, **options)
         self.assertEqual(self.path.read_bytes(), before)
-        with self.assertRaisesRegex(ValueError, 'conflicts'):
+        with self.assertRaisesRegex(ValueError, 'conflicts|replace existing'):
             configure_native_text_state(self.path, **(options | dict(platform_uuid=self.root)))
         self.assertEqual(self.path.read_bytes(), before)
 
@@ -72,6 +89,17 @@ class NativeTree(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'root hash'):
             configure_native_text_state(self.path, boot_volume_uuid=self.root)
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_nvram_binary_escaping_and_existing_variable_refusal(self):
+        identity = uuid.UUID(bytes=bytes([0, 255]) * 8)
+        result = seed_vm_nvram_uuid(empty_bank(), identity)
+        self.assertEqual(result[62:94], bytes([255, 1, 255, 129]) * 8)
+        with self.assertRaisesRegex(ValueError, 'replace existing'):
+            seed_vm_nvram_uuid(result, self.vm)
+        damaged = bytearray(empty_bank())
+        damaged[48] = 1
+        with self.assertRaisesRegex(ValueError, 'CHRP'):
+            seed_vm_nvram_uuid(bytes(damaged), self.vm)
 
     def test_missing_options_is_refused_without_rewriting_tree(self):
         before = node('device-tree', children=(node('chosen'),))

@@ -16,7 +16,8 @@ UniXNU 提供 sheng 硬件基线；Snapintosh 作为兼容实现参考，不限�
 
 已完成 UEFI 实机探针。当前入口为 EL1，上游 EL2 监控层不能直接部署。
 优先研究 M1/T8103 的原生适配，保留 Neo/T8140 与 VMAPPLE 对照。
-QEMU已执行原版ARM64E launchd、sh和bash，完成临时Data卷挂载及模板复制，开始启动恢复系统服务；当前核对后续主动重启的来源。
+QEMU已执行原版ARM64E launchd、sh和bash，完成临时Data卷挂载及模板复制，恢复服务开始建立Aqua会话。
+原版偏好服务早退及平台UUID超时已修复；图形界面尚未可用，sheng根盘读取与新版硬件封装仍待验证。
 sheng实机尚未验证这些新组件；旧XNU仅用于独立的硬件交接实验。
 
 ```sh
