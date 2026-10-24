@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | CI40096344826；原版组件、APFS恢复根卷与dyld已运行；原生EL0 PAC密钥接入后，原版launchd已创建system域并启动mount/apfs_boot_util；120秒无panic，当前等待缺失iSC/APFS角色卷 |
+| 原生 25F71 ARM64E QEMU | CI40100580890；原版launchd已创建system域，原版APFS成功挂载独立iSC的xART、Preboot、Hardware；越过mount-phase-1，当前最后任务为data-protection；180秒观察未见panic正文 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -962,7 +962,7 @@ Snapintosh/tools/make-isc-fixture.py的输入契约是新格式化的空APFS测�
 不使用宿主私有xART内容，也不能称为SEP可信存储。下一阶段应先构造隔离的QEMU测试磁盘，
 再验证原版apfs_boot_util，当前不改sheng分区。
 
-### 当前保留候选与复测结果
+### 上一轮候选与复测结果
 
 CI40096344826，内核UUID84D29D6C-AC14-38FA-BAF1-B9B0699BAC7E，
 候选SHA256 d8f7d6a47161482aeec76131bb0b4e0d5df14150f19e227a72982e3a7b7fd35b。
@@ -972,7 +972,44 @@ QEMU再次进入原版launchd，43.730秒完成首条主函数指令，随后正
 signing_active=0。违规窗口出口经过编译及正常路径复测，未注入违规调用。
 
 实际启动证据保存在private/experiments/20261024-native-arm64e/user-pac/launchd-running-40096344826。
-当前候选保留于out/macos26-user-pac-40096344826，原始内核、dSYM及map保留于
+该轮实验内核现已被替代并删除；原始内核、dSYM及map保留于
 private/ci/macos26-arm64e-kernel-40096344826。已替代的实验内核与一次性ESP副本删除，
 输入恢复卷、配套组件、现用实机恢复备份和全部诊断记录保留。
 本轮未部署sheng，hardware_admitted与loadable继续为false。
+
+### iSC挂载任务已通过
+
+独立工作流40099729442生成新的2 GiB空APFS容器及GPT测试盘，含xART=0x100、
+Preboot=0x10、Hardware=0x140。参考Snapintosh的空卷角色字段与校验和处理，
+只修改本次原生格式化产生的、UUID及空状态均匹配的卷。没有拷贝宿主xART内容，
+也没有实现SEP可信存储。宿主格式化工具版本及全部卷UUID保存在isc.json。
+
+第一轮保持两块盘只读。原版apfs_boot_util已找到/dev/disk2s1，
+但挂载/System/Volumes/xarts返回EACCES，随后launchd报告mount-phase-1失败并请求panic。
+配套IOStorageFamily源码IOMediaBSDClient.cpp中，只读介质收到FWRITE时返回EACCES。
+该轮证据保存在private/experiments/20261024-native-arm64e/isc/readonly-40099729442。
+
+0019和0021为NativeVirtioBlock增加显式启用的测试介质写入与实际flush，
+默认仍要求只读后端。只有原生构建宏和指定设备树属性同时存在，才能协商可写设备。
+0020将第二块盘的全部写入限定到新建qcow2层；底层ISC及原BaseSystem在QEMU中均以只读打开。
+独立QEMU工具的写入、读回、flush对照通过，底图哈希保持不变。
+
+CI40100580890构建通过，内核UUID89887759-CAB1-300F-96D6-C05A97ADD2E1，
+候选SHA256 e75fbe390d20abe7c985b88525b9f805b94dfc6e74b71ae786c0cf1796d070e6。
+当前候选保留于out/macos26-scratch-40100580890，配套原始内核与符号保留于
+private/ci/macos26-arm64e-kernel-40100580890。
+实际QEMU启动再次执行配套原版ARM64E launchd，三个卷分别出现mount-complete：
+SHENG-xART、SHENG-Preboot、SHENG-Hardware。launchd在客体时间49.290秒进入
+data-protection，180秒期限内没有后续任务或panic正文。此时仍不能认为恢复系统启动完成。
+
+采集469次选定系统调用，预算未耗尽；块读取失败0，PAC计数为
+kernel_entries=user_returns=6522、completed_signing_windows=208161、signing_active=0。
+本轮实际块写入及flush计数均为0，因此只确认介质权限接入及原版APFS挂载通过，
+尚未用客体实际I/O验收新增写入与flush请求路径。两块原始输入在运行后重新核对哈希，均未改变。
+
+下一项是定位data-protection任务的真实等待点，并核对AppleKeyStore依赖。
+当前日志包含failed to find AppleKeyStore service，但尚不能只凭这行确定任务内部的停止原因。
+完整日志、截图、首次异常记录、配套符号身份和采集报告保存在
+private/experiments/20261024-native-arm64e/isc/overlay-40100580890。
+已删除本轮一次性ESP、写入层及被替代的旧实验内核，保留当前候选、原始配套输入与诊断记录。
+本轮未部署sheng；实机的最新验证点仍为旧版Image4检查，硬件准入保持false。
