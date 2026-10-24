@@ -3,14 +3,19 @@
 """Publish the native EL1 text-protection state in generated Apple DTs."""
 from pathlib import Path
 import struct
+import uuid
 
 
 def configure_native_text_state(path: Path, *, development_root: bool = False,
-                                root_hash: bytes | None = None) -> None:
+                                root_hash: bytes | None = None,
+                                boot_volume_uuid: uuid.UUID | None = None) -> None:
     data = path.read_bytes()
     chosen = asmb = auth = 0
     if root_hash is not None and not 16 <= len(root_hash) <= 16384:
         raise ValueError('invalid raw root-hash payload size')
+
+    if boot_volume_uuid is not None and root_hash is None:
+        raise ValueError('boot volume identity requires the paired recovery root hash')
 
     def node(at: int, parents: tuple[str, ...] = ()) -> tuple[bytes, int]:
         nonlocal chosen, asmb, auth
@@ -56,6 +61,10 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
             ensure('kernel-ctrr-to-be-enabled', struct.pack('<I', 0))
             if root_hash is not None:
                 ensure('osenvironment', b'recoveryos\0')
+            if boot_volume_uuid is not None:
+                identity = str(boot_volume_uuid).upper().encode('ascii') + b'\0'
+                ensure('boot-uuid', identity)
+                ensure('apfs-preboot-uuid', identity)
         if development_root and location == ('device-tree', 'chosen', 'asmb'):
             asmb += 1
             ensure('lp-sip0', struct.pack('<Q', 0))

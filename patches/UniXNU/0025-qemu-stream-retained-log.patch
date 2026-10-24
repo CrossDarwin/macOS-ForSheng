@@ -1,0 +1,155 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -95,6 +95,8 @@
+ parser.add_argument('--entry-min-pid',type=int,default=0,help='Minimum actual PID for an explicitly named process predicate')
+ parser.add_argument('--entry-register-equals', help='Select a real call by ARG:HEX_VALUE; observation only')
+ parser.add_argument('--entry-max-skips', type=int, default=16, help='Bounded real entry selection attempts, at most 65536')
++parser.add_argument('--retained-log-address', type=lambda value: int(value, 0), help='Read the SHENG ring between bounded debugger interrupts')
++parser.add_argument('--retained-log-uuid', help='Actual kernel UUID for the retained ring')
+ parser.add_argument('--read-stop-stack', type=int, choices=(128, 512), help='Read a bounded current kernel stack at the stopped PC')
+ parser.add_argument('--read-entry-region', action='append', default=[], help='Read a bounded direct kernel region ARG:HEX_OFFSET:HEX_LENGTH at entry or after real return')
+ parser.add_argument('--read-saved-user-register',action='append',default=[],help='At an ABI-qualified saved EL0 state, read bounded user memory through HEX_REGISTER:HEX_LENGTH')
+@@ -124,6 +126,10 @@
+ parser.add_argument('--smp', type=int, default=1, help='QEMU CPU count (offline secondary-CPU start check)')
+ parser.add_argument('--boot-progress-clock-fixture', help='Own diagnostic-only clock epoch: ENTRY:EPOCH:FREQUENCY:SECONDS')
+ args = parser.parse_args()
++if bool(args.retained_log_address) != bool(args.retained_log_uuid):
++    parser.error('Retained log capture requires both its real address and UUID')
++if args.retained_log_address and (not args.esp or not args.kernel or not args.system_registers or not 0xffff800000000000 <= args.retained_log_address < (1 << 64) - 82048):
++    parser.error('Retained log capture requires an identified ESP kernel and bounded kernel address')
+ if args.read_stop_stack and not args.esp:
+     parser.error('Stopped kernel stack observation requires an ESP boot')
+ progress_clock=None
+@@ -581,16 +587,29 @@
+                 trace_remaining.discard(current[32])
+                 return True
+ 
++            log_stream = None
++            next_log_sample = started + 1
++            if args.retained_log_address:
++                from retained_log_stream import RetainedLogStream
++                log_stream = RetainedLogStream(args.retained_log_address, args.retained_log_uuid, fixture)
++
+             def continue_observing():
+-                global cstring_start_event, syscall_start_event, primary_start_event
++                global cstring_start_event, syscall_start_event, primary_start_event, next_log_sample
+                 while True:
+-                    connection.settimeout(max(0.001, deadline - time.monotonic()))
++                    stop_deadline = min(deadline, next_log_sample) if log_stream else deadline
++                    connection.settimeout(max(0.001, stop_deadline - time.monotonic()))
+                     timed_out = False
+                     try:
+                         stopped = packet('c')
+                     except TimeoutError:
+                         stopped = packet(None)
+                         timed_out = True
++                    if log_stream and time.monotonic() >= next_log_sample:
++                        connection.settimeout(3)
++                        log_stream.sample(packet, time.monotonic() - started)
++                        next_log_sample = time.monotonic() + 1
++                        if timed_out and time.monotonic() < deadline:
++                            continue
+                     current = struct.unpack_from('<33Q', bytes.fromhex(packet('g')))
+                     if not timed_out and live_hid and current[32]==live_hid.address:
+                         connection.settimeout(3)
+@@ -1336,6 +1355,9 @@
+                 if len(raw) != length * 2 or raw.startswith('E'):
+                     raise RuntimeError('Cannot read actual stopped kernel stack')
+                 report['stopped_kernel_stack'] = dict(address=hex(pointer), bytes=raw)
++            if log_stream:
++                log_stream.sample(packet, time.monotonic() - started)
++                report['retained_log_stream'] = log_stream.report()
+             report['entry_regions'] = {}
+             region_arguments = entry_arguments
+             if region_arguments is None and values[32] == args.address and not interrupted:
+--- /dev/null
++++ b/scripts/qemu-entry/retained_log_stream.py
+@@ -0,0 +1,88 @@
++"""Read the versioned SHENG ring while QEMU is stopped; never change guest state."""
++import json
++import struct
++import uuid
++
++
++class RetainedLogStream:
++    HEADER, PREFIX, TAIL = 128, 16384, 65536
++
++    def __init__(self, base, identity, directory):
++        self.base = base
++        self.identity = uuid.UUID(identity).bytes
++        self.directory = directory
++        self.next = 0
++        self.samples = 0
++        self.missing = 0
++        self.dropped = 0
++        self.ready = False
++        (directory / 'stream-console.bin').write_bytes(b'')
++        (directory / 'stream-console.jsonl').write_text('')
++
++    def sample(self, packet, elapsed):
++        # A fixed total budget keeps capture bounded even with many tracepoints
++        if self.samples >= 256:
++            return
++        raw = bytearray()
++        size = self.HEADER + self.PREFIX + self.TAIL
++        for offset in range(0, size, 4096):
++            length = min(4096, size - offset)
++            value = packet(f'm{self.base + offset:x},{length:x}')
++            if value.startswith('E'):
++                if not self.ready:
++                    return
++                raise RuntimeError('Previously mapped retained log became unreadable')
++            if len(value) != length * 2:
++                raise RuntimeError('Incomplete retained log memory response')
++            raw.extend(bytes.fromhex(value))
++        if raw[:8] != b'SHNLOG01':
++            if not self.ready:
++                return
++            raise RuntimeError('Retained log signature changed during observation')
++        if struct.unpack_from('<4I', raw, 8) != (1, self.HEADER, self.PREFIX, self.TAIL):
++            raise RuntimeError('Unsupported retained log layout')
++        if raw[112:128] != self.identity:
++            raise RuntimeError('Retained log UUID differs from this kernel')
++        total, dropped, writer, panic = struct.unpack_from('<QQII', raw, 24)
++        if writer not in (0, 1) or panic not in (0, 1, 2, 3):
++            raise RuntimeError('Invalid retained log writer state')
++        if total < self.next:
++            raise RuntimeError('Retained log counter moved backwards')
++        self.ready = True
++        chunks = []
++        cursor = self.next
++        if cursor < min(total, self.PREFIX):
++            end = min(total, self.PREFIX)
++            chunks.append((cursor, bytes(raw[self.HEADER + cursor:self.HEADER + end])))
++            cursor = end
++        oldest = max(min(total, self.PREFIX), total - self.TAIL)
++        if writer and total >= self.TAIL and oldest == total - self.TAIL:
++            oldest += 1
++        gap = max(0, oldest - cursor)
++        cursor = max(cursor, oldest)
++        if cursor < total:
++            ring = raw[self.HEADER + self.PREFIX:]
++            start = cursor % self.TAIL
++            chunks.append((cursor, bytes((ring[start:] + ring[:start])[:total - cursor])))
++        with (self.directory / 'stream-console.bin').open('ab') as stream:
++            if gap:
++                stream.write(f'\n[... {gap} committed bytes missed between samples ...]\n'.encode())
++            for _, data in chunks:
++                stream.write(data)
++            if dropped > self.dropped:
++                stream.write(f'\n[... {dropped - self.dropped} bytes dropped by guest writer ...]\n'.encode())
++        record = dict(elapsed_seconds=round(elapsed, 3), start=self.next, end=total,
++                      missing_bytes=gap, guest_dropped_bytes=dropped,
++                      writer_active=bool(writer), panic_state=panic,
++                      chunks=[dict(start=at, bytes=len(data)) for at, data in chunks])
++        with (self.directory / 'stream-console.jsonl').open('a') as stream:
++            stream.write(json.dumps(record) + '\n')
++        self.next, self.dropped = total, dropped
++        self.samples += 1
++        self.missing += gap
++
++    def report(self):
++        return dict(samples=self.samples, total_bytes=self.next, missing_bytes=self.missing,
++                    guest_dropped_bytes=self.dropped, ready=self.ready, read_only=True,
++                    complete=self.ready and not (self.missing or self.dropped),
++                    periodic_debugger_interrupts=True, sample_limit=256)

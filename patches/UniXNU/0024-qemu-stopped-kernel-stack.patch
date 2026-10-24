@@ -1,0 +1,34 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -95,6 +95,7 @@
+ parser.add_argument('--entry-min-pid',type=int,default=0,help='Minimum actual PID for an explicitly named process predicate')
+ parser.add_argument('--entry-register-equals', help='Select a real call by ARG:HEX_VALUE; observation only')
+ parser.add_argument('--entry-max-skips', type=int, default=16, help='Bounded real entry selection attempts, at most 65536')
++parser.add_argument('--read-stop-stack', type=int, choices=(128, 512), help='Read a bounded current kernel stack at the stopped PC')
+ parser.add_argument('--read-entry-region', action='append', default=[], help='Read a bounded direct kernel region ARG:HEX_OFFSET:HEX_LENGTH at entry or after real return')
+ parser.add_argument('--read-saved-user-register',action='append',default=[],help='At an ABI-qualified saved EL0 state, read bounded user memory through HEX_REGISTER:HEX_LENGTH')
+ parser.add_argument('--inspect-entry-user-state', action='store_true', help='Read ABI-qualified user saved states from bounded saved registers and compiler-derived current-thread linkage')
+@@ -123,6 +124,8 @@
+ parser.add_argument('--smp', type=int, default=1, help='QEMU CPU count (offline secondary-CPU start check)')
+ parser.add_argument('--boot-progress-clock-fixture', help='Own diagnostic-only clock epoch: ENTRY:EPOCH:FREQUENCY:SECONDS')
+ args = parser.parse_args()
++if args.read_stop_stack and not args.esp:
++    parser.error('Stopped kernel stack observation requires an ESP boot')
+ progress_clock=None
+ if args.boot_progress_clock_fixture:
+     parts=args.boot_progress_clock_fixture.split(':')
+@@ -1325,6 +1328,14 @@
+                 report['function_entry_stack'] = hex(return_stack)
+                 report['function_return_stack_matched'] = values[31] == return_stack and values[32] == return_target and not interrupted
+                 report['function_return_other_stacks_skipped'] = other_stack_returns
++            if args.read_stop_stack:
++                pointer, length = values[31], args.read_stop_stack
++                if not args.esp or not 0xffff800000000000 <= pointer <= (1 << 64) - length:
++                    raise ValueError('Stopped stack must be bounded kernel memory')
++                raw = packet(f'm{pointer:x},{length:x}')
++                if len(raw) != length * 2 or raw.startswith('E'):
++                    raise RuntimeError('Cannot read actual stopped kernel stack')
++                report['stopped_kernel_stack'] = dict(address=hex(pointer), bytes=raw)
+             report['entry_regions'] = {}
+             region_arguments = entry_arguments
+             if region_arguments is None and values[32] == args.address and not interrupted:

@@ -82,6 +82,8 @@ def main() -> None:
                         help='save the owned 512 KiB XNU panic region through its actual gPanicBase pointer')
     parser.add_argument('--let-vector-log', action='store_true',
                         help='allow the kernel exception hook to retain the first fault before a bounded stop')
+    parser.add_argument('--stream-retained-log', action='store_true',
+                        help='copy the real log ring at one-second debugger stops; report gaps explicitly')
     parser.add_argument('--capture-screen', action='store_true', help='save the actual QEMU framebuffer')
     parser.add_argument('--handoff-pause', action='store_true', help='exercise the ten-second hardware handoff capture window')
     parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
@@ -123,10 +125,16 @@ def main() -> None:
                         help='explicit QEMU CSR policy allowing the unauthenticated experiment root')
     parser.add_argument('--kext-log', type=lambda value: int(value, 0),
                         help='enable the existing XNU kextlog filter for this QEMU run')
+    parser.add_argument('--qemu-memory-mib', type=int, choices=(1024, 4096), default=1024,
+                        help='actual QEMU RAM; recovery scripts need room for their default tmpfs node budget')
+    parser.add_argument('--owned-memory-mib', type=int, choices=(512, 2048, 3072), default=512,
+                        help='real contiguous DarwinBoot allocation inside QEMU RAM')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
     parser.add_argument('--decode-existing-snapshot', action='store_true',
                         help='decode a saved snapshot without restarting QEMU')
     args = parser.parse_args()
+    if args.owned_memory_mib + 512 > args.qemu_memory_mib:
+        parser.error('leave at least 512 MiB outside the owned kernel window for UEFI and boot inputs')
     if args.capture_threads and not args.process_layout:
         parser.error('--capture-threads requires --process-layout')
     if args.read_saved_user_register and args.checkpoint != 'handle_pac_fail':
@@ -290,8 +298,8 @@ def main() -> None:
             'type = "xnu"\npath = "Payloads/kernel.macho"\n'
             f'args = "{boot_args}"\n')
         dt_command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
-                        '--output', payload / 'kernel.macho.adt', '--dram-size', '0x40000000',
-                        '--owned-memory-size', '0x20000000', '--panic-log', '--armvirt', '--armcpu',
+                        '--output', payload / 'kernel.macho.adt', '--dram-size', hex(args.qemu_memory_mib << 20),
+                        '--owned-memory-size', hex(args.owned_memory_mib << 20), '--panic-log', '--armvirt', '--armcpu',
                         '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                         '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
                         '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)]
@@ -302,7 +310,7 @@ def main() -> None:
             fdt = args.output.resolve() / 'qemu-block.dtb'
             fdt_command = ['qemu-system-aarch64', '-M',
                 f'virt,virtualization=off,secure=off,gic-version=3,dumpdtb={fdt}',
-                '-cpu', 'cortex-a710', '-m', '1024', '-smp', '1', '-nic', 'none', '-display', 'none',
+                '-cpu', 'cortex-a710', '-m', str(args.qemu_memory_mib), '-smp', '1', '-nic', 'none', '-display', 'none',
                 '-global', 'virtio-mmio.force-legacy=false', '-blockdev', json.dumps(dict(
                     driver='raw', **{'node-name': 'root-disk', 'read-only': True}, file=dict(
                         driver='file', filename=str(disk), **{'read-only': True, 'locking': 'off'}))),
@@ -323,14 +331,20 @@ def main() -> None:
                 dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
         subprocess.run(dt_command, check=True)
         configure_native_text_state(payload / 'kernel.macho.adt',
-                                    development_root=args.qemu_development_root, root_hash=root_hash)
+                                    development_root=args.qemu_development_root, root_hash=root_hash,
+                                    boot_volume_uuid=args.root_volume_uuid if root_hash is not None else None)
         record['qemu_development_root'] = args.qemu_development_root
+        record['qemu_memory_mib'] = args.qemu_memory_mib
+        record['requested_owned_memory_mib'] = args.owned_memory_mib
         record['kernel_ctrr_to_be_enabled'] = 0
         command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
                    '--fixture', args.output, '--esp', esp, '--kernel', kernel,
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
-                   '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
+                   '--qemu-memory-mib', str(args.qemu_memory_mib), '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        if args.stream_retained_log:
+            command += ['--retained-log-address', hex(addresses['_sheng_log_buffer']),
+                        '--retained-log-uuid', record['uuid']]
         if args.checkpoint_start:
             command += ['--primary-start-address', hex(addresses['_' + args.checkpoint_start])]
         if pac_request:

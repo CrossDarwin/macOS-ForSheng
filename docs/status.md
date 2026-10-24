@@ -1075,7 +1075,7 @@ B密钥保持开启；从EL0进入内核时，在任何内核认证前恢复IA/D
 一次性写入层已删除，已替代的CI40100580890实验候选也已删除，原始内核及配套符号保留。
 512条系统调用预算已耗尽，但后续原版控制台和panic完整保存；不能把计数截止当成任务不再运行。
 
-### sh及bash已执行恢复脚本，tmpfs加载身份修复中
+### sh及bash已执行恢复脚本，原版tmpfs已加载
 
 CI40106907035的内核UUID0387A9C5-C7CD-330D-9867-E4BF1A40B09E。
 原版sh成功转入bash，输出rc.temporaryDataVolume -- Arguments:[]，随后实际执行
@@ -1096,7 +1096,28 @@ Access Failure - client not entitled to manage kext in non-primary KC。
 0049与封装器增加配套版本标记及_NativePrelinkPrimary元数据。
 只让本次已预链接、类型为Unknown且带该标记的启动组件通过原BootKC范围检查；
 根权限、任务entitlement检查、其他KC限制和原版模块代码继续保留。
-c87c97a已提交，CI40108221784构建中，尚未验证tmpfs实际加载及Data卷挂载。
+c87c97a对应的CI40108221784构建通过，内核UUID68F2CBDB-9E98-3785-A2E1-9613AF4762B6。
+完整恢复候选SHA256 a6155d0701e8479e41dd7352b39e2b78ed9a65d43f70c2a6ba6ad25aa59d4fab。
+QEMU实际接受原版kmutil的LoadFromKC请求，原版tmpfs完成module start并加载成功。
+容器仍为旧式预链接，日志中的?? KC不能解释为真正MH_FILESET已构造。
+
+新的阻断是原版mount_tmpfs挂载返回EINVAL。断点0xfffffe000d5e54dc取得实际参数：
+容量0x4000页、每页16KiB、节点上限1000000、hw.memsize=512MiB。
+原版模块的后续校验要求节点数乘288字节不超过内存预算，当前预算约76.8MiB，
+而默认一百万节点需要约274.7MiB。容量已经从2.5GiB自动缩到256MiB，
+因此不能只依据容量提示判断失败原因，也不是此前假设的用户页大小不一致。
+观察器增加实际QEMU RAM与真实连续内核分配参数，下一轮用4GiB RAM、3GiB内核窗口，
+保留原版脚本和组件复测。DarwinBoot实际分配owned=0xC0000000，hw.memsize随之增加。
+原版mount_tmpfs成功创建Data，ditto复制模板，mkdir及setlanguage完成，32MiB的/Volumes也成功挂载。
+这轮没有修改原版工具、脚本或tmpfs校验；之前的EINVAL由实际内存配置触发。
+新的停止为prebootensurer exit(70)：Unable to find IODeviceTree:/chosen boot-uuid。
+正在按Snapintosh的恢复根卷身份机制，发布已验证的BaseSystem卷UUID及apfs-preboot-uuid。
+不会把BaseSystem卷伪称为已安装系统的VolumeGroup；安装根卷需要独立的组身份和Preboot内容。
+
+只读断点现场及完整启动日志保存在private/experiments/20261025-native-arm64e/tmpfs。
+新增GDB读取停止时128/512字节内核栈的选项，避免只见参数寄存器而无法读取校验栈。
+首轮错误使用仅支持x0-x7的入口选项读取SP，工具拒绝，寄存器保留在partial_report；
+第二轮独立栈读取成功，已删除两轮一次性写入层和旧CI40106907035实验候选。
 
 config/macos26-recovery-modules.json固定配套恢复系统所需的pthread、APFS、
 FSCompression和tmpfs，封装器使用--recovery-components，自动带入原版依赖。
@@ -1104,3 +1125,31 @@ FSCompression和tmpfs，封装器使用--recovery-components，自动带入原�
 观察器现会在完整panic输出后的halt_all_cpus处收集现场，避免继续等满观察期限；
 实际stopped_at_halt=true已确认，reached只表示请求的检查点，不代表系统完成启动。
 上述两轮证据位于private/experiments/20261025-native-arm64e/user-a-policy。
+
+### 恢复系统开始启动服务，重启来源继续取证
+
+本轮保持同一候选，只补齐实际BaseSystem卷的boot-uuid/apfs-preboot-uuid。
+原版prebootensurer找到该身份后，因没有Recovery角色卷而正常返回；
+这不代表已经具备完整Recovery容器或Preboot启动对象。
+原版脚本继续bs-data-tasks -P 2，随后执行sandbox-enable-root-translation、rc.cdrom、
+init-with-data-volume及fips等任务。用户态corecrypto FIPS POST全部通过。
+launchd开始运行系统域服务，已见recoveryosd、InstallerProgress、configd及fseventsd的生命周期。
+尚未验证图形界面；随后用户空间发起完整关机/重启流程，停止处没有最终panic头。
+
+该轮打印566017字节，单次RAM快照只保留前缀和尾部，484097字节中段已覆盖。
+不能据此归因重启，也不能把first-sync记录中的普通缺页当作致命异常。
+观察器增加--stream-retained-log，每秒通过GDB中断复制实际环形缓冲，随后继续执行。
+最多256次采样，按UUID验证，按单调字节计数去重，覆盖缺口和guest writer丢字节分别记录。
+它会扰动执行时序，只用于QEMU，不是实机日志传输。
+环形缓冲多次回绕、采样缺口、未提交写入、UUID不匹配及计数倒退的针对性测试通过。
+实测173次采样，保存602807字节，missing_bytes=0，guest_dropped_bytes=82，因此complete=false。
+已确认原版recoveryosd运行pmset autorestart 1失败，随后执行/sbin/reboot。
+原版recoveryosd的0x1000015fc–0x100001614在子任务非零退出时调用重启函数，与日志吻合。
+这是原版用户空间策略触发的重启，不能称为内核panic，也不能称为恢复界面可用。
+同轮大量launchd查询返回Sandbox restriction，原版Sandbox尚未封装；下一轮加入配套原版组件对照。
+身份版与stream版现场保存在private/experiments/20261025-native-arm64e/recovery-services，
+一次性ESP和写入层已删除。
+
+sheng准入还需独立解决根盘路径、配套内核硬件初始化和可读日志回收。
+VirtIO根盘的QEMU通过不能代替平板UFS；首轮也可评估只读内存盘路径。
+硬件封装器目前仍只准入先前记录的Image4早期实验，未对新版用户空间候选放行。
