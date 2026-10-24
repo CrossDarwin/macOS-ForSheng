@@ -139,3 +139,13 @@ python3 scripts/observe_native_bootstrap.py \
 | F | `PE_create_console`返回 |
 
 映射无效时仍记录阶段，不宣称写屏成功。`sheng_bootstrap_vm_witness`只在实际写入并读回当前紫色像素后设置对应位；封装要求完整QEMU的B–F读回均通过。
+
+0031为当前原生早期实验增加保留日志文字面板，不再依赖色条定位控制台后的执行。
+它复用XNU的ISO Latin-1字体，使用已实机通过的原生`ml_io_map`路径映射至多4 MiB的面板页面。
+sheng面板从第640行开始，8行、2倍字体；小型QEMU GOP从第32行开始，使用1倍字体。原始阶段行保留。
+字符由原保留日志writer串行绘制，不申请内存，不等待控制台锁；重入仍只增加原日志的dropped计数。
+面板启用后视频字符回调不再重复绘制同一字符，避免两个渲染器覆盖。文字面板仅用于当前早期内核实验，图形显示所有权交接尚未实现。
+首个panic会重新开始面板并固定原因所在行，剩余行循环显示后续回溯；环形RAM日志与标准panic区继续完整保存。
+`sheng_panel_witness`仅在实际写入并读回一个字体前景像素后置位，完整QEMU还须确认绑定成功、字符已输出及可读的panic原因。
+
+`PE_init_printf`、CPU idle、平台中断、调试初始化、CPU PIO、时基、FIQ、栈保护熵和`machine_startup`入口增加直接保留日志，不将缺少文字直接解释成函数未执行。

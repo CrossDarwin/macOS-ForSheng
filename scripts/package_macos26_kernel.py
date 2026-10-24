@@ -45,6 +45,11 @@ def main() -> None:
     if '_sheng_mmu_sync_fault' in symbols and not observed.get('bootstrap_diagnostic_disarmed'):
         raise ValueError('requires this MMU-on diagnostic to disarm after console setup in QEMU')
     native_build = json.loads((kernel.parent / 'build.json').read_text())
+    if native_build.get('panel_console_source_sha256'):
+        panel = observed.get('observed_globals', {})
+        if (panel.get('_sheng_panel_ready') != '0x1' or panel.get('_sheng_panel_witness') != '0x1'
+                or int(panel.get('_sheng_panel_characters', '0x0'), 16) < 100):
+            raise ValueError('requires retained-log panel binding, real glyph readback and printed text in QEMU')
     if (native_build.get('bootstrap_c_trace_source_sha256') and
             observed.get('observed_globals', {}).get('_sheng_bootstrap_c_stage') != '0xf'):
         raise ValueError('requires this kernel to complete the early C stage strip in QEMU')

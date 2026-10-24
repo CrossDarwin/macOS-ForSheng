@@ -51,6 +51,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0028-native-post-mmu-stage-strip.patch',
     ROOT / 'platform/sheng/macos26/patches/0029-native-c-bootstrap-stage-strip.patch',
     ROOT / 'platform/sheng/macos26/patches/0030-native-vm-console-stage-strip.patch',
+    ROOT / 'platform/sheng/macos26/patches/0031-native-retained-log-panel.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -150,6 +151,8 @@ def prepare() -> dict:
             subprocess.run(['git', '-C', source, 'apply', patch], check=True)
     retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
     stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
+    panel_console = ROOT / 'platform/sheng/macos26/log/panel_console.h'
+    stage_file(panel_console, source / 'pexpert/arm/pe_sheng_panel.h')
     early_exception = ROOT / 'platform/sheng/macos26/log/early_exception.h'
     stage_file(early_exception, source / 'osfmk/arm64/sheng_early_exception.h')
     bootstrap_sync = ROOT / 'platform/sheng/macos26/log/bootstrap_sync.h'
@@ -165,7 +168,8 @@ def prepare() -> dict:
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
-                    'osfmk/arm64/sheng_c_trace.h', 'osfmk/arm64/sheng_vm_trace.h'], check=True)
+                    'osfmk/arm64/sheng_c_trace.h', 'osfmk/arm64/sheng_vm_trace.h',
+                    'pexpert/arm/pe_sheng_panel.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -174,6 +178,7 @@ def prepare() -> dict:
                   hardware_source_commit=upstream['commit'],
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   retained_log_source_sha256=sha(retained_log),
+                  panel_console_source_sha256=sha(panel_console),
                   early_exception_source_sha256=sha(early_exception),
                   bootstrap_sync_source_sha256=sha(bootstrap_sync),
                   bootstrap_trace_source_sha256=sha(bootstrap_trace),

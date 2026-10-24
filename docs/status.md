@@ -609,3 +609,9 @@ Actions 40059689947（513345f）成功构建0030，UUID 59C3AB6E-8EFC-3D7F-9501-
 新候选1d9ede2dd3818cfd1ed8b192d2e242b97f5d3051c89011af1cd4a6209f130557已封装；Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次RAM启动收到Booting OKAY。
 实机紫色阶段结果待用户反馈，记录位于private/experiments/20261024-native-arm64e/vm-console-stage-strip。
 旧88b607ff部署镜像及本次QEMU的ESP暂存已删除，配套诊断、dSYM和有效恢复备份保留。
+
+1d9ede2d实机照片与用户回复确认VM阶段0–F全紫，XNU仍为1。正式VM已返回，原生I/O映射、serial_init、KPRINTF启动、首条kprintf和PE_create_console均已执行并返回。
+尚未得到可读实机文字，不能将旧入口ESR=0解释为后续无异常。QEMU同版截图已有完整文字panic，当前差异是实机文字输出。
+返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1，无切槽或分区写入。
+新增0031将已有保留日志镜像到独立、有界的原生I/O文字面板，复用XNU字体；不依赖视频控制台锁，固定首个panic原因，原RAM日志格式不变。
+增加控制台后的函数进入/返回文字，覆盖到machine_startup入口；不再增加阶段色条。ARM64E目标定向编译通过，完整内核构建与QEMU文字结果待完成。

@@ -1,0 +1,151 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -164,6 +164,9 @@
+ void sheng_log_begin(uint64_t physical_base, uint64_t virtual_base, const void *header);
+ void sheng_log_panic(uint64_t caller, const char *message);
+ void sheng_bootstrap_capture_end(void);
++void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
++void sheng_log_stage(const char *message);
++extern volatile uint64_t sheng_panel_ready;
+ #endif
+ 
+ void PE_init_printf(
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -374,6 +374,29 @@
+ 	}
+ 	sheng_vm_trace(11);
+ }
++static void
++sheng_native_log_panel(const boot_args *args)
++{
++	const Boot_Video *v = &args->Video;
++	const uint64_t stride = v->v_rowBytes;
++	const unsigned scale = v->v_width >= 1600 ? 2 : 1;
++	const unsigned top = v->v_height >= 1024 ? 640 : 32;
++	unsigned columns = v->v_width > 32 ? (v->v_width - 32) / (8 * scale) : 0;
++	if (columns > 100) columns = 100;
++	if (!v->v_baseAddr || (v->v_depth & 255) != 32 || stride < 2560 || stride > 65536 ||
++	    columns < 32 || v->v_width > stride / 4 || v->v_height > 16384 ||
++	    top + 8 * 16 * scale > v->v_height) return;
++	const uint64_t first = v->v_baseAddr + top * stride + 64;
++	const uint64_t end = first + (8 * 16 * scale - 1) * stride + columns * 8 * scale * 4;
++	if (first < v->v_baseAddr || end <= first || end >= (1ull << 47)) return;
++	const uintptr_t offset = first & 16383;
++	const vm_size_t bytes = (offset + end - first + 16383) & ~(vm_size_t)16383;
++	if (bytes > 4 * 1048576) return;
++	const vm_offset_t mapped = ml_io_map(first - offset, bytes);
++	if (mapped) sheng_log_bind_panel(mapped + offset, stride, columns, 8, scale);
++	sheng_log_stage(sheng_panel_ready ? "native log panel ready" : "native log panel refused");
++}
++#define SHENG_LOG_STAGE(message) sheng_log_stage(message)
+ #define SHENG_VM_TRACE(stage) sheng_vm_trace(stage)
+ #define SHENG_VM_REMAP() sheng_vm_trace_remap()
+ #define SHENG_C_TRACE(stage) sheng_bootstrap_c_trace(args, stage)
+@@ -381,6 +404,7 @@
+ #define SHENG_C_TRACE(stage) ((void)0)
+ #define SHENG_VM_TRACE(stage) ((void)0)
+ #define SHENG_VM_REMAP() ((void)0)
++#define SHENG_LOG_STAGE(message) ((void)0)
+ #endif
+ 
+ __startup_func
+@@ -688,9 +712,14 @@
+ 	}
+ 	PE_create_console();
+ 	SHENG_VM_TRACE(15);
++#if SHENG
++	sheng_native_log_panel(args);
++#endif
+ 
+ 	/* setup console output */
++	SHENG_LOG_STAGE("PE_init_printf enter");
+ 	PE_init_printf(FALSE);
++	SHENG_LOG_STAGE("PE_init_printf returned");
+ 
+ #if __arm64__
+ #if DEBUG
+@@ -698,12 +727,18 @@
+ #endif
+ #endif
+ 
++	SHENG_LOG_STAGE("cpu_machine_idle_init enter");
+ 	cpu_machine_idle_init(TRUE);
+-
++	SHENG_LOG_STAGE("cpu_machine_idle_init returned");
++
++	SHENG_LOG_STAGE("PE_init_platform enter");
+ 	PE_init_platform(TRUE, &BootCpuData);
++	SHENG_LOG_STAGE("PE_init_platform returned");
+ 
+ 	/* Initialize the debug infrastructure system-wide and on the local core. */
++	SHENG_LOG_STAGE("pe_arm_debug_init_early enter");
+ 	pe_arm_debug_init_early(&BootCpuData);
++	SHENG_LOG_STAGE("pe_arm_debug_init_early returned");
+ 
+ #if __arm64__
+ 	extern bool cpu_config_correct;
+@@ -711,7 +746,9 @@
+ 		panic("The cpumask=N boot arg cannot be used together with cpus=N, and the boot CPU must be enabled");
+ 	}
+ 
++	SHENG_LOG_STAGE("ml_map_cpu_pio enter");
+ 	ml_map_cpu_pio();
++	SHENG_LOG_STAGE("ml_map_cpu_pio returned");
+ 
+ #if APPLE_ARM64_ARCH_FAMILY
+ 	configure_late_apple_regs(true);
+@@ -719,19 +756,25 @@
+ 
+ #endif
+ 
++	SHENG_LOG_STAGE("cpu_timebase_init enter");
+ 	cpu_timebase_init(TRUE);
++	SHENG_LOG_STAGE("cpu_timebase_init returned");
+ 
+ #if KPERF
+ 	/* kptimer_curcpu_up() must be called after cpu_timebase_init */
+ 	kptimer_curcpu_up();
+ #endif /* KPERF */
+ 
++	SHENG_LOG_STAGE("PE_init_cpu enter");
+ 	PE_init_cpu();
++	SHENG_LOG_STAGE("PE_init_cpu returned");
+ #if __arm64__
+ 	apt_msg_init();
+ 	apt_msg_init_cpu();
+ #endif
++	SHENG_LOG_STAGE("fiq_context_init enter");
+ 	fiq_context_init(TRUE);
++	SHENG_LOG_STAGE("fiq_context_init returned");
+ 
+ 
+ #if HIBERNATION
+@@ -745,11 +788,14 @@
+ 	 * function, we do not risk failing the check even though
+ 	 * we mutate the guard word during execution.
+ 	 */
++	SHENG_LOG_STAGE("stack guard entropy enter");
+ 	__stack_chk_guard = (unsigned long)early_random();
++	SHENG_LOG_STAGE("stack guard entropy returned");
+ 	/* Zero a byte of the protector to guard
+ 	 * against string vulnerabilities
+ 	 */
+ 	__stack_chk_guard &= ~(0xFFULL << 8);
++	SHENG_LOG_STAGE("machine_startup enter");
+ 	machine_startup(args);
+ }
+ 
+--- a/osfmk/console/video_console.c
++++ b/osfmk/console/video_console.c
+@@ -1230,6 +1230,10 @@
+ void
+ vcputc_options(char c, __unused bool poll)
+ {
++#if SHENG
++	/* 字符已进入保留日志，由原生面板显示，避免两个渲染器覆盖 */
++	if (sheng_panel_ready) return;
++#endif
+ 	if (gc_initialized && gc_enabled) {
+ 		VCPUTC_LOCK_LOCK();
+ 		if (gc_enabled) {

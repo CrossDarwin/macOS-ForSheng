@@ -32,6 +32,7 @@ volatile uint64_t sheng_bootstrap_vm_stage = UINT64_MAX;
 volatile uint64_t sheng_bootstrap_vm_pixels;
 uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
 volatile uint64_t sheng_bootstrap_vm_witness;
+#include "pe_sheng_panel.h"
 
 void sheng_bootstrap_capture_end(void)
 {
@@ -71,9 +72,44 @@ void sheng_log_putc(char byte)
         r->tail[total % SHENG_LOG_TAIL] = (uint8_t)byte;
         sheng_log_clean(&r->tail[total % SHENG_LOG_TAIL], 1);
         __atomic_store_n(&r->total, total + 1, __ATOMIC_RELEASE);
+        sheng_panel_putc((unsigned char)byte);
     }
     __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
     sheng_log_clean(r, 64);
+}
+
+void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
+    unsigned rows, unsigned scale)
+{
+    struct sheng_log_record *r = &sheng_log_buffer;
+    uint32_t expected = 0;
+    if (!address || stride < 2560 || stride > 65536 || columns < 32 || columns > 100 ||
+        rows != 8 || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride ||
+        !__atomic_compare_exchange_n(&r->writer, &expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
+    sheng_panel.base = address;
+    sheng_panel.stride = stride;
+    sheng_panel.columns = columns;
+    sheng_panel.rows = rows;
+    sheng_panel.scale = scale;
+    sheng_panel_ready = 1;
+    sheng_panel_reset();
+    /* 只回放有界尾部；后续panic首行单独固定，不被长回溯覆盖 */
+    const uint64_t total = r->total;
+    uint64_t start = total > 512 ? total - 512 : 0;
+    if (start) {
+        while (start < total && r->tail[start % SHENG_LOG_TAIL] != '\n') start++;
+        if (start < total) start++;
+    }
+    for (; start < total; start++) sheng_panel_putc(r->tail[start % SHENG_LOG_TAIL]);
+    __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+}
+
+void sheng_log_stage(const char *message)
+{
+    const char *prefix = "\nSHENG: ";
+    while (*prefix) sheng_log_putc(*prefix++);
+    for (unsigned n = 0; message && message[n] && n < 160; n++) sheng_log_putc(message[n]);
+    sheng_log_putc('\n');
 }
 
 void sheng_log_begin(uint64_t physical_base, uint64_t virtual_base, const void *header)
@@ -105,8 +141,10 @@ void sheng_log_panic(uint64_t caller, const char *message)
 {
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
+    int first = 0;
     if (__atomic_compare_exchange_n(&r->panic_state, &expected, 1, 0,
                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        first = 1;
         r->pc = caller;
 #if defined(__aarch64__)
         __asm__ volatile ("mov %0, sp" : "=r"(r->sp));
@@ -118,12 +156,24 @@ void sheng_log_panic(uint64_t caller, const char *message)
         __atomic_store_n(&r->panic_state, 2, __ATOMIC_RELEASE);
         sheng_log_clean(r, 128);
     }
+    expected = 0;
+    if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
+        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        sheng_panel_reset();
+        __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+    }
     {
         const char *prefix = "\nSHENG-LOG: panic: ";
         while (*prefix) sheng_log_putc(*prefix++);
         for (unsigned n = 0; message && message[n] && n < 511; n++)
             sheng_log_putc(message[n]);
         sheng_log_putc('\n');
+    }
+    expected = 0;
+    if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
+        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        sheng_panel_pin_panic();
+        __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
     }
     sheng_log_clean(r, sizeof(*r));
 }
