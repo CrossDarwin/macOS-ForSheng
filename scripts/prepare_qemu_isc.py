@@ -112,8 +112,7 @@ def main():
         return plistlib.loads(result.stdout) if plist else result.stdout.decode()
 
     seed = out / 'fresh.cdr'
-    run('hdiutil', 'create', '-size', '512m', '-layout', 'NONE', '-fs', 'APFS',
-        '-volname', 'SHENG-xART', '-type', 'UDTO', str(seed))
+    run('hdiutil', 'create', '-size', '512m', '-layout', 'NONE', '-type', 'UDTO', str(seed))
     attached = run('hdiutil', 'attach', '-nomount', '-nobrowse', '-plist', str(seed), plist=True)
     whole = attached['system-entities'][0]['dev-entry']
     identities = {}
@@ -122,6 +121,9 @@ def main():
         owned = [i for i in images if Path(i['image-path']).resolve() == seed]
         if len(owned) != 1 or whole not in [e.get('dev-entry') for e in owned[0]['system-entities']]:
             raise ValueError('attachment does not belong to the newly created test file')
+        # hdiutil's -fs APFS creates a container limited to one volume.
+        # diskutil formats the owned blank image with ordinary container limits.
+        run('diskutil', 'apfs', 'createContainer', whole)
         containers = run('diskutil', 'apfs', 'list', '-plist', plist=True)['Containers']
         found = [c for c in containers if whole.removeprefix('/dev/') in
                  [p['DeviceIdentifier'] for p in c.get('PhysicalStores', [])]]
@@ -130,7 +132,7 @@ def main():
         container = found[0]['ContainerReference']
         # Native formatting supplies all filesystem structures. Roles are assigned
         # offline because xART creation is restricted to entitled host callers.
-        for name in ('SHENG-Preboot', 'SHENG-Hardware'):
+        for name in ROLES:
             run('diskutil', 'apfs', 'addVolume', container, 'APFS', name, '-nomount')
         containers = run('diskutil', 'apfs', 'list', '-plist', plist=True)['Containers']
         current = [c for c in containers if c['ContainerReference'] == container]
