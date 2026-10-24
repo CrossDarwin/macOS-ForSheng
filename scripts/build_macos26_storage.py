@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import plistlib
+import subprocess
 
 from native_macho import macho
 
@@ -39,11 +40,19 @@ def build(root, out, compile_record, source, run, record, env):
             if arg == '-o':
                 command += ['-o', str(obj)]
             index += 1
+        elif arg == '-Xclang' and arguments[index + 1].startswith('-W'):
+            index += 1
+        elif arg.startswith('-W'):
+            pass
         elif arg not in ('-MMD', '-MD', '-MP'):
             command.append(arg)
         index += 1
     command[1:1] = ['-I', str(destination / 'include')]
-    command += ['-I', str(source / 'osfmk'), '-Werror', '-Wno-unused-parameter']
+    sdk = Path(subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
+    command += ['-I', str(source / 'osfmk'), '-I', str(sdk / 'usr/include'),
+                '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
+                '-Wno-c99-designator', '-Wno-reorder-init-list',
+                '-Wno-deprecated-enum-enum-conversion', '-Wno-unnecessary-virtual-specifier']
     run(command, 'storage-driver-compile', record, cwd=Path(compile_record['directory']), env=env)
     binary = destination / 'NativeVirtioBlock.macho'
     run(['xcrun', 'clang++', '-target', 'arm64e-apple-macos26.5', '-nostdlib',
