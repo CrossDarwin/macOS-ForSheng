@@ -1,0 +1,125 @@
+--- a/osfmk/prng/prng_random.c
++++ b/osfmk/prng/prng_random.c
+@@ -514,16 +514,59 @@
+ extern kern_return_t corecrypto_kext_start(kmod_info_t *, void *);
+ SECURITY_READ_ONLY_LATE(kern_return_t) sheng_corecrypto_status = KERN_FAILURE;
+ SECURITY_READ_ONLY_LATE(kmod_info_t *) sheng_native_crypto_kmod;
++static SECURITY_READ_ONLY_LATE(unsigned) sheng_native_crypto_state;
+ extern vm_offset_t vm_kernel_slide;
+-kern_return_t sheng_native_crypto_started(kmod_info_t *module);
++bool sheng_native_crypto_is_original(kmod_info_t *module);
++kern_return_t sheng_native_crypto_start_once(kmod_info_t *module, void *data);
++
++static kmod_info_t *
++sheng_native_crypto_descriptor(void)
++{
++	if (sheng_native_crypto_kmod) return sheng_native_crypto_kmod;
++	kernel_section_t *section = getsectbynamefromheader(
++		&_mh_execute_header, "__PRELINK_INFO", "__crypto_early");
++	if (!section) return NULL;
++	kernel_segment_command_t *data = getsegbynamefromheader(
++		&_mh_execute_header, "__PRELINK_DATA");
++	uintptr_t address;
++	if (!data || section->size != sizeof(uintptr_t) || vm_kernel_slide != 0) {
++		panic("SHENG: unsupported original corecrypto bootstrap layout");
++	}
++	__builtin_memcpy(&address, (const void *)section->addr, sizeof(address));
++	if (address < data->vmaddr || address - data->vmaddr > data->vmsize ||
++	    sizeof(kmod_info_t) > data->vmsize - (address - data->vmaddr)) {
++		panic("SHENG: original corecrypto descriptor outside prelink data");
++	}
++	kmod_info_t *module = (kmod_info_t *)address;
++	if (__builtin_memcmp(module->name, "com.apple.kec.corecrypto", sizeof("com.apple.kec.corecrypto")) != 0) {
++		panic("SHENG: original corecrypto descriptor identity mismatch");
++	}
++	sheng_native_crypto_kmod = module;
++	return module;
++}
++
++bool
++sheng_native_crypto_is_original(kmod_info_t *module)
++{
++	return module && module == sheng_native_crypto_descriptor();
++}
+ 
+ kern_return_t
+-sheng_native_crypto_started(kmod_info_t *module)
+-{
+-	if (!sheng_native_crypto_kmod || module != sheng_native_crypto_kmod ||
+-	    sheng_corecrypto_status != KERN_SUCCESS) {
+-		panic("SHENG: original corecrypto initialization was not completed");
+-	}
++sheng_native_crypto_start_once(kmod_info_t *module, void *data)
++{
++	if (!sheng_native_crypto_is_original(module)) {
++		panic("SHENG: unexpected original corecrypto descriptor");
++	}
++	unsigned expected = 0;
++	if (!__atomic_compare_exchange_n(&sheng_native_crypto_state, &expected, 1,
++	    false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
++		if (expected == 1) panic("SHENG: recursive original corecrypto initialization");
++		return sheng_corecrypto_status;
++	}
++	printf("SHENG: original corecrypto start enter\n");
++	sheng_corecrypto_status = module->start(module, data);
++	__atomic_store_n(&sheng_native_crypto_state, sheng_corecrypto_status == KERN_SUCCESS ? 2 : 3,
++	    __ATOMIC_RELEASE);
+ 	return sheng_corecrypto_status;
+ }
+ 
+@@ -541,26 +584,9 @@
+ 	if (PE_parse_boot_argn("fips_mode", &mode, sizeof(mode)) && mode != 0) {
+ 		panic("SHENG source corecrypto requires complete default POST");
+ 	}
+-	kernel_section_t *section = getsectbynamefromheader(
+-		&_mh_execute_header, "__PRELINK_INFO", "__crypto_early");
+-	if (section) {
+-		kernel_segment_command_t *data = getsegbynamefromheader(
+-			&_mh_execute_header, "__PRELINK_DATA");
+-		uintptr_t address;
+-		if (!data || section->size != sizeof(uintptr_t) || vm_kernel_slide != 0) {
+-			panic("SHENG: unsupported original corecrypto bootstrap layout");
+-		}
+-		__builtin_memcpy(&address, (const void *)section->addr, sizeof(address));
+-		if (address < data->vmaddr || address - data->vmaddr > data->vmsize ||
+-		    sizeof(kmod_info_t) > data->vmsize - (address - data->vmaddr)) {
+-			panic("SHENG: original corecrypto descriptor outside prelink data");
+-		}
+-		sheng_native_crypto_kmod = (kmod_info_t *)address;
+-		if (__builtin_memcmp(sheng_native_crypto_kmod->name, "com.apple.kec.corecrypto", sizeof("com.apple.kec.corecrypto")) != 0) {
+-			panic("SHENG: original corecrypto descriptor identity mismatch");
+-		}
+-		printf("SHENG: original corecrypto bootstrap enter\n");
+-		sheng_corecrypto_status = sheng_native_crypto_kmod->start(sheng_native_crypto_kmod, NULL);
++	kmod_info_t *original = sheng_native_crypto_descriptor();
++	if (original) {
++		sheng_corecrypto_status = sheng_native_crypto_start_once(original, NULL);
+ 		if (sheng_corecrypto_status != KERN_SUCCESS) {
+ 			panic("SHENG: original corecrypto failed: %d", sheng_corecrypto_status);
+ 		}
+--- a/libkern/c++/OSKext.cpp
++++ b/libkern/c++/OSKext.cpp
+@@ -77,8 +77,8 @@
+ #include <libkern/c++/OSKext.h>
+ #if SHENG
+ #include <ptrauth.h>
+-extern "C" kmod_info_t *sheng_native_crypto_kmod;
+-extern "C" kern_return_t sheng_native_crypto_started(kmod_info_t *module);
++extern "C" bool sheng_native_crypto_is_original(kmod_info_t *module);
++extern "C" kern_return_t sheng_native_crypto_start_once(kmod_info_t *module, void *data);
+ extern "C" int mac_late;
+ #endif
+ #include <libkern/c++/OSLib.h>
+@@ -8482,9 +8482,9 @@
+ 	result = OSRuntimeInitializeCPP(this);
+ 	if (result == KERN_SUCCESS) {
+ #if SHENG
+-		if (kmod_info == sheng_native_crypto_kmod) {
+-			/* EARLY_BOOT已执行同一原版模块，避免重复注册PRNG */
+-			result = sheng_native_crypto_started(kmod_info);
++		if (sheng_native_crypto_is_original(kmod_info)) {
++			/* IOKit与EARLY_BOOT共享同一原版模块的实际初始化结果 */
++			result = sheng_native_crypto_start_once(kmod_info, kmodStartData);
+ 		} else
+ #endif
+ 		result = startfunc(kmod_info, kmodStartData);
