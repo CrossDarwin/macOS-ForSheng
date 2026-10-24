@@ -55,12 +55,14 @@ def build(root, out, compile_record, source, run, record, env):
                 '-Wno-deprecated-enum-enum-conversion', '-Wno-unnecessary-virtual-specifier']
     run(command, 'storage-driver-compile', record, cwd=Path(compile_record['directory']), env=env)
     binary = destination / 'NativeVirtioBlock.macho'
-    run(['xcrun', 'clang++', '-target', 'arm64e-apple-macos26.5', '-nostdlib',
-         '-Wl,-bundle', '-Wl,-undefined,dynamic_lookup', '-Wl,-fixup_chains',
-         '-Wl,-no_adhoc_codesign', '-Wl,-headerpad,0x1000',
+    run(['xcrun', 'ld', '-arch', 'arm64e', '-kext', '-kexts_use_stubs',
+         '-platform_version', 'macos', '26.5', '26.5',
+         '-undefined', 'dynamic_lookup', '-fixup_chains',
+         '-no_adhoc_codesign', '-headerpad', '0x1000',
          str(obj), '-o', str(binary)], 'storage-driver-link', record, env=env)
     image = macho(binary.read_bytes(), 'arm64e')
-    if image['kind'] != 8 or not any(c == 0x80000034 for c, _, _ in image['commands']):
+    if (image['kind'] != 11 or not image['subtype'] & 0x40000000
+            or not any(c == 0x80000034 for c, _, _ in image['commands'])):
         raise ValueError('standalone transport requires an ARM64E bundle with chained imports')
     info = dict(CFBundleIdentifier=BUNDLE, CFBundleVersion='1.0.0',
                 CFBundlePackageType='KEXT', CFBundleExecutable='NativeVirtioBlock',
