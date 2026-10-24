@@ -1,0 +1,25 @@
+--- a/osfmk/arm64/machine_routines_asm.s
++++ b/osfmk/arm64/machine_routines_asm.s
+@@ -191,6 +191,22 @@
+ 
+ #if HAS_NATIVE_EL1_PAC
+ Lsheng_bad_signing_window:
++	/* 违规调用也先结束临时A密钥窗口，才能进入普通panic代码 */
++	mrs x2, TPIDR_EL1
++	ldr x2, [x2, ACT_CPUDATAP]
++	ldr x3, [x2, CPU_SHENG_PAC_SIGNING]
++	cbz x3, Lsheng_signing_failure_restored
++	ldr x3, [x2, CPU_SHENG_PAC_BANK]
++	ldr x4, [x2, (CPU_SHENG_PAC_BANK + 8)]
++	msr APIAKeyLo_EL1, x3
++	msr APIAKeyHi_EL1, x4
++	ldr x3, [x2, (CPU_SHENG_PAC_BANK + 32)]
++	ldr x4, [x2, (CPU_SHENG_PAC_BANK + 40)]
++	msr APDAKeyLo_EL1, x3
++	msr APDAKeyHi_EL1, x4
++	isb
++	str xzr, [x2, CPU_SHENG_PAC_SIGNING]
++Lsheng_signing_failure_restored:
+ 	adrp x0, Lsheng_el0_pac_pending@page
+ 	add x0, x0, Lsheng_el0_pac_pending@pageoff
+ 	b EXT(panic)
