@@ -683,3 +683,5 @@ QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发�
 2026-10-24 专用卷日志版实机照片首次读到panic RAM zero enter之后的完整异常文字。PC 0xfffffe0007d0c088与本轮UUID C4188A40-101E-3959-91D8-64E6FD648791的bzero+0x48匹配，文件字节23 74 0b d5为dc zva,x3；LR去除签名后位于PE_create_console调用附近。Invalid kernel stack pointer来自早期Data Abort的栈检查分支，不能单凭该提示认定栈本身已损坏，原始ESR/FAR尚未读到。
 0037仅将SHENG的panic区域初始化改为显式有序标量访问，不改通用bzero、页表或信任链；同时在invalid-stack入口记录原始异常寄存器，保留后续原处理。宿主验证0–255字节、8种起点及完整512 KiB边界，ARM64E生成代码没有DC ZVA或memset调用，包含dsb sy。映射属性/原始异常类型仍待下一次硬件现场确认。
 本次Recovery只读导出再次确认macoslog只有OBSERVED.JSON，既无NEXTLOG.BIN也无CAP目录。照片recovery=Not Found、next=Not Found，UEFI卷发现/访问尚未成功；未取得自动RAM落盘日志。厂商logfs、xbl_sc_logs及rawdump头已只读保存，它们不能替代当前XNU日志。
+
+2026-10-24 panic区域标量清零修正版CI 40070434490通过，内核UUID 66B40866-E424-3221-B3F2-A02D6F2AB308。实际链接函数sheng_zero_panic_region使用strb/str wzr与dsb sy，没有DC ZVA。QEMU读到panic RAM zero returned、控制台获取成功和corecrypto初始化完成；停止原因仍是Image4接口未接入，完整panic的CRC/UUID匹配，屏幕标题与原因可读。相同内核的sheng高PA交接、C入口及16个阶段像素通过。候选32e3a9700efe14aefcc872ee98e15ff8e5361f89c11588d6b4bdab0bb2038945已封装，实机清零修复尚待验证。
