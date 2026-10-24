@@ -93,6 +93,8 @@ def main() -> None:
                         help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
     parser.add_argument('--follow-launchd-main', action='store_true',
                         help='follow the paired launchd LC_MAIN from the actual dyld startup stack')
+    parser.add_argument('--trace-init-syscalls', action='store_true',
+                        help='retain bounded real Unix/Mach saved-state calls after init starts')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--root-hash-payload', type=Path,
@@ -243,6 +245,10 @@ def main() -> None:
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        if args.trace_init_syscalls:
+            command += ['--syscall-start-address', hex(addresses['_load_init_program']),
+                        '--syscall-log-address', hex(addresses['_unix_syscall']),
+                        '--syscall-log-address', hex(addresses['_mach_syscall'])]
         if args.follow_init_entry:
             command += ['--follow-entrypoint-arg', '1']
             if launchd_main is not None:

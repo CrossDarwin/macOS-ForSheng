@@ -835,3 +835,14 @@ PSTATE=0，16字节指令e00300911fec7c921d0080d21e0080d2与配套/usr/lib/dyld
 下一次观察由真实启动栈中的Mach header和原版launchd的LC_MAIN(95360)确定目标，
 等待主函数及其首条指令完成，不修改进程寄存器或跳过执行。
 证据保存在private/experiments/20261024-native-arm64e/virtio-storage/dyld-entry-40084664897。
+
+### dyld完成缺页返回并进入libignition
+
+未单步打断的同一候选继续运行，输出Darwin Ignition Sequence Version 1.0.0、
+libignition-58及其arguments/ignition level等真实用户态日志，证明此前取指缺页被处理。
+实际启动栈argc=1，主程序Mach header=0x104ccc000，
+由原版launchd LC_MAIN确定目标0x104ce3480，120秒内未命中。
+无panic正文；截止时CPU处于内核空闲线程。shared_region_check_np曾报告
+vm_shared_region_start_address返回0x1，尚不能仅凭这一行断言是致命错误。
+下一轮采集init开始后的有界Unix/Mach系统调用，定位实际等待对象和共享缓存流程。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/libignition-40084664897。
