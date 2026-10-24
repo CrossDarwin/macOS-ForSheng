@@ -1,0 +1,90 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -33,6 +33,8 @@
+ block_group.add_argument('--virtio-block-image', type=Path, help='Attach an existing sector-aligned raw file as a strictly read-only modern MMIO disk')
+ block_group.add_argument('--virtio-udif-image', type=Path, help='Read an already attached read-only UDIF image through its verified host virtual media')
+ parser.add_argument('--virtio-extra-block-image', type=Path, help='Second existing raw file, strictly read-only, for offline two-volume component tests')
++parser.add_argument('--virtio-extra-block-overlay', action='store_true',
++                    help='Write only to a new fixture-owned qcow2 overlay of the second disk')
+ parser.add_argument('--missing-virtio-device', action='store_true', help='Refusal control: leave described MMIO windows empty while retaining the read-only input identity')
+ parser.add_argument('--capture-screen',action='store_true',help='Read the actual stopped QEMU console through QMP screendump into a PNG; no guest execution or drawing')
+ parser.add_argument('--qemu-ramfb', action='store_true', help='Attach actual offline QEMU ramfb for UEFI GOP handoff qualification')
+@@ -326,6 +328,8 @@
+                        host_media_writable=False, first_sector_sha256=hashlib.sha256(sector).hexdigest())
+     block_file_driver = 'host_device'
+ extra_block_input = None
++if args.virtio_extra_block_overlay and not args.virtio_extra_block_image:
++    parser.error('A scratch overlay requires the second raw disk')
+ if args.virtio_extra_block_image:
+     extra_disk = args.virtio_extra_block_image.resolve()
+     if (not block_input or args.missing_virtio_device or not extra_disk.is_file() or
+@@ -336,6 +340,14 @@
+     extra_block_input = dict(name=extra_disk.name, bytes=extra_disk.stat().st_size,
+                             format='raw', read_only=True, device_attached=True,
+                             first_sector_sha256=hashlib.sha256(extra_sector).hexdigest())
++    if args.virtio_extra_block_overlay:
++        extra_overlay = fixture / 'isc-overlay.qcow2'
++        if extra_overlay.exists():
++            parser.error('Refuse to reuse an existing guest scratch overlay')
++        subprocess.run(['qemu-img', 'create', '-f', 'qcow2', '-F', 'raw', '-b',
++                        str(extra_disk), str(extra_overlay)], check=True, timeout=30)
++        extra_block_input.update(read_only=False, base_read_only=True,
++                                 writable_overlay=extra_overlay.name, virtio_mmio_bus=0)
+ if args.esp:
+     if not args.kernel:
+         parser.error('--esp requires --kernel for provenance')
+@@ -369,10 +381,16 @@
+     if not args.missing_virtio_device:
+         command += ['-device', 'virtio-blk-device,drive=offline-block']
+ if extra_block_input:
+-    command += ['-blockdev', json.dumps({
++    extra_backend = {
+         'driver': 'raw', 'node-name': 'offline-extra', 'read-only': True,
+-        'file': {'driver': 'file', 'filename': str(extra_disk), 'read-only': True, 'locking': 'off'}}),
+-        '-device', 'virtio-blk-device,drive=offline-extra']
++        'file': {'driver': 'file', 'filename': str(extra_disk), 'read-only': True, 'locking': 'off'}}
++    if args.virtio_extra_block_overlay:
++        extra_backend = dict(driver='qcow2', **{'node-name': 'offline-extra', 'read-only': False},
++            file=dict(driver='file', filename=str(extra_overlay)), backing=extra_backend)
++        del extra_backend['backing']['node-name']
++    command += ['-blockdev', json.dumps(extra_backend), '-device',
++                'virtio-blk-device,drive=offline-extra' +
++                (',bus=virtio-mmio-bus.0' if args.virtio_extra_block_overlay else '')]
+ if args.virtio_console_socket:
+     console_path = args.virtio_console_socket.resolve()
+     if not args.esp or not stat.S_ISSOCK(console_path.stat().st_mode) or ',' in str(console_path):
+--- a/scripts/qemu-entry/make-dt.py
++++ b/scripts/qemu-entry/make-dt.py
+@@ -65,6 +65,8 @@
+ parser.add_argument('--amfi-platform-only', action='store_true', help='Require platform code in the offline AMFI policy fixture')
+ parser.add_argument('--trust-cache', action='store_true', help='Provide a zeroed owned TrustCache sidecar binding')
+ parser.add_argument('--virtio-mmio-fdt', type=Path, help='Describe actual VirtIO resource windows from a QEMU-generated FDT')
++parser.add_argument('--qemu-scratch-mmio', type=lambda value: int(value, 0),
++                    help='Actual QEMU MMIO resource explicitly assigned to the scratch disk')
+ parser.add_argument('--root-match-volume-uuid', type=uuid.UUID, help='Match an actual IOMedia UUID through the source root-matching mechanism')
+ parser.add_argument('--random-seed-bytes', type=int, choices=(64, 256), default=64, help='Paired XNU bootloader entropy size')
+ args = parser.parse_args()
+@@ -94,6 +96,8 @@
+            str(args.root_match_volume_uuid).upper() + '</string></dict></dict>\0')
+     root_matching = [('root-matching', xml.encode())]
+ virtio_nodes = []
++if args.qemu_scratch_mmio is not None and not args.virtio_mmio_fdt:
++    parser.error('Scratch MMIO requires the actual QEMU resource tree')
+ if args.virtio_mmio_fdt:
+     if not args.armvirt:
+         parser.error('--virtio-mmio-fdt requires --armvirt')
+@@ -136,9 +140,13 @@
+             raise SystemExit('Unknown QEMU FDT tag')
+     if not entries or len(entries) != len(set(entries)):
+         raise SystemExit('Missing or repeated actual VirtIO resource windows')
++    if args.qemu_scratch_mmio is not None and args.qemu_scratch_mmio not in [a for a, _ in entries]:
++        raise SystemExit('Scratch MMIO is absent from the actual QEMU resource windows')
+     for index, (address, size) in enumerate(sorted(entries)):
+         virtio_nodes.append(node('virtio-mmio-' + str(index), [('compatible', b'virtio,mmio\0'),
+-            ('reg', struct.pack('<QQ', address - 0x08000000, size)), ('dma-coherent', b'')]))
++            ('reg', struct.pack('<QQ', address - 0x08000000, size)), ('dma-coherent', b''),
++            *([('native,qemu-scratch', struct.pack('<I', 1))]
++              if address == args.qemu_scratch_mmio else [])]))
+ cpu = node('cpu0', [('state', b'running\0'), ('reg', struct.pack('<I', 0)),
+                     *([('device_type', b'cpu\0'), ('compatible', b'arm,cortex-a710\0' if args.qemu_accel == 'tcg' else b'arm,armv8\0')] if args.armvirt else []),
+                     ('timebase-frequency', struct.pack('<I', timebase)),

@@ -101,6 +101,8 @@ def main() -> None:
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--isc-block-image', type=Path,
                         help='fresh isolated ISC fixture attached as a second read-only disk')
+    parser.add_argument('--isc-write-overlay', action='store_true',
+                        help='enable guest writes only in a new disposable ISC qcow2 overlay')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--qemu-no-ignition', action='store_true',
                         help='explicit development-only use of original dyld skipIgnition bit')
@@ -136,6 +138,12 @@ def main() -> None:
         parser.error('following init requires the thread_setentrypoint checkpoint')
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
+    if args.isc_write_overlay:
+        if not args.isc_block_image:
+            parser.error('scratch writes require the separate ISC fixture')
+        metadata = json.loads((args.kernel_build / 'build.json').read_text())
+        if metadata.get('storage_driver', {}).get('explicit_qemu_scratch_writes') is not True:
+            parser.error('the actual candidate lacks explicit scratch write support')
     if args.isc_block_image:
         if not args.virtio_block_image or not args.qemu_development_root:
             parser.error('ISC media requires the explicit QEMU development root disk')
@@ -284,9 +292,13 @@ def main() -> None:
                     **{'node-name': 'isc-disk', 'read-only': True}, file=dict(driver='file',
                         filename=str(args.isc_block_image.resolve()),
                         **{'read-only': True, 'locking': 'off'}))),
-                    '-device', 'virtio-blk-device,drive=isc-disk']
+                    '-device', 'virtio-blk-device,drive=isc-disk' +
+                    (',bus=virtio-mmio-bus.0' if args.isc_write_overlay else '')]
             subprocess.run(fdt_command, check=True, timeout=30)
             dt_command += ['--virtio-mmio-fdt', str(fdt)]
+            if args.isc_write_overlay:
+                dt_command += ['--qemu-scratch-mmio', '0xa000000']
+                record['isc_scratch_mmio'] = '0xa000000'
             if args.root_volume_uuid:
                 dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
         subprocess.run(dt_command, check=True)
@@ -334,6 +346,8 @@ def main() -> None:
             command += ['--virtio-block-image', str(args.virtio_block_image.resolve())]
         if args.isc_block_image:
             command += ['--virtio-extra-block-image', str(args.isc_block_image.resolve())]
+        if args.isc_write_overlay:
+            command += ['--virtio-extra-block-overlay']
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
         vector_base = addresses['_ExceptionVectorsBase']
         if not args.let_vector_log:
@@ -351,6 +365,8 @@ def main() -> None:
                         ('_sheng_qemu_no_ignition_enabled', 4),
                             ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                             ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
+                            ('_native_virtio_write_requests', 4), ('_native_virtio_write_failures', 4),
+                            ('_native_virtio_flush_requests', 4),
                             ('_native_virtio_mmio_physical', 8), ('_native_virtio_first_sector_sha256', 32),
                             ('_sheng_native_crypto_kmod', 8),
                             ('_sheng_native_crypto_state', 4),
@@ -427,6 +443,8 @@ def main() -> None:
                         ('_sheng_qemu_no_ignition_enabled', 4),
                         ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                         ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
+                        ('_native_virtio_write_requests', 4), ('_native_virtio_write_failures', 4),
+                        ('_native_virtio_flush_requests', 4),
                         ('_native_virtio_mmio_physical', 8),
                         ('_sheng_native_crypto_kmod', 8),
                         ('_sheng_native_crypto_state', 4),

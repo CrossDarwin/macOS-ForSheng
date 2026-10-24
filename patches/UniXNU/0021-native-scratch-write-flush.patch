@@ -1,0 +1,23 @@
+--- a/drivers/NativeVirtioBlock/NativeVirtioBlock.cpp
++++ b/drivers/NativeVirtioBlock/NativeVirtioBlock.cpp
+@@ -131,7 +131,9 @@
+   IOReturn doFormatMedia(UInt64) override { return kIOReturnNotWritable; }
+   UInt32 doGetFormatCapacities(UInt64 *, UInt32) const override { return 0; }
+   char *getVendorString() override { return const_cast<char *>("VirtIO"); }
+-  char *getProductString() override { return const_cast<char *>("VirtIO read-only block"); }
++  char *getProductString() override {
++    return const_cast<char *>(scratchWritable ? "VirtIO isolated scratch block" : "VirtIO read-only block");
++  }
+   char *getRevisionString() override { return const_cast<char *>("1.0"); }
+   char *getAdditionalDeviceInfoString() override { return const_cast<char *>("modern MMIO, coherent DMA"); }
+   IOReturn reportBlockSize(UInt64 *value) override { *value = 512; return kIOReturnSuccess; }
+@@ -633,6 +635,9 @@
+     }
+     actual += bytes;
+   }
++  // Complete writes only after the device's real flush. This also honors FUA
++  // clients without claiming a disabled device writeback cache.
++  if (writing && result == kIOReturnSuccess) result = submitScratchRequest(4, 0, 0);
+   IOLockUnlock(gate);
+   completion->action(completion->target, completion->parameter, result, actual);
+   return kIOReturnSuccess;
