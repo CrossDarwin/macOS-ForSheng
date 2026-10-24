@@ -323,6 +323,15 @@ def emit(native_data, original, native_names, identity, slide):
         raise ValueError('insufficient native load-command padding')
     struct.pack_into('<II', output, 16, len(commands), len(rebuilt))
     output[32:32 + len(rebuilt)] = rebuilt
+    for module_at in [0, *(at(kc['entries'][n][0] + slide, 32) for n in modules)]:
+        checked = kc_macho(output, module_at)
+        for segment in checked['segments']:
+            extents = sorted((sec['va'], sec['va'] + sec['size']) for sec in segment['sections'] if sec['size'])
+            if any(a[1] > b[0] for a, b in zip(extents, extents[1:])):
+                raise ValueError('overlapping sections in the emitted Mach-O')
+    crypto_header = at(kc['entries']['com.apple.kec.corecrypto'][0] + slide, 32)
+    if not struct.unpack_from('<I', output, crypto_header + 24)[0] & 0x80000000:
+        raise ValueError('original corecrypto requires its VM-address-based cache view')
     fixup_summary = native_chained_fixups(output)
     report.update(candidate_bytes=len(output), candidate_sha256=hashlib.sha256(output).hexdigest(),
         original_corecrypto_hmac=digest.hex(), native_pointer_fixups=fixup_summary,
