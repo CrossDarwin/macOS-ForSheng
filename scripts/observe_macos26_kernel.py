@@ -99,6 +99,8 @@ def main() -> None:
     parser.add_argument('--trace-init-syscalls', action='store_true',
                         help='retain bounded real Unix/Mach saved-state calls after init starts')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
+    parser.add_argument('--isc-block-image', type=Path,
+                        help='fresh isolated ISC fixture attached as a second read-only disk')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--qemu-no-ignition', action='store_true',
                         help='explicit development-only use of original dyld skipIgnition bit')
@@ -134,6 +136,23 @@ def main() -> None:
         parser.error('following init requires the thread_setentrypoint checkpoint')
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
+    if args.isc_block_image:
+        if not args.virtio_block_image or not args.qemu_development_root:
+            parser.error('ISC media requires the explicit QEMU development root disk')
+        extra = args.isc_block_image.resolve()
+        isc = json.loads(extra.with_suffix('.json').read_text())
+        if (extra == args.virtio_block_image.resolve() or not extra.is_file()
+                or isc['schema'] != 'sheng-qemu-isc-v1'
+                or isc['bytes'] != extra.stat().st_size
+                or isc['partition_type'] != '69646961-6700-11aa-aa11-00306543ecac'
+                or isc['roles'] != {'SHENG-xART': 256, 'SHENG-Preboot': 16, 'SHENG-Hardware': 320}
+                or isc['sep_trusted_storage'] is not False or isc['guest_read_only'] is not True
+                or isc['root_disk_modified'] is not False or isc['hardware_admitted'] is not False):
+            raise ValueError('requires a separate owned ISC test fixture')
+        with extra.open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() != isc['sha256']:
+                raise ValueError('ISC disk differs from its formatting evidence')
+        record['isc_format_input'] = isc
     if args.qemu_no_ignition and (not args.qemu_development_root or not args.root_hash_payload):
         parser.error('no ignition requires the paired root hash and explicit QEMU development root')
     launchd_main = None
@@ -253,13 +272,20 @@ def main() -> None:
             if not disk.is_file() or not disk.stat().st_size or disk.stat().st_size % 512:
                 raise ValueError('requires a sector-aligned existing raw disk')
             fdt = args.output.resolve() / 'qemu-block.dtb'
-            subprocess.run(['qemu-system-aarch64', '-M',
+            fdt_command = ['qemu-system-aarch64', '-M',
                 f'virt,virtualization=off,secure=off,gic-version=3,dumpdtb={fdt}',
                 '-cpu', 'cortex-a710', '-m', '1024', '-smp', '1', '-nic', 'none', '-display', 'none',
                 '-global', 'virtio-mmio.force-legacy=false', '-blockdev', json.dumps(dict(
                     driver='raw', **{'node-name': 'root-disk', 'read-only': True}, file=dict(
                         driver='file', filename=str(disk), **{'read-only': True, 'locking': 'off'}))),
-                '-device', 'virtio-blk-device,drive=root-disk'], check=True, timeout=30)
+                '-device', 'virtio-blk-device,drive=root-disk']
+            if args.isc_block_image:
+                fdt_command += ['-blockdev', json.dumps(dict(driver='raw',
+                    **{'node-name': 'isc-disk', 'read-only': True}, file=dict(driver='file',
+                        filename=str(args.isc_block_image.resolve()),
+                        **{'read-only': True, 'locking': 'off'}))),
+                    '-device', 'virtio-blk-device,drive=isc-disk']
+            subprocess.run(fdt_command, check=True, timeout=30)
             dt_command += ['--virtio-mmio-fdt', str(fdt)]
             if args.root_volume_uuid:
                 dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
@@ -306,6 +332,8 @@ def main() -> None:
             command += ['--capture-screen']
         if args.virtio_block_image:
             command += ['--virtio-block-image', str(args.virtio_block_image.resolve())]
+        if args.isc_block_image:
+            command += ['--virtio-extra-block-image', str(args.isc_block_image.resolve())]
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
         vector_base = addresses['_ExceptionVectorsBase']
         if not args.let_vector_log:
@@ -435,6 +463,14 @@ def main() -> None:
             actual = snapshot['memory'][key]
             record['virtio_first_sector_sha256'] = actual
             record['virtio_first_sector_matches'] = (len(actual) == 64 and actual == snapshot['virtio_block_input']['first_sector_sha256'])
+        if args.isc_block_image:
+            record['virtio_extra_block_input'] = snapshot['virtio_extra_block_input']
+            # The transport's diagnostic globals describe the last started device.
+            # Per-device mounts in the real console determine discovery of both disks.
+            record['virtio_diagnostic_scope'] = 'last started device; shared diagnostic globals'
+            if '_native_virtio_first_sector_sha256' in addresses:
+                record['virtio_first_sector_matches_isc'] = (
+                    actual == snapshot['virtio_extra_block_input']['first_sector_sha256'])
     if cpu_handler_request:
         handler = snapshot['indirect_memory'][cpu_handler_request]
         record['boot_cpu_interrupt_handler'] = dict(handler)
