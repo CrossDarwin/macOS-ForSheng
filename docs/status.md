@@ -674,3 +674,5 @@ QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发�
 新增capture_persistent_log.py用于root Recovery只读导出并校验配套UUID；跨重启RAM是否仍在、sheng固件是否发布日志卷文件协议，仍需下一轮实机确认。屏幕六行实时日志继续保留。
 
 2026-10-24 实机Recovery完成capture_persistent_log.py只读导出。该环境没有blkid，读取器改为读取并校验主GPT及FAT16首扇区，核对唯一GUID、类型、LBA和卷标后挂载。实际成功导出既有OBSERVED.JSON并卸载；当前尚无CAP目录，不能视为RAM恢复成功。
+
+2026-10-24 CI 40067791502完成。QEMU最终图的整图预览一度被误读成黑屏；重新读取PNG像素并放大原图确认SHENG标题五个字符、Image4完整panic行和末尾日志均可读。未提交的0037停机重绘方案撤回，原停机流程保留。打包新增真实截图标题逐字符像素检查，避免只依赖内存中的witness。

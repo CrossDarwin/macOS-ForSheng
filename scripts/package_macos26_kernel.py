@@ -64,6 +64,17 @@ def main() -> None:
         if (panel.get('_sheng_panel_ready') != '0x1' or panel.get('_sheng_panel_witness') != '0x1'
                 or int(panel.get('_sheng_panel_characters', '0x0'), 16) < 100):
             raise ValueError('requires the pre-console live RAM log mirror to bind and print actual glyphs')
+        from PIL import Image
+        with Image.open(args.qemu_observation / 'screen.png') as screen:
+            pixels = screen.convert('RGB')
+            scale = 2 if screen.width >= 960 else 1
+            top = 608 if screen.height >= 1024 else 32
+            for cell in range(5):
+                glyph = pixels.crop((224 + cell * 8 * scale, top,
+                                     224 + (cell + 1) * 8 * scale, top + 16 * scale))
+                if sum(min(glyph.getpixel((x, y))) >= 220
+                       for y in range(glyph.height) for x in range(glyph.width)) < 8 * scale * scale:
+                    raise ValueError('actual stopped framebuffer has a blank or overwritten diagnostic title')
     if (native_build.get('bootstrap_c_trace_source_sha256') and
             observed.get('observed_globals', {}).get('_sheng_bootstrap_c_stage') != '0xf'):
         raise ValueError('requires this kernel to complete the early C stage strip in QEMU')
