@@ -775,3 +775,15 @@ panic为The global payload bytes pointer is NULL @apfs_vfsops.c:2893。
 新增--qemu-development-root仅对显式QEMU实验树设置sip0=0、sip1=1，
 交由原有csr_bootstrap生成CSR_ALLOW_UNAUTHENTICATED_ROOT，不修改APFS代码，
 不放开其他SIP位，不修改真实磁盘，也不进入实机封装。默认路径继续原认证策略。
+
+### 根卷选择继续取证
+
+CSR对照实测csr_config=0x800，但APFS仍在同一缺少payload处拒绝，不能称为绕过成功。
+只读7z检查实际恢复卷：SEALED_VOLUME、num_snapshots=0。
+这份BaseSystem没有可填写的真实命名快照，不填造root-snapshot-name。
+从同一25F71 IPSW提取BaseSystemVolume的csys IM4P，核对j313ap各BuildIdentity摘要，
+得到208字节原始root-hash payload，SHA256 a5d19735a248f0926caa92805f24e4576e4911eb0af80f76f4fcdebcbf0e4052。
+参考Snapintosh/probes/ramdisk.py，原始payload通过/chosen/secure-boot-hashes/
+system-volume-auth-blob传入APFS，同时声明实际recoveryos环境。
+新脚本prepare_macos26_root_hash.py核对配对磁盘SHA256和原IPSW Manifest后提取，
+输入摘要检查不等于已有个性化IM4M签名，运行结果仍待实测。

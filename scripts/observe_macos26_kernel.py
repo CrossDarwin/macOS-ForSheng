@@ -90,6 +90,8 @@ def main() -> None:
                         'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program'), default='arm_init')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
+    parser.add_argument('--root-hash-payload', type=Path,
+                        help='paired raw BaseSystemVolume payload and conversion evidence')
     parser.add_argument('--qemu-development-root', action='store_true',
                         help='explicit QEMU CSR policy allowing the unauthenticated experiment root')
     parser.add_argument('--kext-log', type=lambda value: int(value, 0),
@@ -116,6 +118,23 @@ def main() -> None:
             addresses[name] = value
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
+    root_hash = None
+    if args.root_hash_payload:
+        if not args.virtio_block_image or not args.root_volume_uuid:
+            parser.error('root hash requires the actual disk and volume identity')
+        root_hash = args.root_hash_payload.read_bytes()
+        evidence = json.loads(Path(str(args.root_hash_payload) + '.json').read_text())
+        disk = json.loads(args.virtio_block_image.with_suffix('.json').read_text())
+        if (evidence['build'] != '25F71' or evidence['component'] != 'BaseSystemVolume'
+                or not evidence['manifest_digest_matches']
+                or evidence['payload_sha256'] != hashlib.sha256(root_hash).hexdigest()
+                or evidence['payload_bytes'] != len(root_hash)
+                or evidence['raw_disk_sha256'] != disk['sha256']):
+            raise ValueError('root hash does not belong to the paired disk')
+        with args.virtio_block_image.open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() != disk['sha256']:
+                raise ValueError('actual disk differs from its root-hash input evidence')
+        record['root_hash_input'] = evidence
     checkpoint = addresses['_' + args.checkpoint]
     if args.decode_existing_snapshot:
         saved = json.loads((args.output / 'kernel-layout.json').read_text())
@@ -193,7 +212,7 @@ def main() -> None:
                 dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
         subprocess.run(dt_command, check=True)
         configure_native_text_state(payload / 'kernel.macho.adt',
-                                    development_root=args.qemu_development_root)
+                                    development_root=args.qemu_development_root, root_hash=root_hash)
         record['qemu_development_root'] = args.qemu_development_root
         record['kernel_ctrr_to_be_enabled'] = 0
         command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),

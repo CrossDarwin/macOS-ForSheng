@@ -5,12 +5,15 @@ from pathlib import Path
 import struct
 
 
-def configure_native_text_state(path: Path, *, development_root: bool = False) -> None:
+def configure_native_text_state(path: Path, *, development_root: bool = False,
+                                root_hash: bytes | None = None) -> None:
     data = path.read_bytes()
-    chosen = asmb = 0
+    chosen = asmb = auth = 0
+    if root_hash is not None and not 16 <= len(root_hash) <= 16384:
+        raise ValueError('invalid raw root-hash payload size')
 
     def node(at: int, parents: tuple[str, ...] = ()) -> tuple[bytes, int]:
-        nonlocal chosen, asmb
+        nonlocal chosen, asmb, auth
         if len(parents) > 32 or at + 8 > len(data):
             raise ValueError('invalid generated device-tree node')
         count, children = struct.unpack_from('<II', data, at)
@@ -45,9 +48,14 @@ def configure_native_text_state(path: Path, *, development_root: bool = False) -
                 count += 1
 
         is_chosen = location == ('device-tree', 'chosen')
+        if root_hash is not None and location == ('device-tree', 'chosen', 'secure-boot-hashes'):
+            auth += 1
+            ensure('system-volume-auth-blob', root_hash)
         if is_chosen:
             chosen += 1
             ensure('kernel-ctrr-to-be-enabled', struct.pack('<I', 0))
+            if root_hash is not None:
+                ensure('osenvironment', b'recoveryos\0')
         if development_root and location == ('device-tree', 'chosen', 'asmb'):
             asmb += 1
             ensure('lp-sip0', struct.pack('<Q', 0))
@@ -65,9 +73,18 @@ def configure_native_text_state(path: Path, *, development_root: bool = False) -
                                    value + bytes(-len(value) % 4))
             children += 1
             asmb += 1
+        if root_hash is not None and is_chosen and auth == 0:
+            entries = (('name', b'secure-boot-hashes\0'), ('system-volume-auth-blob', root_hash))
+            descendants.extend(struct.pack('<II', len(entries), 0))
+            for key, value in entries:
+                descendants.extend(struct.pack('<32sI', key.encode(), len(value)) +
+                                   value + bytes(-len(value) % 4))
+            children += 1
+            auth += 1
         return bytes(struct.pack('<II', count, children) + encoded + descendants), at
 
     result, end = node(0)
-    if end != len(data) or chosen != 1 or development_root and asmb != 1:
+    if (end != len(data) or chosen != 1 or development_root and asmb != 1
+            or root_hash is not None and auth != 1):
         raise ValueError('requires one complete generated /chosen node')
     path.write_bytes(result)
