@@ -93,6 +93,8 @@ def main() -> None:
     parser.add_argument('--kext-log', type=lambda value: int(value, 0),
                         help='enable the existing XNU kextlog filter for this QEMU run')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
+    parser.add_argument('--decode-existing-snapshot', action='store_true',
+                        help='decode a saved snapshot without restarting QEMU')
     args = parser.parse_args()
     if not 15 <= args.timeout <= 180:
         parser.error('--timeout must be between 15 and 180 seconds')
@@ -113,135 +115,154 @@ def main() -> None:
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
     checkpoint = addresses['_' + args.checkpoint]
-    args.output.mkdir(parents=True, exist_ok=False)
-    (args.output / 'kernel-layout.json').write_text(json.dumps(record, indent=2) + '\n')
-    pin = json.loads((ROOT / 'config/sheng-reconstructed-inputs.json').read_text())
-    inputs = ROOT / 'private/build-inputs' / (pin['release'] + '-extracted')
-    esp = args.output / 'esp'
-    payload = esp / 'EFI/UniXNU/Payloads'
-    payload.mkdir(parents=True)
-    (esp / 'EFI/BOOT').mkdir()
-    shutil.copy2(inputs / 'loader/BOOTAA64.EFI', esp / 'EFI/BOOT/BOOTAA64.EFI')
-    loader = json.loads(args.loader_build.read_text())
-    if record['architecture'] == 'arm64e' and not loader.get('native_arm64e_supported'):
-        raise ValueError('ARM64E observation requires the loader with architectural PAC admission')
-    loader_path = ROOT / loader['file']
-    if loader.get('native_panic_region_bytes') != 524288 or loader.get('bootstrap_block_bytes') != 33554432 or hashlib.sha256(loader_path.read_bytes()).hexdigest() != loader['sha256']:
-        raise ValueError('native kernel needs the built 32 MiB-congruent DarwinBoot loader')
-    shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
-    record['loader_sha256'] = loader['sha256']
-    shutil.copy2(kernel, payload / 'kernel.macho')
-    boot_args = NATIVE_BOOT_ARGS
-    if args.kext_log is not None:
-        boot_args += f' kextlog={args.kext_log:#x}'
-    if args.early_console:
-        boot_args += ' -sheng-early-console'
-    if args.handoff_pause:
-        if not loader.get('handoff_panic_address_visible'):
-            raise ValueError('handoff capture needs the loader with visible panic PA')
-        boot_args += ' -sheng-capture-handoff'
-    record['boot_args'] = boot_args
-    (esp / 'EFI/UniXNU/unixnu.toml').write_text(
-        'version = 1\n[boot]\ntimeout = 1\ndefault = "native26"\n'
-        '[kits]\nautoload = false\n[[driver]]\npath = "Payloads/DarwinBoot.efi"\n'
-        '[[entry]]\nid = "native26"\ntitle = "Native SHENG macOS 26 - kernel entry"\n'
-        'type = "xnu"\npath = "Payloads/kernel.macho"\n'
-        f'args = "{boot_args}"\n')
-    dt_command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
-                    '--output', payload / 'kernel.macho.adt', '--dram-size', '0x40000000',
-                    '--owned-memory-size', '0x20000000', '--panic-log', '--armvirt', '--armcpu',
-                    '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
-                    '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
-                    '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)]
-    if args.virtio_block_image:
-        disk = args.virtio_block_image.resolve()
-        if not disk.is_file() or not disk.stat().st_size or disk.stat().st_size % 512:
-            raise ValueError('requires a sector-aligned existing raw disk')
-        fdt = args.output.resolve() / 'qemu-block.dtb'
-        subprocess.run(['qemu-system-aarch64', '-M',
-            f'virt,virtualization=off,secure=off,gic-version=3,dumpdtb={fdt}',
-            '-cpu', 'cortex-a710', '-m', '1024', '-smp', '1', '-nic', 'none', '-display', 'none',
-            '-global', 'virtio-mmio.force-legacy=false', '-blockdev', json.dumps(dict(
-                driver='raw', **{'node-name': 'root-disk', 'read-only': True}, file=dict(
-                    driver='file', filename=str(disk), **{'read-only': True, 'locking': 'off'}))),
-            '-device', 'virtio-blk-device,drive=root-disk'], check=True, timeout=30)
-        dt_command += ['--virtio-mmio-fdt', str(fdt)]
-        if args.root_volume_uuid:
-            dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
-    subprocess.run(dt_command, check=True)
-    configure_native_text_state(payload / 'kernel.macho.adt')
-    record['kernel_ctrr_to_be_enabled'] = 0
-    command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
-               '--fixture', args.output, '--esp', esp, '--kernel', kernel,
-               '--firmware', args.firmware.resolve(), '--gic-version', '3',
-               '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
-               '--system-registers', '--qemu-ramfb']
-    if not args.let_vector_log:
-        command += ['--also-stop', hex(addresses['_panic'])]
-    if args.capture_screen:
-        command += ['--capture-screen']
-    if args.virtio_block_image:
-        command += ['--virtio-block-image', str(args.virtio_block_image.resolve())]
-    (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
-    vector_base = addresses['_ExceptionVectorsBase']
-    if not args.let_vector_log:
-        for offset in (0, 0x200, 0x400, 0x600):
-            command += ['--also-stop', hex(vector_base + offset)]
-    command += ['--read-memory', f'{vector_base:x}:800']
-    instruction_request = f'{checkpoint:x}:10'
-    command += ['--read-memory', instruction_request]
-    for name, count in (('_physmap_base', 8), ('_physmap_end', 8), ('_gPhysBase', 8),
-                        ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
-                        ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
-                        ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
-                        ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
-                        ('_pthread_functions', 8),
-                        ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
-                        ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
-                        ('_native_virtio_mmio_physical', 8), ('_native_virtio_first_sector_sha256', 32),
-                        ('_sheng_native_crypto_kmod', 8),
-                        ('_sheng_native_crypto_state', 4),
-                        ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
-                        ('_armdt_platform_device_count', 4), ('_armdt_platform_nvram_proxy', 4),
-                        ('_armcpu_registered', 4), ('_armcpu_gic_ready', 4),
-                        ('_armcpu_timer_interrupts', 8),
-                        ('_gPanicBase', 8), ('_gPanicSize', 4),
-                        ('_sheng_early_exception_record', 192),
-                        ('_sheng_bootstrap_fb_trace_ready', 8),
-                        ('_sheng_bootstrap_c_stage', 8),
-                        ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
-                        ('_sheng_bootstrap_vm_witness', 8),
-                        ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
-                        ('_sheng_status_witness', 8), ('_sheng_status_message', 45),
-                        ('_sheng_status_pixels', 8), ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
-                        ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8),
-                        ('_sheng_bootstrap_capture_enabled', 4)):
-        if name in addresses:
-            command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
-    cpu_handler_request = None
-    if '_CpuDataEntries' in addresses:
-        cpu_handler_request = f'{addresses["_CpuDataEntries"] + 8:x}:d8:8'
-        command += ['--read-indirect', cpu_handler_request]
-    log_requests = []
-    if '_sheng_log_buffer' in addresses:
-        from decode_native_log import SIZE
-        base = addresses['_sheng_log_buffer']
-        for offset in range(0, SIZE, 4096):
-            request = f'{base + offset:x}:{min(4096, SIZE - offset):x}'
-            log_requests.append(request)
-            command += ['--read-memory', request]
+    if args.decode_existing_snapshot:
+        saved = json.loads((args.output / 'kernel-layout.json').read_text())
+        snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
+        if (saved['uuid'] != record['uuid'] or snapshot['kernel_sha256'] != record['kernel_sha256']):
+            raise ValueError('saved snapshot differs from this kernel build')
+        record = saved
+        instruction_request = f'{checkpoint:x}:10'
+        log_requests = []
+        if '_sheng_log_buffer' in addresses:
+            from decode_native_log import SIZE
+            base = addresses['_sheng_log_buffer']
+            log_requests = [f'{base + offset:x}:{min(4096, SIZE - offset):x}'
+                            for offset in range(0, SIZE, 4096)]
+        panic_requests = ([f'{addresses["_gPanicBase"]:x}:{offset:x}:1000'
+                           for offset in range(0, 524288, 4096)]
+                          if args.capture_panic_buffer else [])
+        cpu_handler_request = (f'{addresses["_CpuDataEntries"] + 8:x}:d8:8'
+                               if '_CpuDataEntries' in addresses else None)
+    else:
+        args.output.mkdir(parents=True, exist_ok=False)
+        (args.output / 'kernel-layout.json').write_text(json.dumps(record, indent=2) + '\n')
+        pin = json.loads((ROOT / 'config/sheng-reconstructed-inputs.json').read_text())
+        inputs = ROOT / 'private/build-inputs' / (pin['release'] + '-extracted')
+        esp = args.output / 'esp'
+        payload = esp / 'EFI/UniXNU/Payloads'
+        payload.mkdir(parents=True)
+        (esp / 'EFI/BOOT').mkdir()
+        shutil.copy2(inputs / 'loader/BOOTAA64.EFI', esp / 'EFI/BOOT/BOOTAA64.EFI')
+        loader = json.loads(args.loader_build.read_text())
+        if record['architecture'] == 'arm64e' and not loader.get('native_arm64e_supported'):
+            raise ValueError('ARM64E observation requires the loader with architectural PAC admission')
+        loader_path = ROOT / loader['file']
+        if loader.get('native_panic_region_bytes') != 524288 or loader.get('bootstrap_block_bytes') != 33554432 or hashlib.sha256(loader_path.read_bytes()).hexdigest() != loader['sha256']:
+            raise ValueError('native kernel needs the built 32 MiB-congruent DarwinBoot loader')
+        shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
+        record['loader_sha256'] = loader['sha256']
+        shutil.copy2(kernel, payload / 'kernel.macho')
+        boot_args = NATIVE_BOOT_ARGS
+        if args.kext_log is not None:
+            boot_args += f' kextlog={args.kext_log:#x}'
+        if args.early_console:
+            boot_args += ' -sheng-early-console'
+        if args.handoff_pause:
+            if not loader.get('handoff_panic_address_visible'):
+                raise ValueError('handoff capture needs the loader with visible panic PA')
+            boot_args += ' -sheng-capture-handoff'
+        record['boot_args'] = boot_args
+        (esp / 'EFI/UniXNU/unixnu.toml').write_text(
+            'version = 1\n[boot]\ntimeout = 1\ndefault = "native26"\n'
+            '[kits]\nautoload = false\n[[driver]]\npath = "Payloads/DarwinBoot.efi"\n'
+            '[[entry]]\nid = "native26"\ntitle = "Native SHENG macOS 26 - kernel entry"\n'
+            'type = "xnu"\npath = "Payloads/kernel.macho"\n'
+            f'args = "{boot_args}"\n')
+        dt_command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
+                        '--output', payload / 'kernel.macho.adt', '--dram-size', '0x40000000',
+                        '--owned-memory-size', '0x20000000', '--panic-log', '--armvirt', '--armcpu',
+                        '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
+                        '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
+                        '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)]
+        if args.virtio_block_image:
+            disk = args.virtio_block_image.resolve()
+            if not disk.is_file() or not disk.stat().st_size or disk.stat().st_size % 512:
+                raise ValueError('requires a sector-aligned existing raw disk')
+            fdt = args.output.resolve() / 'qemu-block.dtb'
+            subprocess.run(['qemu-system-aarch64', '-M',
+                f'virt,virtualization=off,secure=off,gic-version=3,dumpdtb={fdt}',
+                '-cpu', 'cortex-a710', '-m', '1024', '-smp', '1', '-nic', 'none', '-display', 'none',
+                '-global', 'virtio-mmio.force-legacy=false', '-blockdev', json.dumps(dict(
+                    driver='raw', **{'node-name': 'root-disk', 'read-only': True}, file=dict(
+                        driver='file', filename=str(disk), **{'read-only': True, 'locking': 'off'}))),
+                '-device', 'virtio-blk-device,drive=root-disk'], check=True, timeout=30)
+            dt_command += ['--virtio-mmio-fdt', str(fdt)]
+            if args.root_volume_uuid:
+                dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
+        subprocess.run(dt_command, check=True)
+        configure_native_text_state(payload / 'kernel.macho.adt')
+        record['kernel_ctrr_to_be_enabled'] = 0
+        command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
+                   '--fixture', args.output, '--esp', esp, '--kernel', kernel,
+                   '--firmware', args.firmware.resolve(), '--gic-version', '3',
+                   '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
+                   '--system-registers', '--qemu-ramfb']
+        if not args.let_vector_log:
+            command += ['--also-stop', hex(addresses['_panic'])]
+        if args.capture_screen:
+            command += ['--capture-screen']
+        if args.virtio_block_image:
+            command += ['--virtio-block-image', str(args.virtio_block_image.resolve())]
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
-    panic_requests = []
-    if args.capture_panic_buffer:
-        if loader.get('native_panic_region_bytes') != 524288 or '_gPanicBase' not in addresses:
-            raise ValueError('panic capture requires the loader-owned 512 KiB panic region')
-        for offset in range(0, 524288, 4096):
-            request = f'{addresses["_gPanicBase"]:x}:{offset:x}:1000'
-            panic_requests.append(request)
-            command += ['--read-indirect', request]
-    (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
-    with (args.output / 'observer.log').open('w') as log:
-        subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+        vector_base = addresses['_ExceptionVectorsBase']
+        if not args.let_vector_log:
+            for offset in (0, 0x200, 0x400, 0x600):
+                command += ['--also-stop', hex(vector_base + offset)]
+        command += ['--read-memory', f'{vector_base:x}:800']
+        instruction_request = f'{checkpoint:x}:10'
+        command += ['--read-memory', instruction_request]
+        for name, count in (('_physmap_base', 8), ('_physmap_end', 8), ('_gPhysBase', 8),
+                            ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
+                            ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
+                            ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
+                            ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
+                            ('_pthread_functions', 8),
+                            ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
+                            ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
+                            ('_native_virtio_mmio_physical', 8), ('_native_virtio_first_sector_sha256', 32),
+                            ('_sheng_native_crypto_kmod', 8),
+                            ('_sheng_native_crypto_state', 4),
+                            ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
+                            ('_armdt_platform_device_count', 4), ('_armdt_platform_nvram_proxy', 4),
+                            ('_armcpu_registered', 4), ('_armcpu_gic_ready', 4),
+                            ('_armcpu_timer_interrupts', 8),
+                            ('_gPanicBase', 8), ('_gPanicSize', 4),
+                            ('_sheng_early_exception_record', 192),
+                            ('_sheng_bootstrap_fb_trace_ready', 8),
+                            ('_sheng_bootstrap_c_stage', 8),
+                            ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
+                            ('_sheng_bootstrap_vm_witness', 8),
+                            ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
+                            ('_sheng_status_witness', 8), ('_sheng_status_message', 45),
+                            ('_sheng_status_pixels', 8), ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
+                            ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8),
+                            ('_sheng_bootstrap_capture_enabled', 4)):
+            if name in addresses:
+                command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
+        cpu_handler_request = None
+        if '_CpuDataEntries' in addresses:
+            cpu_handler_request = f'{addresses["_CpuDataEntries"] + 8:x}:d8:8'
+            command += ['--read-indirect', cpu_handler_request]
+        log_requests = []
+        if '_sheng_log_buffer' in addresses:
+            from decode_native_log import SIZE
+            base = addresses['_sheng_log_buffer']
+            for offset in range(0, SIZE, 4096):
+                request = f'{base + offset:x}:{min(4096, SIZE - offset):x}'
+                log_requests.append(request)
+                command += ['--read-memory', request]
+            (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
+        panic_requests = []
+        if args.capture_panic_buffer:
+            if loader.get('native_panic_region_bytes') != 524288 or '_gPanicBase' not in addresses:
+                raise ValueError('panic capture requires the loader-owned 512 KiB panic region')
+            for offset in range(0, 524288, 4096):
+                request = f'{addresses["_gPanicBase"]:x}:{offset:x}:1000'
+                panic_requests.append(request)
+                command += ['--read-indirect', request]
+        (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
+        with (args.output / 'observer.log').open('w') as log:
+            subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
     if log_requests:
         from decode_native_log import decode
@@ -291,7 +312,15 @@ def main() -> None:
                         ('_sheng_console_columns', 8), ('_sheng_first_sync_displayed', 8)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
-            observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
+            value = snapshot['memory'][key]
+            try:
+                raw = bytes.fromhex(value)
+                if len(raw) != width:
+                    raise ValueError('short memory response')
+            except ValueError:
+                record.setdefault('unavailable_globals', {})[name] = value
+                continue
+            observed_globals[name] = int.from_bytes(raw, 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
     if args.virtio_block_image:
         record['virtio_block_input'] = snapshot['virtio_block_input']
@@ -300,7 +329,7 @@ def main() -> None:
             key = f'{addresses["_native_virtio_first_sector_sha256"]:x}:20'
             actual = snapshot['memory'][key]
             record['virtio_first_sector_sha256'] = actual
-            record['virtio_first_sector_matches'] = actual == snapshot['virtio_block_input']['first_sector_sha256']
+            record['virtio_first_sector_matches'] = (len(actual) == 64 and actual == snapshot['virtio_block_input']['first_sector_sha256'])
     if cpu_handler_request:
         handler = snapshot['indirect_memory'][cpu_handler_request]
         record['boot_cpu_interrupt_handler'] = dict(handler)

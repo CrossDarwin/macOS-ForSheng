@@ -67,6 +67,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0044-native-platform-compatible-match.patch',
     ROOT / 'platform/sheng/macos26/patches/0045-native-fatal-exception-panel.patch',
     ROOT / 'platform/sheng/macos26/patches/0046-native-platform-personality-config.patch',
+    ROOT / 'platform/sheng/macos26/patches/0047-native-storage-vm-mappings.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

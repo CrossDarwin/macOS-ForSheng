@@ -1,0 +1,74 @@
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1265,6 +1265,50 @@
+ 	return true;
+ }
+ 
++#if SHENG
++static void
++arm_vm_sheng_transport_segments(bool finalize)
++{
++	static const struct {
++		const char *name;
++		vm_prot_t protection;
++		bool late_read_only;
++	} layouts[] = {
++		{ "__NVB_TEXT_EXEC", VM_PROT_READ | VM_PROT_EXECUTE, false },
++		{ "__NVB_DATA", VM_PROT_READ | VM_PROT_WRITE, false },
++		{ "__NVB_DATA_CONST", VM_PROT_READ | VM_PROT_WRITE, true },
++		{ "__NVB_LINKEDIT", VM_PROT_READ, false },
++		{ "__PLK_LINKINFO", VM_PROT_READ, false },
++	};
++	for (unsigned i = 0; i < sizeof(layouts) / sizeof(layouts[0]); i++) {
++		kernel_segment_command_t *seg = getsegbynamefromheader(
++			&_mh_execute_header, layouts[i].name);
++		if (!seg || !seg->vmsize) {
++			continue;
++		}
++		if ((seg->vmaddr | seg->vmsize) & (ARM_PGBYTES - 1) ||
++		    seg->vmaddr < gVirtBase || seg->vmaddr >= end_kern ||
++		    seg->vmsize > end_kern - seg->vmaddr ||
++		    seg->initprot != layouts[i].protection ||
++		    seg->maxprot != layouts[i].protection) {
++			panic("SHENG: invalid transport segment %s", layouts[i].name);
++		}
++		if (finalize) {
++			if (layouts[i].late_read_only) {
++				arm_vm_page_granular_RNX(seg->vmaddr, seg->vmsize, 0);
++			}
++		} else if (seg->initprot & VM_PROT_EXECUTE) {
++			arm_vm_page_granular_ROX(seg->vmaddr, seg->vmsize, 0, ARM64_PAGE_GUARDED);
++		} else if (seg->initprot & VM_PROT_WRITE) {
++			/* kalloc元数据和认证指针在启动期仍需写入 */
++			arm_vm_page_granular_RWNX(seg->vmaddr, seg->vmsize, 0);
++		} else {
++			arm_vm_page_granular_RNX(seg->vmaddr, seg->vmsize, 0);
++		}
++	}
++}
++#endif
++
+ void
+ arm_vm_prot_init(__unused boot_args * args)
+ {
+@@ -1478,6 +1522,10 @@
+ 	}
+ 	arm_vm_page_granular_RWNX(segPRELINKINFOB, segSizePRELINKINFO, 0); /* PreLinkInfoDictionary */
+ 
++#if SHENG
++	arm_vm_sheng_transport_segments(false);
++#endif
++
+ 	/* Record the bounds of the kernelcache. */
+ 	vm_kernelcache_base = segLOWEST;
+ 	vm_kernelcache_top = end_kern;
+@@ -1683,6 +1731,9 @@
+ 	/* tighten permissions on kext read only data and code */
+ 	arm_vm_page_granular_RNX(segPRELINKTEXTB, segSizePRELINKTEXT, ARM64_GRANULE_ALLOW_BLOCK);
+ 	arm_vm_page_granular_RNX(segPLKDATACONSTB, segSizePLKDATACONST, ARM64_GRANULE_ALLOW_BLOCK);
++#if SHENG
++	arm_vm_sheng_transport_segments(true);
++#endif
+ 
+ 	cpu_stack_alloc(&BootCpuData);
+ 	arm64_replace_bootstack(&BootCpuData);
