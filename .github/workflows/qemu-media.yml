@@ -1,0 +1,28 @@
+name: QEMU isolated APFS media
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sheng-qemu-media-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  isc:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Format only the fresh isolated test image
+        run: python3 scripts/prepare_qemu_isc.py --output out/qemu-isc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qemu-isc
+          path: |
+            out/qemu-isc/isc.raw
+            out/qemu-isc/isc.json
+            out/qemu-isc/format.log
+          retention-days: 7
