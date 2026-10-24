@@ -65,6 +65,18 @@ AppleImage4 的原始 `_kmod_link_init` 位于 `0xfffffe0009458e70`，调用 `_i
 原 `__mod_init_func` 指向两个 C++ 构造器；它们不是 `_kmod_link_init` 的替代入口。
 AMFI 同样需要真实初始化，并注册 AMFI 与 CoreEntitlements 接口。
 
+2026-10-24新增`plan_macos26_security.py`，以当前原生内核的UUID和导出地址生成重定位计划：
+
+```sh
+python3 scripts/plan_macos26_security.py \
+  --kernel-build private/ci/macos26-arm64e-kernel-40070434490 \
+  --output out/macos26-security/40070434490-relink.json
+```
+
+实际25F71输入得到12,677个指针位置，保留其中7,070个认证指针的key、diversity及addrDiv，记录移动后的签名位置；4,874处分支以同名原生导出重编码并反解核对。模块统一移动32 MiB，保留模块间相对布局。两张完整SHA-256常量表通过256字节哈希识别，未被当作分支修改。错误的重叠布局及缺少img4_interface_register的内核均被拒绝。
+
+该计划没有写出可执行映像。ADRP只按页覆盖分类，尚未完成寄存器数据流验证；还需生成映射、重建格式7指针链、处理内嵌头及元数据，再验证真实构造器、注册时序和ABI。报告的loadable保持false。
+
 原生 PAC 实现必须覆盖引导密钥状态、链式指针签名、函数回调、C++ 虚表，以及随后 EL0/EL1 和任务切换的密钥生命周期。
 VMAPPLE 的 HVC 密钥接口不能用于现有 sheng EL1 启动链。
 公开 corecrypto 提供者的 POST 已通过，但不能据此替代原版 corecrypto 的全部导出及新版尾部接口。
