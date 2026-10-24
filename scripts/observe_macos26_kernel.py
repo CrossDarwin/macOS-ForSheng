@@ -94,12 +94,16 @@ def main() -> None:
                         help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
     parser.add_argument('--follow-launchd-main', action='store_true',
                         help='follow the paired launchd LC_MAIN from the actual dyld startup stack')
+    parser.add_argument('--continue-after-launchd-main', action='store_true',
+                        help='continue normal execution after verified main, within the same deadline')
     parser.add_argument('--trace-init-syscalls', action='store_true',
                         help='retain bounded real Unix/Mach saved-state calls after init starts')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--qemu-no-ignition', action='store_true',
                         help='explicit development-only use of original dyld skipIgnition bit')
+    parser.add_argument('--pac-layout', type=Path,
+                        help='matching DWARF-derived per-CPU PAC counters; no key material')
     parser.add_argument('--root-hash-payload', type=Path,
                         help='paired raw BaseSystemVolume payload and conversion evidence')
     parser.add_argument('--qemu-development-root', action='store_true',
@@ -133,6 +137,8 @@ def main() -> None:
     if args.qemu_no_ignition and (not args.qemu_development_root or not args.root_hash_payload):
         parser.error('no ignition requires the paired root hash and explicit QEMU development root')
     launchd_main = None
+    if args.continue_after_launchd_main and not args.follow_launchd_main:
+        parser.error('continuing launchd requires actual main observation')
     if args.follow_launchd_main:
         if not args.follow_init_entry:
             parser.error('launchd main observation requires --follow-init-entry')
@@ -147,7 +153,8 @@ def main() -> None:
         if len(main) != 1:
             raise ValueError('requires one original launchd LC_MAIN')
         launchd_main = struct.unpack_from('<Q', launchd, main[0] + 8)[0]
-        record['launchd_main_input'] = dict(sha256=expected, entry_offset=launchd_main)
+        record['launchd_main_input'] = dict(sha256=expected, entry_offset=launchd_main,
+                                          entry_bytes=launchd[launchd_main:launchd_main + 16].hex())
     root_hash = None
     if args.root_hash_payload:
         if not args.virtio_block_image or not args.root_volume_uuid:
@@ -166,6 +173,17 @@ def main() -> None:
                 raise ValueError('actual disk differs from its root-hash input evidence')
         record['root_hash_input'] = evidence
     checkpoint = addresses['_' + args.checkpoint]
+    pac_request = None
+    if args.pac_layout:
+        layout = json.loads(args.pac_layout.read_text())
+        if (layout['kernel_uuid'] != record['uuid'] or layout['kernel_sha256'] != record['kernel_sha256']
+                or layout['bytes'] != 32 or layout['contains_key_material'] is not False):
+            raise ValueError('PAC counter layout differs from the actual kernel')
+        start = layout['cpu_data_offsets']['signing']
+        if not 0x100 <= start < 0x10000 or list(layout['cpu_data_offsets'].values()) != list(range(start, start + 32, 8)):
+            raise ValueError('invalid PAC diagnostic counter extent')
+        pac_request = f'{addresses["_CpuDataEntries"] + 8:x}:{start:x}:20'
+        record['pac_counter_layout'] = layout
     if args.decode_existing_snapshot:
         saved = json.loads((args.output / 'kernel-layout.json').read_text())
         snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
@@ -255,6 +273,8 @@ def main() -> None:
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        if pac_request:
+            command += ['--read-indirect', pac_request]
         if args.checkpoint == 'handle_pac_fail':
             command += ['--arm64-saved-state-count', '74' if record['architecture'] == 'arm64e' else '72',
                         '--inspect-entry-user-state']
@@ -264,13 +284,20 @@ def main() -> None:
             command += ['--read-entry-region', '2:0:48']
         if args.trace_init_syscalls:
             command += ['--arm64-saved-state-count', '74' if record['architecture'] == 'arm64e' else '72',
-                        '--syscall-start-address', hex(addresses['_load_init_program']),
                         '--syscall-log-address', hex(addresses['_unix_syscall']),
                         '--syscall-log-address', hex(addresses['_mach_syscall'])]
+            if args.continue_after_launchd_main:
+                command += ['--syscall-start-at-main']
+                for number in (1, 2, 4, 5, 59, 202, 244, 372, 381, 550):
+                    command += ['--syscall-number', str(number)]
+            else:
+                command += ['--syscall-start-address', hex(addresses['_load_init_program'])]
         if args.follow_init_entry:
             command += ['--follow-entrypoint-arg', '1']
             if launchd_main is not None:
                 command += ['--follow-main-entry-offset', str(launchd_main)]
+                if args.continue_after_launchd_main:
+                    command += ['--continue-after-main']
             else:
                 command += ['--step-followed-entry', '16']
         if not args.let_vector_log:
@@ -411,6 +438,14 @@ def main() -> None:
     if cpu_handler_request:
         handler = snapshot['indirect_memory'][cpu_handler_request]
         record['boot_cpu_interrupt_handler'] = dict(handler)
+    if pac_request:
+        captured = snapshot['indirect_memory'][pac_request]
+        raw = captured.get('bytes', '')
+        if len(raw) == 64 and not raw.startswith('E'):
+            record['native_user_pac'] = dict(zip(('signing_active', 'kernel_entries', 'user_returns',
+                                                 'completed_signing_windows'), struct.unpack('<4Q', bytes.fromhex(raw))))
+        else:
+            record['native_user_pac'] = dict(unavailable=captured)
     security_report = args.kernel_build / 'security-relink.json'
     if security_report.is_file():
         security = json.loads(security_report.read_text())
@@ -472,6 +507,7 @@ def main() -> None:
             record['launchd_main'] = main
             record['launchd_main_started'] = (main.get('observed') is True
                 and main.get('first_instruction_completed') is True
+                and main.get('entry_bytes_after_fault') == launchd[launchd_main:launchd_main + 16].hex()
                 and int(main.get('pstate', '0xf'), 16) & 15 == 0)
             passed = passed and record['launchd_main_started']
 

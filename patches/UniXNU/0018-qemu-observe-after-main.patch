@@ -1,0 +1,49 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -44,6 +44,8 @@
+ parser.add_argument('--arm64-saved-state-count', type=int, choices=(72, 74), default=72,
+                     help='Compiler ABI: ARM64 uses 72 words; ARM64E includes the jophash word (74)')
+ parser.add_argument('--syscall-number', type=int, action='append', default=[], help='Capture only these genuine syscall numbers, preserving the bounded event budget')
++parser.add_argument('--syscall-start-at-main', action='store_true', help='Arm real syscall observation only after the original main instruction completes')
++parser.add_argument('--continue-after-main', action='store_true', help='Continue normal execution after original main, retaining the same bounded deadline')
+ parser.add_argument('--syscall-start-address', type=lambda value: int(value, 0), help='Arm syscall saved-state observation only after this actual kernel entry')
+ parser.add_argument('--kext-log-address', type=lambda value: int(value, 0), help='Capture up to 256 real OSKextLog calls within the same guest deadline')
+ parser.add_argument('--syscall-log-address', type=lambda value: int(value, 0), action='append', default=[],
+@@ -156,6 +158,10 @@
+ if args.follow_main_entry_offset is not None and (args.follow_entrypoint_arg is None or args.follow_entrypoint_checkpoint_offset is not None or
+         args.step_followed_entry or not 0 < args.follow_main_entry_offset < 16 * 1024 * 1024 or args.follow_main_entry_offset & 3):
+     parser.error('Main observation requires a bounded aligned LC_MAIN offset and a followed entry, without another checkpoint or stepping')
++if (args.continue_after_main or args.syscall_start_at_main) and args.follow_main_entry_offset is None:
++    parser.error('Post-main observation requires an actual followed LC_MAIN')
++if args.syscall_start_at_main and (args.syscall_start_address is not None or not args.syscall_log_address):
++    parser.error('Main syscall activation requires handlers and conflicts with a kernel start address')
+ if args.follow_entrypoint_checkpoint_offset is not None and args.follow_entrypoint_arg is None:
+     parser.error('A relative user checkpoint requires --follow-entrypoint-arg')
+ if args.finish_followed_checkpoint and args.follow_entrypoint_checkpoint_offset is None:
+@@ -475,7 +481,7 @@
+ 
+             for address in dict.fromkeys([args.address if args.primary_start_address is None else args.primary_start_address, *args.also_stop, *args.trace_address,
+                                           *([args.kext_log_address] if args.kext_log_address else []),
+-                                          *(args.syscall_log_address if args.syscall_start_address is None else [args.syscall_start_address]),
++                                          *([] if args.syscall_start_at_main else (args.syscall_log_address if args.syscall_start_address is None else [args.syscall_start_address])),
+                                           *(args.cstring_log_address if args.cstring_start_address is None else [args.cstring_start_address]),
+                                           *([args.registry_string_log_address] if args.registry_string_log_address else []),
+                                           *([live_hid.address] if live_hid else [])]):
+@@ -1153,6 +1159,17 @@
+                                                 if plan['mode'] == 'discovery':
+                                                     followed_display['discovery_counts'] = {name: packet(f'm{plan[name] + slide:x},4')
+                                                         for name in ('reference_count', 'enumerated_count', 'display_count')}
++                    if args.follow_main_entry_offset is not None and followed_main['first_instruction_completed']:
++                        if args.syscall_start_at_main:
++                            syscall_start_event = dict(pc=hex(values[32]), kind='original-main-completed',
++                                elapsed_seconds=round(time.monotonic() - started, 3))
++                            for address in set(args.syscall_log_address):
++                                if packet(f'Z1,{address:x},4') != 'OK':
++                                    raise RuntimeError('Cannot arm post-main syscall observation')
++                        if args.continue_after_main:
++                            followed_main['continued_after_entry'] = True
++                            stop, values, interrupted = continue_observing()
++                            connection.settimeout(3)
+                     if args.follow_entrypoint_checkpoint_offset is not None:
+                         checkpoint = target + args.follow_entrypoint_checkpoint_offset
+                         if not 0 < checkpoint < 0xfffffff000000000 or checkpoint & 3:
