@@ -229,8 +229,8 @@ def emit(native_data, original, native_names, identity, slide):
     for n, module in modules.items():
         old_header = kc['entries'][n][0]
         header_at = at(old_header + slide, 32)
-        flags, = struct.unpack_from('<I', output, header_at + 24)
-        struct.pack_into('<I', output, header_at + 24, flags & ~0x80000000)
+        # Apple components use MH_DYLIB_IN_CACHE to select VM-address-based
+        # metadata, including corecrypto's original integrity walker.
         for command, pos, length in module['commands']:
             new_pos = at(old_header + slide + pos - kc['entries'][n][1], length)
             if command == 0x19:
@@ -257,6 +257,17 @@ def emit(native_data, original, native_names, identity, slide):
                     struct.pack_into('<I', output, new_pos + 8, translate_file(old))
         kmod = (entries[n]['_PrelinkKmodInfo'] & MASK64) + slide
         struct.pack_into('<Q', output, at(kmod + 156), old_header + slide)
+        if not any(command == 0x1e for command, _, _ in module['commands']):
+            count, size = struct.unpack_from('<II', output, header_at + 16)
+            first_section = min(sec['va'] for seg in module['segments'] if seg['name'] == '__TEXT'
+                                for sec in seg['sections'] if sec['size'])
+            marker_at = header_at + 32 + size
+            if first_section - old_header < 32 + size + 16 or any(output[marker_at:marker_at + 16]):
+                raise ValueError('no verified header padding for split-segment descriptor')
+            # All relocations are carried by the outer format-7 table. An empty
+            # legacy split-info command describes the already split mappings.
+            struct.pack_into('<4I', output, marker_at, 0x1e, 16, 0, 0)
+            struct.pack_into('<II', output, header_at + 16, count + 1, size + 16)
 
     for symoff, count in symbol_slices:
         for i in range(count):
@@ -290,7 +301,8 @@ def emit(native_data, original, native_names, identity, slide):
             name = raw[8:24].rstrip(b'\0').decode()
             s = next(s for s in segments if s['name'] == name)
             if name in pending:
-                sections = [section_command('__info' if name == '__PRELINK_INFO' else '__text' if name == '__PRELINK_TEXT' else '__data', name, s['va'], len(xml) if name == '__PRELINK_INFO' else s['size'], s['fileoff'])]
+                section_size = len(xml) if name == '__PRELINK_INFO' else index_offset if name == '__PRELINK_TEXT' else s['size']
+                sections = [section_command('__info' if name == '__PRELINK_INFO' else '__text' if name == '__PRELINK_TEXT' else '__data', name, s['va'], section_size, s['fileoff'])]
                 if name == '__PRELINK_TEXT':
                     sections.append(section_command('__macho_list', name, s['va'] + index_offset,
                         len(headers) * 8, s['fileoff'] + index_offset))

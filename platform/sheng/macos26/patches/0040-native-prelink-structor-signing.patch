@@ -1,0 +1,29 @@
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -302,6 +302,26 @@
+ #endif /* HAS_NATIVE_EL1_PAC */
+ #if defined(HAS_APPLE_PAC)
+ 		OSRuntimeSignStructors(&_mh_execute_header);
++#if HAS_NATIVE_EL1_PAC
++		kernel_section_t *headers = getsectbynamefromheader(k_mh,
++		    "__PRELINK_TEXT", "__macho_list");
++		if (headers) {
++			kernel_segment_command_t *text = getsegbynamefromheader(k_mh, "__PRELINK_TEXT");
++			if (slide || !text || headers->size % sizeof(uintptr_t) ||
++			    headers->addr < text->vmaddr || headers->addr > text->vmaddr + text->vmsize ||
++			    headers->size > text->vmaddr + text->vmsize - headers->addr) {
++				__builtin_trap();
++			}
++			const uintptr_t *list = (const uintptr_t *)headers->addr;
++			for (size_t i = 0; i < headers->size / sizeof(uintptr_t); i++) {
++				if (list[i] < text->vmaddr || list[i] > text->vmaddr + text->vmsize ||
++				    sizeof(*k_mh) > text->vmaddr + text->vmsize - list[i]) {
++					__builtin_trap();
++				}
++				OSRuntimeSignStructors((kernel_mach_header_t *)list[i]);
++			}
++		}
++#endif
+ #endif /* defined(HAS_APPLE_PAC) */
+ 	}
+ 

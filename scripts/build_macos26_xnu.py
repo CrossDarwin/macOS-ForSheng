@@ -60,6 +60,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0037-native-panic-io-zero.patch',
     ROOT / 'platform/sheng/macos26/patches/0038-native-security-prelink.patch',
     ROOT / 'platform/sheng/macos26/patches/0039-native-security-init-build.patch',
+    ROOT / 'platform/sheng/macos26/patches/0040-native-prelink-structor-signing.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
