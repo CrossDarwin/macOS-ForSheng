@@ -86,7 +86,10 @@ def main() -> None:
     parser.add_argument('--handoff-pause', action='store_true', help='exercise the ten-second hardware handoff capture window')
     parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
-                        'PE_create_console', 'bsd_init', 'IOFindBSDRoot'), default='arm_init')
+                        'PE_create_console', 'bsd_init', 'IOFindBSDRoot',
+                        'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program'), default='arm_init')
+    parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
+    parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--kext-log', type=lambda value: int(value, 0),
                         help='enable the existing XNU kextlog filter for this QEMU run')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
@@ -96,6 +99,19 @@ def main() -> None:
     if args.kext_log is not None and not 0 <= args.kext_log <= 0xffffffff:
         parser.error('--kext-log must be a 32-bit unsigned filter')
     kernel, addresses, record = identify(args.kernel_build.resolve())
+    security_path = args.kernel_build / 'security-relink.json'
+    if security_path.is_file():
+        component_map = json.loads(security_path.read_text())
+        if component_map['candidate_sha256'] != record['kernel_sha256']:
+            raise ValueError('component symbol map differs from the actual candidate')
+        for name, value in component_map.get('storage_driver', {}).get('symbols', {}).items():
+            if not name.startswith('_native_virtio_'):
+                continue
+            if name in addresses and addresses[name] != value:
+                raise ValueError('transport symbol collides with the native kernel')
+            addresses[name] = value
+    if args.root_volume_uuid and not args.virtio_block_image:
+        parser.error('APFS volume matching requires the actual block image')
     checkpoint = addresses['_' + args.checkpoint]
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / 'kernel-layout.json').write_text(json.dumps(record, indent=2) + '\n')
@@ -131,12 +147,28 @@ def main() -> None:
         '[[entry]]\nid = "native26"\ntitle = "Native SHENG macOS 26 - kernel entry"\n'
         'type = "xnu"\npath = "Payloads/kernel.macho"\n'
         f'args = "{boot_args}"\n')
-    subprocess.run([sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
+    dt_command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/make-dt.py',
                     '--output', payload / 'kernel.macho.adt', '--dram-size', '0x40000000',
                     '--owned-memory-size', '0x20000000', '--panic-log', '--armvirt', '--armcpu',
                     '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                     '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
-                    '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)], check=True)
+                    '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)]
+    if args.virtio_block_image:
+        disk = args.virtio_block_image.resolve()
+        if not disk.is_file() or not disk.stat().st_size or disk.stat().st_size % 512:
+            raise ValueError('requires a sector-aligned existing raw disk')
+        fdt = args.output.resolve() / 'qemu-block.dtb'
+        subprocess.run(['qemu-system-aarch64', '-M',
+            f'virt,virtualization=off,secure=off,gic-version=3,dumpdtb={fdt}',
+            '-cpu', 'cortex-a710', '-m', '1024', '-smp', '1', '-nic', 'none', '-display', 'none',
+            '-global', 'virtio-mmio.force-legacy=false', '-blockdev', json.dumps(dict(
+                driver='raw', **{'node-name': 'root-disk', 'read-only': True}, file=dict(
+                    driver='file', filename=str(disk), **{'read-only': True, 'locking': 'off'}))),
+            '-device', 'virtio-blk-device,drive=root-disk'], check=True, timeout=30)
+        dt_command += ['--virtio-mmio-fdt', str(fdt)]
+        if args.root_volume_uuid:
+            dt_command += ['--root-match-volume-uuid', str(args.root_volume_uuid)]
+    subprocess.run(dt_command, check=True)
     configure_native_text_state(payload / 'kernel.macho.adt')
     record['kernel_ctrr_to_be_enabled'] = 0
     command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
@@ -148,6 +180,8 @@ def main() -> None:
         command += ['--also-stop', hex(addresses['_panic'])]
     if args.capture_screen:
         command += ['--capture-screen']
+    if args.virtio_block_image:
+        command += ['--virtio-block-image', str(args.virtio_block_image.resolve())]
     (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
     vector_base = addresses['_ExceptionVectorsBase']
     if not args.let_vector_log:
@@ -162,6 +196,9 @@ def main() -> None:
                         ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
                         ('_pthread_functions', 8),
+                        ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
+                        ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
+                        ('_native_virtio_mmio_physical', 8), ('_native_virtio_first_sector_sha256', 32),
                         ('_sheng_native_crypto_kmod', 8),
                         ('_sheng_native_crypto_state', 4),
                         ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
@@ -234,6 +271,9 @@ def main() -> None:
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
                         ('_pthread_functions', 8),
+                        ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
+                        ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
+                        ('_native_virtio_mmio_physical', 8),
                         ('_sheng_native_crypto_kmod', 8),
                         ('_sheng_native_crypto_state', 4),
                         ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
@@ -253,6 +293,14 @@ def main() -> None:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    if args.virtio_block_image:
+        record['virtio_block_input'] = snapshot['virtio_block_input']
+        record['root_volume_uuid'] = str(args.root_volume_uuid) if args.root_volume_uuid else None
+        if '_native_virtio_first_sector_sha256' in addresses:
+            key = f'{addresses["_native_virtio_first_sector_sha256"]:x}:20'
+            actual = snapshot['memory'][key]
+            record['virtio_first_sector_sha256'] = actual
+            record['virtio_first_sector_matches'] = actual == snapshot['virtio_block_input']['first_sector_sha256']
     if cpu_handler_request:
         handler = snapshot['indirect_memory'][cpu_handler_request]
         record['boot_cpu_interrupt_handler'] = dict(handler)

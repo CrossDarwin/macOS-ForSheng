@@ -114,7 +114,7 @@ def chain_blob(segments, relocations):
     return struct.pack('<7I', 0, 28, 0, 0, 0, 0, 0) + starts, writes
 
 
-def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
+def emit(native_data, original, native_names, identity, slide, roots=ROOTS, storage_driver=None):
     image = macho(native_data, 'arm64e')
     marker = native_names.get('_sheng_security_prelink_version')
     if marker is None or struct.unpack_from('<I', native_data,
@@ -131,8 +131,15 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
     info_at = backed_offset(kc['segments'], info_section['va'], info_section['size'], len(original))
     metadata = plistlib.loads(original[info_at:info_at + info_section['size']].split(b'\0', 1)[0])
     entries = {e['CFBundleIdentifier']: e for e in metadata['_PrelinkInfoDictionary']}
+    driver = None
+    if storage_driver is not None:
+        from native_storage_module import prepare
+        text_end = align(max(s['va'] + s['size'] for m in modules.values()
+                             for s in m['segments'] if s['name'] == '__TEXT')) + slide
+        driver = prepare(storage_driver, text_end, native_names, original, kc, selected, slide)
     segments = copy.deepcopy(image['segments'])
     pending = {}
+    text_section_start = 0
     for target, source in GROUPS.items():
         parts = [s for m in modules.values() for s in m['segments'] if s['name'] == source and s['size']]
         if not parts:
@@ -146,11 +153,27 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
             blob[s['va'] - low:s['va'] - low + s['filesize']] = original[s['fileoff']:s['fileoff'] + s['filesize']]
         if target == '__PRELINK_TEXT':
             headers = sorted(kc['entries'][n][0] + slide for n in modules)
-            index_offset = align(len(blob), 8)
-            blob.extend(bytes(index_offset - len(blob)))
-            blob.extend(struct.pack(f'<{len(headers)}Q', *headers))
+            if driver:
+                own_text = next(s for s in driver['image']['segments'] if s['name'] == '__TEXT')
+                headers.append(driver['header_va'])
+                table = struct.pack(f'<{len(headers)}Q', *headers)
+                prefix = min(s['va'] for s in parts) - low
+                if prefix < len(table) or any(blob[:len(table)]):
+                    raise ValueError('no verified prefix padding for the transport header index')
+                index_offset = 0
+                text_section_start = align(len(table), 8)
+                blob[:len(table)] = table
+                blob.extend(bytes(driver['base'] - (low + slide) - len(blob)))
+                blob.extend(driver['data'][:own_text['filesize']])
+                blob.extend(bytes(own_text['size'] - own_text['filesize']))
+            else:
+                index_offset = align(len(blob), 8)
+                blob.extend(bytes(index_offset - len(blob)))
+                blob.extend(struct.pack(f'<{len(headers)}Q', *headers))
         blob.extend(bytes(align(len(blob)) - len(blob)))
         protection = 5 if source == '__TEXT_EXEC' else 3 if source == '__DATA' else 1
+        if driver and source == '__TEXT':
+            protection |= own_text['initprot'] & 4
         record = dict(name=target, va=low + slide, size=len(blob), filesize=len(blob),
                       fileoff=0, initprot=protection, maxprot=protection, sections=[])
         existing = next((s for s in segments if s['name'] == target), None)
@@ -161,6 +184,19 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
         else:
             segments.append(record)
         pending[target] = blob
+
+    if driver:
+        for s in driver['image']['segments']:
+            if s['name'] == '__TEXT' or not s['size']:
+                continue
+            name = '__NVB_' + s['name'].strip('_')
+            if len(name) > 16:
+                raise ValueError('transport segment name exceeds Mach-O width')
+            blob = bytearray(driver['data'][s['fileoff']:s['fileoff'] + s['filesize']])
+            blob.extend(bytes(s['size'] - len(blob)))
+            segments.append(dict(name=name, va=driver['base'] + s['va'], size=s['size'],
+                filesize=s['size'], fileoff=0, initprot=s['initprot'], maxprot=s['maxprot'], sections=[]))
+            pending[name] = blob
 
     # Read local registration symbols from each selected image's own symbol slice.
     registration_symbols = {}
@@ -202,8 +238,17 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
                     raise ValueError(f'early policy entry is not a security extension: {n}')
                 entry['_NativePrelinkEarlySecurityInit'] = early_initializers[n]
         selected_entries.append(entry)
+    if driver:
+        entry = copy.deepcopy(driver['info'])
+        entry.update(_PrelinkExecutableLoadAddr=driver['header_va'],
+                     _PrelinkExecutableSourceAddr=driver['header_va'],
+                     _PrelinkExecutableSize=max(s['va'] + s['size'] for s in driver['image']['segments']),
+                     _PrelinkKmodInfo=driver['kmod'],
+                     _PrelinkBundlePath='/System/Library/Extensions/NativeVirtioBlock.kext')
+        selected_entries.append(entry)
     cache_id = hashlib.sha256(native_data + original + struct.pack('<Q', slide)
-                              + '\0'.join(sorted(modules)).encode()).digest()[:16]
+                              + '\0'.join(sorted(modules)).encode()
+                              + (driver['data'] if driver else b'')).digest()[:16]
     xml = ET.tostring(to_xml(dict(_PrelinkInfoDictionary=selected_entries,
                                  _PrelinkLinkKASLROffsets=bytes(4), _PrelinkKCID=cache_id)),
                       encoding='utf-8').replace(b' />', b'/>') + b'\0'
@@ -219,6 +264,8 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
 
     # Chain metadata is mapped at the end of the native LINKEDIT, before appending modules.
     relocations = list(native_pointers(native_data, image)) + report['pointer_relocations']
+    if driver:
+        relocations += driver['relocations']
     fixups, writes = chain_blob(segments, relocations)
     output = bytearray(native_data)
     fixup_at = align(len(output), 8)
@@ -245,6 +292,10 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
             raise ValueError('module linkedit offset is not backed')
         old = matches[0]
         return at(old['va'] + offset - old['fileoff'] + slide, 1)
+
+    if driver:
+        from native_storage_module import rewrite_header
+        rewrite_header(driver, output, at)
 
     # Numeric header addresses and kmod_info.address are not chained pointers.
     for n, module in modules.items():
@@ -322,8 +373,13 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
             name = raw[8:24].rstrip(b'\0').decode()
             s = next(s for s in segments if s['name'] == name)
             if name in pending:
-                section_size = len(xml) if name == '__PRELINK_INFO' else index_offset if name == '__PRELINK_TEXT' else s['size']
-                sections = [section_command('__info' if name == '__PRELINK_INFO' else '__text' if name == '__PRELINK_TEXT' else '__data', name, s['va'], section_size, s['fileoff'])]
+                start = text_section_start if name == '__PRELINK_TEXT' else 0
+                section_size = s['size']
+                if name == '__PRELINK_INFO':
+                    section_size = len(xml)
+                elif name == '__PRELINK_TEXT':
+                    section_size = s['size'] - start if driver else index_offset
+                sections = [section_command('__info' if name == '__PRELINK_INFO' else '__text' if name == '__PRELINK_TEXT' else '__data', name, s['va'] + start, section_size, s['fileoff'] + start)]
                 if name == '__PRELINK_TEXT':
                     sections.append(section_command('__macho_list', name, s['va'] + index_offset,
                         len(headers) * 8, s['fileoff'] + index_offset))
@@ -345,7 +401,8 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
     struct.pack_into('<II', output, 16, len(commands), len(rebuilt))
     output[32:32 + len(rebuilt)] = rebuilt
     final_data = bytes(output)
-    for module_at in [0, *(at(kc['entries'][n][0] + slide, 32) for n in modules)]:
+    for module_at in [0, *(at(kc['entries'][n][0] + slide, 32) for n in modules),
+                      *([at(driver['header_va'], 32)] if driver else [])]:
         checked = kc_macho(final_data, module_at)
         for segment in checked['segments']:
             extents = sorted((sec['va'], sec['va'] + sec['size']) for sec in segment['sections'] if sec['size'])
@@ -364,6 +421,15 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
     report['pending'] = ['validate instruction dataflow and native callback ABI',
                          'execute original corecrypto POST and PRNG registration',
                          'execute real security constructors and register Image4/AMFI in QEMU']
+    if driver:
+        report['storage_driver'] = dict(bundle=driver['info']['CFBundleIdentifier'],
+            base=driver['base'], kmod=driver['kmod'], symbols=driver['symbols'],
+            imports=driver['imports'], pointer_formats=driver['pointer_formats'],
+            vtable_abi=driver['vtable_abi'],
+            compatibility=driver['compatibility'],
+            pointer_count=len(driver['relocations']),
+            authenticated_pointers=sum(p['authenticated'] for p in driver['relocations']),
+            build=driver['evidence'], runtime_qualified=False)
     return final_data, report
 
 
@@ -376,11 +442,12 @@ def main():
     parser.add_argument('--qemu-only', action='store_true', required=True)
     parser.add_argument('--include-module', action='append', default=[], metavar='BUNDLE',
                         help='include another original BootKC module and its dependency closure')
+    parser.add_argument('--storage-driver', type=Path, help='standalone ARM64E transport build directory')
     args = parser.parse_args()
     try:
         kernel, names, identity = identify(args.kernel_build.resolve())
         candidate, report = emit(kernel.read_bytes(), args.bootkc.read_bytes(), names, identity,
-                                 args.slide, (*ROOTS, *args.include_module))
+                                 args.slide, (*ROOTS, *args.include_module), args.storage_driver)
         args.output.mkdir(parents=True, exist_ok=False)
         (args.output / kernel.name).write_bytes(candidate)
         shutil.copytree(args.kernel_build / 'kernel.development.sheng.dSYM', args.output / 'kernel.development.sheng.dSYM')
