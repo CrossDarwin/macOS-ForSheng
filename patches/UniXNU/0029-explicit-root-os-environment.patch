@@ -1,0 +1,24 @@
+diff --git a/scripts/make-sheng-adt.py b/scripts/make-sheng-adt.py
+--- a/scripts/make-sheng-adt.py
++++ b/scripts/make-sheng-adt.py
+@@ -79,6 +79,8 @@
+                         help='Explicit DarwinBoot contiguous window request, 256 MiB..8 GiB in 2 MiB steps')
+     parser.add_argument('--root-match-volume-uuid', default=None,
+                         help='/chosen/root-matching: select the root by the UUID of an IOMedia (the standard source mechanism)')
++    parser.add_argument('--os-environment', choices=('main', 'recoveryos'), default='main',
++                        help='Match the actual root volume OS variant')
+     parser.add_argument('--unique-chip-id', type=lambda value: int(value, 16), default=None,
+                         help='/chosen/unique-chip-id (8 bytes) and --chip-id (4 bytes) seed XNU IOPlatformUUID; software identity seeds, not Apple silicon IDs')
+     parser.add_argument('--chip-id', type=lambda value: int(value, 16), default=None)
+@@ -145,9 +147,8 @@
+                         # for callers (configd) that pass a zero timeout.
+                         *([('unique-chip-id', struct.pack('<Q', args.unique_chip_id)), ('chip-id', struct.pack('<I', args.chip_id))]
+                           if args.unique_chip_id is not None else []),
+-                        # This boots the normal target OS. Volatile Data is
+-                        # described separately by ephemeral-storage below.
+-                        ('osenvironment', b'main\0'),
++                        # BaseSystem uses recoveryos; normal installations use main.
++                        ('osenvironment', args.os_environment.encode() + b'\0'),
+                         # Security status as on a dev-fused, undemoted board (tuple 0,0,1,1), as read by MobileGestalt: mobileactivationd's
+                         # DeviceType then takes its native "Hactivation" branch (Activated without an activation record; no SEP or
+                         # baseband). Values established on hardware by github.com/dipa-studio/ios-sweet (tools/mkadt.py).

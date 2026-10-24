@@ -1,0 +1,117 @@
+diff --git a/drivers/NativeUfs/RootPublication.h b/drivers/NativeUfs/RootPublication.h
+--- a/drivers/NativeUfs/RootPublication.h
++++ b/drivers/NativeUfs/RootPublication.h
+@@ -5,7 +5,16 @@
+ static bool ufsBuildRootPlan (const char *const *names, unsigned count, UfsRootPlan &plan)
+ {
+   plan = {};
+-  if (!names || count < 2 || count > 4) return false;
++  if (!names || !count || count > 4) return false;
++#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++  if (count == 1) {
++    if (!names[0] || strcmp (names[0], "OS")) return false;
++    plan.count = 1;
++    return true;
++  }
++#else
++  if (count == 1) return false;
++#endif
+   unsigned system = count, os = count;
+   for (unsigned i = 0; i < count; ++i) {
+     if (!names[i] || !names[i][0]) return false;
+@@ -34,7 +43,12 @@
+ template <class Ops>
+ static UfsRootPublicationResult ufsPrepareRootWindows (Ops &ops, unsigned count)
+ {
+-  if (count < 2 || count > 4) return { UfsRootPhase::Prepare, 0, 0 };
++#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++  constexpr unsigned minimum = 1;
++#else
++  constexpr unsigned minimum = 2;
++#endif
++  if (count < minimum || count > 4) return { UfsRootPhase::Prepare, 0, 0 };
+   for (unsigned i = 0; i < count; ++i) {
+     if (!ops.prepare (i)) {
+       // Include a partially allocated/initialized current object.
+diff --git a/drivers/NativeUfs/NativeUfs.cpp b/drivers/NativeUfs/NativeUfs.cpp
+--- a/drivers/NativeUfs/NativeUfs.cpp
++++ b/drivers/NativeUfs/NativeUfs.cpp
+@@ -1222,6 +1222,9 @@
+   bool authenticatesVolume (const char *uuid, uint8_t *manifestDigest = nullptr) const;
+   bool signedVolumeUuid (char out[37]) const;
+ #endif
++#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++  bool recoveryVolumeUuid (char out[37]) const { return ufsRecoveryRootUuid (label, bytes, out); }
++#endif
+   const char *windowLabel () const { return label; }
+   bool configure (const char *name, uint64_t absoluteOffset, uint64_t size);
+   bool start (IOService *provider) override;
+@@ -1576,7 +1579,7 @@
+ 
+ static void captureMissingMedia (const char *uuid)
+ {
+-  int used = snprintf (gRootMediaText, sizeof (gRootMediaText), "Waiting for signed UUID %s\n", uuid);
++  int used = snprintf (gRootMediaText, sizeof (gRootMediaText), "Waiting for root UUID %s\n", uuid);
+   OSDictionary *matching = IOService::serviceMatching ("IOMedia");
+   OSIterator *iterator = matching ? IOService::getMatchingServices (matching) : nullptr;
+   unsigned count = 0;
+@@ -1644,7 +1647,7 @@
+     gRootDiagnostic.result = result.phase == UfsRootPhase::Start ? kIOReturnIOError : kIOReturnTimeout;
+     const char *reason = result.phase == UfsRootPhase::Start ? "root window service start failed" :
+       (!strcmp (gPendingDevice[result.index]->windowLabel (), "SystemOS") ?
+-       "SystemOS signed volume not found" : "signed root window volume not found");
++       "SystemOS volume not found" : "root window volume not found");
+     IOLog ("NativeUfs: root publisher stopped at window %u; published=%u\n", result.index, result.published);
+     // Start failures have already released their unpublished object; do not
+     // dereference it here. The media-failure object is deliberately retained.
+@@ -1876,10 +1879,18 @@
+   }
+   gStoreGeometry = { true, layout->userdataFirst, layout->userdataLast, layout->imageBytes, layout->gptEntriesLba,
+                      layout->gptHeaderCrc, layout->gptEntriesCrc, layout->gptEntryCount };
++#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++  if (layout->windows != 1 || !ufsRecoveryRootIdentity (layout->window[0].name,
++        layout->window[0].size, layout->window[0].sha256)) {
++    rootDiagnosticFailure ("recovery window differs from the paired BaseSystem");
++    IOFree (layout, sizeof (RootLayout));
++    return false;
++  }
++#endif
+   const char *names[4] = {};
+   for (unsigned i = 0; i < layout->windows; ++i) names[i] = layout->window[i].name;
+   if (!ufsBuildRootPlan (names, layout->windows, gPublicationPlan)) {
+-    rootDiagnosticFailure ("root windows require distinct OS and SystemOS");
++    rootDiagnosticFailure ("root window publication policy rejected");
+     IOFree (layout, sizeof (RootLayout));
+     return false;
+   }
+@@ -1914,7 +1925,7 @@
+       return true;
+     }
+     bool validate () {
+-      gRootDiagnostic.stage = "signed window identities";
++      gRootDiagnostic.stage = "root window identities";
+       gRootDiagnostic.publicationPhase = static_cast<unsigned> (UfsRootPhase::Identity);
+ #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
+       for (unsigned i = 0; i < gPending; ++i) {
+@@ -1923,8 +1934,11 @@
+         for (unsigned j = 0; j < i; ++j) if (!strcmp (gPendingUuid[i], gPendingUuid[j])) return false;
+       }
+       return true;
++#elif defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++      // 预期UUID用于等待原版APFS发布，不代表传输层完成认证
++      return gPending == 1 && gPendingDevice[0]->recoveryVolumeUuid (gPendingUuid[0]);
+ #else
+-      return false; // Root publication requires owner verification in every build.
++      return false; // Legacy root publication requires owner verification.
+ #endif
+     }
+     bool schedule () {
+@@ -1952,7 +1966,7 @@
+            static_cast<unsigned> (result.phase), result.index);
+     IOService::stop (provider);
+     rootDiagnosticFailure (result.phase == UfsRootPhase::Schedule ? "root publisher thread creation failed" :
+-                          result.phase == UfsRootPhase::Identity ? "signed window identities rejected" :
++                          result.phase == UfsRootPhase::Identity ? "root window identities rejected" :
+                           "root window preparation failed");
+     return false;
+   }

@@ -273,7 +273,7 @@ jobs:
         id: native-cache
         with:
           path: ${{ env.NATIVE_OUT }}/
-          key: macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'platform/sheng/macos26/pac/**', 'platform/sheng/macos26/log/**', 'platform/sheng/macos26/crypto/**', 'scripts/build_macos26_xnu.py', 'scripts/build_macos26_storage.py', 'scripts/build_macos26_crypto.py', 'scripts/seal_macos26_crypto.py', 'scripts/native_macho.py') }}
+          key: macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'platform/sheng/macos26/pac/**', 'platform/sheng/macos26/log/**', 'platform/sheng/macos26/crypto/**', 'platform/sheng/macos26/storage/**', 'config/macos26-recovery-root.json', 'patches/UniXNU/0030-*', 'scripts/build_macos26_xnu.py', 'scripts/build_macos26_storage.py', 'scripts/build_macos26_crypto.py', 'scripts/seal_macos26_crypto.py', 'scripts/native_macho.py') }}
           restore-keys: |
             macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-
       - name: Compile native macOS 26 SHENG sources

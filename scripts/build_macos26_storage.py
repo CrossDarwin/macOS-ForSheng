@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import plistlib
 import subprocess
+import uuid
 
 from native_macho import macho
 
@@ -31,9 +32,25 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
         (include / header.name).write_bytes(header.read_bytes())
     wrapper = destination / (component + '.cpp')
     entry_prefix = 'sheng_virtio' if transport == 'virtio' else 'sheng_ufs'
+    recovery_prefix = ''
+    recovery_root = None
+    if transport == 'ufs':
+        recovery_root = json.loads((root / 'config/macos26-recovery-root.json').read_text())
+        digest = bytes.fromhex(recovery_root['sha256'])
+        identity = str(uuid.UUID(recovery_root['volume_uuid'])).upper()
+        if (recovery_root['build'] != '25F71' or recovery_root['variant'] != 'recoveryos'
+                or recovery_root['window'] != 'OS' or len(digest) != 32
+                or recovery_root['bytes'] <= 0 or recovery_root['bytes'] % 512):
+            raise ValueError('requires the paired read-only recovery root contract')
+        recovery_prefix = ('#include <libkern/libkern.h>\n'
+            f'#define NATIVE_UFS_RECOVERY_BYTES {recovery_root["bytes"]}ULL\n'
+            '#define NATIVE_UFS_RECOVERY_DIGEST {' + ','.join(str(b) for b in digest) + '}\n'
+            f'#define NATIVE_UFS_RECOVERY_UUID "{identity}"\n'
+            f'#include "{root / "platform/sheng/macos26/storage/recovery_root.h"}"\n')
     wrapper.write_text(
         '#include <TargetConditionals.h>\n'
         'static_assert(TARGET_OS_OSX == 1, "requires macOS storage ABI");\n'
+        + recovery_prefix +
         f'#include "{upstream}"\n'
         '#include <mach/kmod.h>\n'
         f'extern "C" kern_return_t {entry_prefix}_start(kmod_info_t *, void *) {{ return KERN_SUCCESS; }}\n'
@@ -105,6 +122,10 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                     original_storage_runtime_qualified=False, hardware_admitted=False)
     if transport == 'ufs':
         evidence.update(root_partition='macosroot', root_lun=0,
-                        android_userdata_used=False, root_media_layout_qualified=False)
+                        android_userdata_used=False, root_media_layout_qualified=False,
+                        recovery_root=recovery_root,
+                        recovery_root_header_sha256=hashlib.sha256((root / 'platform/sheng/macos26/storage/recovery_root.h').read_bytes()).hexdigest(),
+                        root_publication_sha256=hashlib.sha256((upstream.parent / 'RootPublication.h').read_bytes()).hexdigest(),
+                        recovery_transport_is_not_authentication=True)
     (destination / 'build.json').write_text(json.dumps(evidence, indent=2) + '\n')
     record['storage_driver' if transport == 'virtio' else 'ufs_driver'] = evidence
