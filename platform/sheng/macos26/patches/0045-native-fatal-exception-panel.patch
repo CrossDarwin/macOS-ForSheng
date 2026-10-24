@@ -1,0 +1,27 @@
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -629,6 +629,12 @@
+ 
+ 	ss_valid = is_saved_state64(ss);
+ 	arm_saved_state64_t *state = saved_state64(ss);
++#if SHENG
++	/* 可恢复缺页不固定屏幕，只在确定致命时保留寄存器 */
++	if (ss_valid && !PSR64_IS_USER(state->cpsr)) {
++		sheng_log_exception(state->pc, state->esr, state->far, state->sp);
++	}
++#endif
+ 
+ 	os_atomic_cmpxchg(&original_faulting_state, NULL, state, seq_cst);
+ 
+@@ -779,11 +785,6 @@
+ {
+ 	esr_exception_class_t  class   = ESR_EC(esr);
+ 	arm_saved_state_t    * state   = &context->ss;
+-#if SHENG
+-	if (!PSR64_IS_USER(get_saved_state_cpsr(state))) {
+-		sheng_log_exception(get_saved_state_pc(state), esr, far, get_saved_state_sp(state));
+-	}
+-#endif
+ 	thread_t               thread  = current_thread();
+ #if MACH_ASSERT
+ 	int                    preemption_level = sleh_get_preemption_level();

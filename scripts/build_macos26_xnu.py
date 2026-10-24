@@ -65,6 +65,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0042-native-security-entry-pac.patch',
     ROOT / 'platform/sheng/macos26/patches/0043-native-corecrypto-single-init.patch',
     ROOT / 'platform/sheng/macos26/patches/0044-native-platform-compatible-match.patch',
+    ROOT / 'platform/sheng/macos26/patches/0045-native-fatal-exception-panel.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
