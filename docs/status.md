@@ -631,3 +631,10 @@ pexpert不提供osfmk源码包含路径，因此将固定XNU的原字体显式�
 新增0033复用已通过的12行原生映射，直接显示44字符的末函数或首个panic摘要，不申请新映射，不等待保留日志writer；原始完整日志与标准panic仍保留。
 面板参数拒绝、映射和绑定分别输出明确文字，后续函数及原有kernel_bootstrap_log消息共用该通路；首次panic摘要固定，避免被回溯替换。
 定向QEMU故意保持writer占用且不启用完整面板，实际字体像素读回通过，panic摘要在80次后续状态消息后仍保留，12行映射之外的哨兵未变；完整内核构建与实机结果待完成。
+
+Actions 40063035904（5ce1275）成功构建0033，UUID 0BF0A13A-743B-3B24-8042-7935A89F34CB。
+同版内核高物理地址启动观察通过；完整UEFI QEMU短文字行witness=1，实际截图显示PANIC: image4 interface not available摘要，完整面板也保留相同原因。
+C与VM阶段F、corecrypto POST、诊断关闭及标准panic完整性均保持通过，尚未进入BSD。新候选b4904504d337802d1265cd015b19660695f3033b1cee084455fedd82f2fd2af5已封装。
+实机部署前Android仍为sheng / _a / boot_completed=1，记录位于private/experiments/20261024-native-arm64e/mapped-log-status。
+单次RAM临时启动前a槽可启动检查通过，ABL返回Booting OKAY，无刷写或切槽。
+被替代的90ec47c9部署镜像及本次QEMU ESP已删除，完整诊断与有效恢复备份保留；实机文字结果待回传。
