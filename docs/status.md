@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | 原版launchd创建system域，iSC三个辅助卷已挂载；data-protection派生子进程时，缺页被错误诊断入口截获；地址宏修复已提交，CI40105000086构建中 |
+| 原生 25F71 ARM64E QEMU | CI40105000086已越过data-protection、启动模式提交及auto-pivot-root；当前restore-datapartition中的sh触发PAC失败；已确认原版keys-off任务策略未在EL0边界执行，修复由CI40106907035构建 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -1035,10 +1035,42 @@ ADRP之后的ADD被删除。开关读取了所在页的起始字，而非开关�
 回归测试拒绝旧版Mach-O对象，修正版含12对PAGE21/PAGEOFF12及完整ADRP/ADD指令。
 QEMU独立异常用例通过：复制向量、MMU切换、无有效栈异常捕获、
 诊断关闭后的原分发、framebuffer映射冲突拒绝。
-CI40105000086正在构建完整内核，尚不能宣称完整启动阻断已解除。
+CI40105000086完整内核已构建通过，后续运行结果见下节。
 
 观察工具新增按配套符号身份校验的allproc及线程快照，读取有数量和地址范围限制。
 保留的用户寄存器只表示最近EL0边界，保存的内核帧来自调度上下文，
 均不能单独当作正在执行的故障位置；本次归因依据是延迟断点取得的首次异常寄存器。
 现场保存在private/experiments/20261025-native-arm64e/data-protection，
 回归对照保存在同日期的bootstrap-address目录。一次性ESP及写入层已删除。
+
+### 原版data-protection已通过，下一项为sh的任务PAC策略
+
+CI40105000086的完整候选UUID86F62D91-75A9-3AD5-8342-AC6CC3439B2E，
+SHA256 88648f9c0c1135571d6e214603bc4d039e91eb72b01fa51bf38f1778b087bdbf。
+完整保留此前11个原版组件。首轮封装漏带FSCompression，导致压缩launchd读取返回errno45；
+该轮已淘汰。启动工具现对配套BaseSystem的pthread、APFS及FSCompression进行运行前检查。
+
+修正版实际执行原版seputil，输出init_data_protection: No SEP present on this device后返回。
+launchd继续执行detect-installed-roots、select-boot-mode、commit-boot-mode、
+auto-pivot-root及allow-non-platform-code，说明此前data-protection阻断已解除。
+没有加入SEP或AppleKeyStore替代服务。
+
+新的真实panic为userspace panic: boot task failure: restore-datapartition - exited due to SIGKILL。
+此任务通过rc_script_wrapper执行sh。延迟断点在handle_pac_fail捕获到
+ESR=0x72000000、指令BLRAAZ x8，目标为缓存dyld的lldb_image_notifier，且指针未签名。
+原版dyld源码prepareInCacheDyldAllImageInfos与实际指令序列一致。
+
+匹配DWARF的只读现场确认sh的task.disable_user_jop=1、线程machine_flags=0x3，
+而SCTLR_EL1=0xfc54793d仍开启IA/DA。父rc_script_wrapper和launchd的disable_user_jop均为0。
+原版mach_loader.c将com.apple.sh列入可加载插件的keys-off例外；
+原生EL1密钥边界实现此前只切换密钥，没有执行该任务策略。
+
+独立补丁pac/0005在最后EL0返回边界按原版线程标志设置SCTLR的IA/DA开关，
+B密钥保持开启；从EL0进入内核时，在任何内核认证前恢复IA/DA。
+这是EL1边界实现，未照搬Snapintosh的EL2根切换处理。
+847a791已提交，CI40106907035构建中，尚未完成新内核运行验证。
+
+完整启动现场保存在private/experiments/20261025-native-arm64e/bootstrap-address/full-40105000086，
+首次PAC异常及任务策略保存在同日期shell-pac目录。两个原始磁盘仍以只读底图打开，
+一次性写入层已删除，已替代的CI40100580890实验候选也已删除，原始内核及配套符号保留。
+512条系统调用预算已耗尽，但后续原版控制台和panic完整保存；不能把计数截止当成任务不再运行。
