@@ -93,3 +93,15 @@ VMAPPLE 的 HVC 密钥接口不能用于现有 sheng EL1 启动链。
 - 截图使用 rootauth=0 暂时跳过 sealed root 验证；本项目尚未推进到根卷挂载，不据此提前修改根认证
 
 截图中的 NativeVirtioBlock 是 QEMU virtio-mmio 存储路径，不能直接当作 sheng 的 UFS 实现。
+
+## ARM64E组件实验映像
+
+`emit_macos26_security.py --qemu-only`将六个原版组件放入独立的只读、可执行和可写段，重建统一的格式7链；认证key、diversity和addrDiv保留，由XNU在实际运行地址签名。内嵌Mach-O头、符号表、kmod地址和预链接元数据同步移动。原生内核UUID和dSYM继续对应未移动的内核代码，组件集合另有KCID及完整SHA-256。硬件封装器拒绝尚未验收的组件候选。
+
+0038–0039提供稀疏组件索引及真实初始化入口。存在原版corecrypto描述时，EARLY_BOOT执行该原版模块，后续OSKext只复用同一模块真实成功的初始化结果，避免重复注册PRNG；普通无组件内核保留现有源码提供者。0040使用XNU原有OSRuntimeSignStructors处理组件构造器，0041修正索引表与组件头分区的边界，0042按内核函数类型discriminator签名注册入口。
+
+CI 40072559556已成功构建基础接口。首轮QEMU越过映像加载和VM，但旧prelink解析器拒绝缺少split-info描述的原fileset组件。生成器在经验证的头部空隙添加空split-info描述，实际重定位仍由外层格式7链负责。
+
+第二轮QEMU调用原版corecrypto，模块标识为Apple corecrypto Module v26.0，原始HMAC已知答案自检通过。随后完整性遍历在AccelerateCrypto_SHA256_compress+0x30读取未映射地址，ELR=0xfffffe000d429600、ESR=0x96000007、FAR=0xfffffe000dcef5c0。反汇编确认，清除MH_DYLIB_IN_CACHE会让原版fipspost_get_hmac选择header+fileoff路径；已保留原标记。原始输入的代码HMAC与内嵌32字节字段相等，分支重定位后按同一算法更新字段，不略过POST。
+
+修正缓存视图和重叠section后，第三轮停在稀疏索引的边界检查。0041针对这处实际错误修正了边界；完整POST、Image4和AMFI注册仍待新内核运行结果。阶段记录位于private/experiments/20261024-native-arm64e/image4-relink/。
