@@ -4,8 +4,24 @@
 共享渲染器定向运行覆盖清屏后回放、writer占用时首次异常寄存器显示及原因固定；实际设备仍需验证。KDP和UART没有因此取得实机传输能力。
 
 内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
-root Recovery已经实测挂载、普通文件写入和读回；`OBSERVED.JSON`是人工读取屏幕后的结构化记录，不是RAM导出。XNU仍没有已验证的UFS写入后端，跨重启RAM留存与自动文件保存尚待接通。
+root Recovery已经实测挂载、普通文件写入和读回；`OBSERVED.JSON`是人工读取屏幕后的结构化记录，不是RAM导出。XNU仍没有已验证的UFS写入后端。新增DarwinBoot保存流程使用固件文件系统，宿主EFI服务测试已通过，跨重启RAM留存与实机UEFI文件系统枚举仍未验证。
 禁止向现有厂商logfs或userdata裸写日志。64 MiB来自当前sde的未分配尾部，未调整原分区边界或Android数据大小；有效GPT及空闲区回滚备份保存在`private/backups/20261024-macoslog-partition`。
+
+`0015-native-retained-log-persistence.patch`在加载下一份内核前读取macoslog上的NEXTLOG.BIN，核对指定RAM范围、日志头、内核UUID和物理地址。先独占原RAM页，再分配快照，防止分配快照时覆盖来源；原页已被固件占用或不具备恒等映射时拒绝读取。
+固件只允许操作上述PARTUUID、名称、类型、起止LBA及4096字节扇区均匹配的64 MiB分区；需要PartitionInfo、BlockIo及SimpleFileSystem三个协议同时存在。不存在时打印跳过原因，不转向其他分区或裸写。
+每次新增CAP00001等目录，保存NATIVE.BIN、CONSOLE.TXT、PANIC.BIN、REQUEST.BIN、STATUS.TXT；逐文件Flush并读回比对后才写DONE.TXT。中断目录保留且不重用，后续捕获不会覆盖它。
+CONSOLE.TXT包含16 KiB前缀及64 KiB环形尾部，超出容量和writer忙时丢失的字节有明确标注；这不是整机RAM转储，也不保证无限日志。512 KiB panic区另外保留。
+加载当前匹配内核后，从实际Mach-O符号和已分配PA生成下一次NEXTLOG.BIN，不猜测地址；上一次请求尚未成功恢复时保留原请求，不覆盖。必须重新进入含此加载器的UniXNU才会尝试恢复，进入Android或断电可能破坏原RAM。相同UUID也不单独证明属于最近一次运行。
+
+root Recovery只读导出：
+
+```sh
+python3 scripts/capture_persistent_log.py --serial 29d9c0be \
+  --kernel-build private/ci/macos26-arm64e-kernel-RUN \
+  --output private/experiments/CAPTURE
+```
+
+脚本不自动重启，不改分区；核对sheng/root Recovery、sde78及FAT卷后只读挂载，导出完成即卸载。原始文件全部保留，只有UUID匹配且完成标记有效的记录才解码。EFI文本还会与现有环形解码器逐字节核对。
 
 自构建 XNU 优先使用 KDP 保留现场，避免仅用定时复位判断路径。
 当前 UEFI 页表/PAC 探针不是 XNU，不能通过内核 KDP 调试。

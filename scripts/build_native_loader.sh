@@ -43,6 +43,9 @@ from pathlib import Path
 p = Path('out/native-loader/RELEASE_CLANGPDB/AARCH64/DarwinBoot.efi')
 record = dict(file=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
               native_arm64e_supported=True,
+              retained_log_persistence=True, retained_log_partition="4cd2ed34-2142-4ea4-abf2-ec6c51d117d7",
+              retained_log_hardware_qualified=False,
+              log_save_source_sha256=hashlib.sha256(Path("UniXNU/drivers/DarwinBoot/DarwinBootPkg/Driver/NativeLogSave.h").read_bytes()).hexdigest(),
               handoff_panic_address_visible=True,
               handoff_progress='green=entered blue=cache-clean orange=MMU-off',
               handoff_identity_mapping_checked=True, handoff_code_cache_cleaned=True,

@@ -98,8 +98,10 @@ def main() -> None:
     progress_patch = 'patches/UniXNU/0013-native-handoff-progress.patch'
     coherency_patch = 'patches/UniXNU/0014-native-handoff-code-coherency.patch'
     arm64e_patch = 'patches/UniXNU/0011-native-arm64e-loader.patch'
+    persistence_patch = 'patches/UniXNU/0015-native-retained-log-persistence.patch'
     if (firmware.get('preflight_only') is not False or firmware.get('native_el1')
             or firmware['bootimg']['compression'] != 'none'
+            or firmware.get('patches_sha256', {}).get(persistence_patch) != hashlib.sha256((ROOT / persistence_patch).read_bytes()).hexdigest()
             or firmware.get('patches_sha256', {}).get(panic_patch) != hashlib.sha256((ROOT / panic_patch).read_bytes()).hexdigest()
             or firmware.get('patches_sha256', {}).get(handoff_patch) != hashlib.sha256((ROOT / handoff_patch).read_bytes()).hexdigest()
             or firmware.get('patches_sha256', {}).get(progress_patch) != hashlib.sha256((ROOT / progress_patch).read_bytes()).hexdigest()

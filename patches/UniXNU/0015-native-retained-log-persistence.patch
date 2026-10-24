@@ -1,0 +1,517 @@
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -111,6 +111,8 @@
+   if (EFI_ERROR (Status) && (*Data != NULL)) { FreePool (*Data); *Data = NULL; }
+   return Status;
+ }
++
++#include "NativeLogSave.h"
+ 
+ STATIC
+ EFI_STATUS
+@@ -525,6 +527,8 @@
+   UINTN                           Attempt;
+   CHAR8                           CommandLine[1024];
+   UINT64                          Video[6];
++  EFI_STATUS                      LogRecoveryStatus;
++  EFI_STATUS                      LogArmStatus;
+ 
+   (VOID)This;
+   if ((Request == NULL) || (Request->Volume == NULL) || (Request->KernelPath == NULL)) { return EFI_INVALID_PARAMETER; }
+@@ -561,6 +565,12 @@
+   if (EFI_ERROR (Status)) { return Status; }
+   Status = Fs->OpenVolume (Fs, &Root);
+   if (EFI_ERROR (Status)) { return Status; }
++  // Snapshot the prior run before kernel file loading or window allocation can reuse its pages.
++  Status = NativeLogSave ();
++  LogRecoveryStatus = Status;
++  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
++    Print (L"DARWINBOOT: RAM log recovery skipped: %r\n", Status);
++  }
+   Status = ReadFile (Root, Request->KernelPath, SIZE_128MB, &Image, &ImageSize);
+   if (EFI_ERROR (Status)) { goto Fail; }
+   Status = ParseKernel (Image, ImageSize, &Kernel);
+@@ -680,6 +690,11 @@
+     WriteUnaligned64 ((UINT64 *)(UINTN)(TreeAddress + AddonOffset + 8), AddonSize);
+     FreePool (Addon); Addon = NULL;
+   }
++  Status = NativeLogArm (Image, ImageSize, &Kernel, Address, PanicAddress, PanicOffset != MAX_UINTN);
++  LogArmStatus = Status;
++  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND) && (Status != EFI_UNSUPPORTED)) {
++    Print (L"DARWINBOOT: next RAM capture not armed: %r\n", Status);
++  }
+   FreePool (Image); Image = NULL;
+   FreePool (Tree); Tree = NULL;
+   FreePool (TreePath); TreePath = NULL;
+@@ -750,6 +765,7 @@
+   if (AsciiStrStr (CommandLine, "-sheng-capture-handoff") != NULL) {
+     Print (L"DARWINBOOT: kernel pa 0x%lx panic pa 0x%lx\n", Address, PanicAddress);
+     Print (L"HANDOFF: green=entered blue=cache-clean orange=MMU-off\n");
++    Print (L"MACOSLOG: recovery=%r next=%r\n", LogRecoveryStatus, LogArmStatus);
+     Print (L"DARWINBOOT: capture handoff addresses - starting in 10 seconds\n");
+     gBS->Stall (10000000);
+   }
+--- a/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.inf
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.inf
+@@ -13,6 +13,7 @@
+   BootArgs.h
+   BootVideo.h
+   DiagFont.h
++  NativeLogSave.h
+   Entry.S
+ 
+ [Packages]
+@@ -34,6 +35,8 @@
+   gEfiSimpleFileSystemProtocolGuid ## CONSUMES
+   gEfiLoadedImageProtocolGuid ## CONSUMES
+   gEfiGraphicsOutputProtocolGuid ## CONSUMES
++  gEfiPartitionInfoProtocolGuid ## CONSUMES
++  gEfiBlockIoProtocolGuid ## CONSUMES
+ 
+ [Guids]
+   gEfiFileInfoGuid
+--- /dev/null
++++ b/drivers/DarwinBoot/DarwinBootPkg/Driver/NativeLogSave.h
+@@ -0,0 +1,442 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#ifndef DARWIN_NATIVE_LOG_SAVE_H
++#define DARWIN_NATIVE_LOG_SAVE_H
++#include <Protocol/BlockIo.h>
++#include <Protocol/PartitionInfo.h>
++
++#define NATIVE_LOG_BYTES 82048U
++#define NATIVE_PANIC_BYTES 524288U
++#define NATIVE_LOG_FIRST 0x880000000ULL
++#define NATIVE_LOG_END 0x8bb300000ULL
++
++#pragma pack(1)
++typedef struct {
++  UINT8 Magic[8];
++  UINT32 Version;
++  UINT32 Bytes;
++  UINT64 LogAddress;
++  UINT32 LogBytes;
++  UINT32 PanicBytes;
++  UINT64 PanicAddress;
++  UINT8 KernelUuid[16];
++  EFI_GUID PartitionGuid;
++  UINT32 Crc32;
++  UINT32 Reserved;
++} NATIVE_LOG_REQUEST;
++#pragma pack()
++STATIC_ASSERT (sizeof (NATIVE_LOG_REQUEST) == 80, "native log request ABI");
++
++STATIC CONST EFI_GUID mNativeLogPartition =
++  {0x4cd2ed34, 0x2142, 0x4ea4, {0xab, 0xf2, 0xec, 0x6c, 0x51, 0xd1, 0x17, 0xd7}};
++STATIC CONST EFI_GUID mNativeLogType =
++  {0xebd0a0a2, 0xb9e5, 0x4433, {0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7}};
++
++STATIC BOOLEAN
++NativeLogRange (UINT64 Address, UINT32 Bytes)
++{
++  return (Bytes != 0) && ((Address & 0x3fff) == 0) &&
++         (Address >= NATIVE_LOG_FIRST) && (Address < NATIVE_LOG_END) &&
++         (Bytes <= NATIVE_LOG_END - Address);
++}
++
++STATIC EFI_STATUS
++NativeLogValidateRequest (NATIVE_LOG_REQUEST *Request)
++{
++  UINT32 Stored;
++  UINT32 Actual;
++  EFI_STATUS Status;
++  UINT8 ZeroUuid[16] = {0};
++
++  if ((CompareMem (Request->Magic, "SHNSAVE1", 8) != 0) ||
++      (Request->Version != 1) || (Request->Bytes != sizeof (*Request)) ||
++      (Request->Reserved != 0) ||
++      !CompareGuid (&Request->PartitionGuid, &mNativeLogPartition) ||
++      (CompareMem (Request->KernelUuid, ZeroUuid, sizeof (ZeroUuid)) == 0) ||
++      (Request->LogBytes != NATIVE_LOG_BYTES) ||
++      !NativeLogRange (Request->LogAddress, Request->LogBytes)) {
++    return EFI_COMPROMISED_DATA;
++  }
++  if (((Request->PanicBytes == 0) && (Request->PanicAddress != 0)) ||
++      ((Request->PanicBytes != 0) &&
++       ((Request->PanicBytes != NATIVE_PANIC_BYTES) ||
++        !NativeLogRange (Request->PanicAddress, Request->PanicBytes) ||
++        ((Request->LogAddress < Request->PanicAddress + Request->PanicBytes) &&
++         (Request->PanicAddress < Request->LogAddress + Request->LogBytes))))) {
++    return EFI_COMPROMISED_DATA;
++  }
++  Stored = Request->Crc32;
++  Request->Crc32 = 0;
++  Status = gBS->CalculateCrc32 (Request, sizeof (*Request), &Actual);
++  Request->Crc32 = Stored;
++  if (EFI_ERROR (Status)) { return Status; }
++  return (Actual == Stored) ? EFI_SUCCESS : EFI_CRC_ERROR;
++}
++
++STATIC EFI_STATUS
++NativeLogValidateSnapshot (CONST NATIVE_LOG_REQUEST *Request, CONST UINT8 *Log)
++{
++  if ((CompareMem (Log, "SHNLOG01", 8) != 0) ||
++      (ReadUnaligned32 ((CONST UINT32 *)(Log + 8)) != 1) ||
++      (ReadUnaligned32 ((CONST UINT32 *)(Log + 12)) != 128) ||
++      (ReadUnaligned32 ((CONST UINT32 *)(Log + 16)) != 16384) ||
++      (ReadUnaligned32 ((CONST UINT32 *)(Log + 20)) != 65536) ||
++      (ReadUnaligned64 ((CONST UINT64 *)(Log + 24)) == 0) ||
++      (ReadUnaligned64 ((CONST UINT64 *)(Log + 24)) == MAX_UINT64) ||
++      (ReadUnaligned32 ((CONST UINT32 *)(Log + 40)) > 1) ||
++      (ReadUnaligned32 ((CONST UINT32 *)(Log + 44)) > 3) ||
++      (ReadUnaligned64 ((CONST UINT64 *)(Log + 48)) != Request->LogAddress) ||
++      (ReadUnaligned64 ((CONST UINT64 *)(Log + 104)) != 0xfffffe0007004000ULL) ||
++      (CompareMem (Log + 112, Request->KernelUuid, 16) != 0)) {
++    return EFI_COMPROMISED_DATA;
++  }
++  return EFI_SUCCESS;
++}
++
++STATIC EFI_STATUS
++NativeLogOpenVolume (EFI_FILE_PROTOCOL **Root)
++{
++  EFI_HANDLE *Handles;
++  UINTN Count;
++  UINTN Index;
++  EFI_STATUS Status;
++  EFI_PARTITION_INFO_PROTOCOL *Info;
++  EFI_BLOCK_IO_PROTOCOL *Block;
++  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
++  EFI_GUID Id;
++  EFI_GUID Type;
++  CHAR16 Name[37];
++
++  *Root = NULL;
++  Handles = NULL;
++  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiPartitionInfoProtocolGuid, NULL, &Count, &Handles);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = EFI_NOT_FOUND;
++  for (Index = 0; Index < Count; Index++) {
++    if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiPartitionInfoProtocolGuid, (VOID **)&Info)) ||
++        (Info->Revision != EFI_PARTITION_INFO_PROTOCOL_REVISION) || (Info->Type != PARTITION_TYPE_GPT)) { continue; }
++    CopyMem (&Id, &Info->Info.Gpt.UniquePartitionGUID, sizeof (Id));
++    CopyMem (&Type, &Info->Info.Gpt.PartitionTypeGUID, sizeof (Type));
++    CopyMem (Name, Info->Info.Gpt.PartitionName, 36 * sizeof (CHAR16));
++    Name[36] = 0;
++    if (!CompareGuid (&Id, &mNativeLogPartition) || !CompareGuid (&Type, &mNativeLogType) ||
++        (StrCmp (Name, L"macoslog") != 0) ||
++        (Info->Info.Gpt.StartingLBA != 448512) || (Info->Info.Gpt.EndingLBA != 464895)) { continue; }
++    Status = gBS->HandleProtocol (Handles[Index], &gEfiBlockIoProtocolGuid, (VOID **)&Block);
++    if (EFI_ERROR (Status)) { break; }
++    if (!Block->Media->LogicalPartition || !Block->Media->MediaPresent || Block->Media->ReadOnly ||
++        (Block->Media->BlockSize != 4096) || (Block->Media->LastBlock != 16383)) {
++      Status = EFI_WRITE_PROTECTED; break;
++    }
++    Status = gBS->HandleProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs);
++    if (!EFI_ERROR (Status)) { Status = Fs->OpenVolume (Fs, Root); }
++    break;
++  }
++  FreePool (Handles);
++  return Status;
++}
++
++STATIC EFI_STATUS
++NativeLogReserve (UINT64 Address, UINT32 Bytes)
++{
++  EFI_STATUS Status;
++  EFI_PHYSICAL_ADDRESS Chosen;
++  UINTN Pages;
++  UINT64 Cursor;
++
++  Pages = EFI_SIZE_TO_PAGES (Bytes);
++  Chosen = Address;
++  // Reserve the old pages before allocating the snapshot; in-use pages are rejected.
++  Status = gBS->AllocatePages (AllocateAddress, EfiLoaderData, Pages, &Chosen);
++  if (EFI_ERROR (Status)) { return Status; }
++  for (Cursor = Address; Cursor < Address + EFI_PAGES_TO_SIZE (Pages); Cursor += EFI_PAGE_SIZE) {
++    if (DarwinPhysicalAddress (Cursor) != Cursor) {
++      gBS->FreePages (Address, Pages);
++      return EFI_NO_MAPPING;
++    }
++  }
++  return EFI_SUCCESS;
++}
++
++STATIC EFI_STATUS
++NativeLogWriteFile (EFI_FILE_PROTOCOL *Directory, CHAR16 *Name, CONST VOID *Data, UINTN Bytes)
++{
++  EFI_FILE_PROTOCOL *File;
++  EFI_STATUS Status;
++  EFI_STATUS Closed;
++  UINTN Actual;
++  UINTN Offset;
++  UINT8 Verify[4096];
++
++  // Callers use a newly created capture directory; never truncate a previous capture.
++  Status = Directory->Open (Directory, &File, Name, EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE, 0);
++  if (EFI_ERROR (Status)) { return Status; }
++  Actual = Bytes;
++  Status = File->Write (File, &Actual, (VOID *)Data);
++  if (!EFI_ERROR (Status) && (Actual != Bytes)) { Status = EFI_VOLUME_FULL; }
++  if (!EFI_ERROR (Status)) { Status = File->Flush (File); }
++  if (!EFI_ERROR (Status)) { Status = File->SetPosition (File, 0); }
++  for (Offset = 0; !EFI_ERROR (Status) && (Offset < Bytes); Offset += Actual) {
++    Actual = MIN (sizeof (Verify), Bytes - Offset);
++    Status = File->Read (File, &Actual, Verify);
++    if (!EFI_ERROR (Status) && ((Actual == 0) || (CompareMem (Verify, (CONST UINT8 *)Data + Offset, Actual) != 0))) {
++      Status = EFI_DEVICE_ERROR;
++    }
++  }
++  Closed = File->Close (File);
++  return EFI_ERROR (Status) ? Status : Closed;
++}
++
++STATIC EFI_STATUS
++NativeLogWriteConsole (EFI_FILE_PROTOCOL *Directory, CONST UINT8 *Log)
++{
++  CHAR8 *Text;
++  UINT64 Total;
++  UINT64 Prefix;
++  UINT64 Start;
++  UINT64 Kept;
++  UINT64 Omitted;
++  UINT64 Dropped;
++  UINTN Bytes;
++  UINTN Offset;
++  UINTN First;
++  EFI_STATUS Status;
++
++  Total = U64 (Log + 24); Dropped = U64 (Log + 32);
++  Prefix = MIN (Total, 16384);
++  Start = MAX (Prefix, Total > 65536 ? Total - 65536 : 0);
++  if ((U32 (Log + 40) != 0) && (Total >= 65536) && (Start == Total - 65536)) { Start++; }
++  Omitted = Start - Prefix; Kept = Total - Start;
++  Text = AllocatePool (NATIVE_LOG_BYTES + 256);
++  if (Text == NULL) { return EFI_OUT_OF_RESOURCES; }
++  Bytes = (UINTN)Prefix;
++  CopyMem (Text, Log + 128, Bytes);
++  if (Omitted != 0) {
++    Bytes += AsciiSPrint (Text + Bytes, 128,
++      "\n[... %lu committed console bytes not retained ...]\n", Omitted);
++  }
++  Offset = (UINTN)(Start % 65536); First = MIN ((UINTN)Kept, 65536 - Offset);
++  CopyMem (Text + Bytes, Log + 128 + 16384 + Offset, First); Bytes += First;
++  CopyMem (Text + Bytes, Log + 128 + 16384, (UINTN)Kept - First); Bytes += (UINTN)Kept - First;
++  if (Dropped != 0) {
++    Bytes += AsciiSPrint (Text + Bytes, 128,
++      "\n[... %lu console bytes dropped by busy writer ...]\n", Dropped);
++  }
++  Status = NativeLogWriteFile (Directory, L"CONSOLE.TXT", Text, Bytes);
++  FreePool (Text);
++  return Status;
++}
++
++STATIC EFI_STATUS
++NativeLogNewDirectory (EFI_FILE_PROTOCOL *Root, EFI_FILE_PROTOCOL **Directory, CHAR16 Name[16])
++{
++  UINTN Index;
++  EFI_STATUS Status;
++  EFI_FILE_PROTOCOL *Existing;
++
++  *Directory = NULL;
++  for (Index = 1; Index <= 128; Index++) {
++    UnicodeSPrint (Name, 16 * sizeof (CHAR16), L"CAP%05u", (UINT32)Index);
++    Status = Root->Open (Root, &Existing, Name, EFI_FILE_MODE_READ, 0);
++    if (!EFI_ERROR (Status)) { Existing->Close (Existing); continue; }
++    if (Status != EFI_NOT_FOUND) { return Status; }
++    return Root->Open (Root, Directory, Name, EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE, EFI_FILE_DIRECTORY);
++  }
++  return EFI_VOLUME_FULL;
++}
++
++STATIC EFI_STATUS
++NativeLogSave (VOID)
++{
++  EFI_FILE_PROTOCOL *Root;
++  EFI_FILE_PROTOCOL *Directory;
++  VOID *Manifest;
++  UINTN ManifestBytes;
++  NATIVE_LOG_REQUEST Request;
++  VOID *Snapshot;
++  UINTN SnapshotBytes;
++  BOOLEAN LogReserved;
++  BOOLEAN PanicReserved;
++  EFI_STATUS Status;
++  EFI_STATUS Closed;
++  EFI_FILE_PROTOCOL *Consumed;
++  UINT32 LogCrc;
++  UINT32 PanicCrc;
++  CHAR16 Name[16];
++  CHAR8 Report[768];
++  UINTN ReportBytes;
++
++  Root = NULL; Directory = NULL; Manifest = NULL; Snapshot = NULL;
++  LogReserved = FALSE; PanicReserved = FALSE;
++  Status = NativeLogOpenVolume (&Root);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = ReadFile (Root, L"\\NEXTLOG.BIN", sizeof (Request), &Manifest, &ManifestBytes);
++  if (EFI_ERROR (Status)) { goto Done; }
++  if (ManifestBytes != sizeof (Request)) { Status = EFI_BAD_BUFFER_SIZE; goto Done; }
++  CopyMem (&Request, Manifest, sizeof (Request));
++  FreePool (Manifest); Manifest = NULL;
++  Status = NativeLogValidateRequest (&Request);
++  if (EFI_ERROR (Status)) { goto Done; }
++  Status = NativeLogReserve (Request.LogAddress, Request.LogBytes);
++  if (EFI_ERROR (Status)) { goto Done; }
++  LogReserved = TRUE;
++  if (Request.PanicBytes != 0) {
++    Status = NativeLogReserve (Request.PanicAddress, Request.PanicBytes);
++    if (EFI_ERROR (Status)) { goto Done; }
++    PanicReserved = TRUE;
++  }
++  SnapshotBytes = Request.LogBytes + Request.PanicBytes;
++  Snapshot = AllocatePool (SnapshotBytes);
++  if (Snapshot == NULL) { Status = EFI_OUT_OF_RESOURCES; goto Done; }
++  CopyMem (Snapshot, (VOID *)(UINTN)Request.LogAddress, Request.LogBytes);
++  Status = NativeLogValidateSnapshot (&Request, Snapshot);
++  if (EFI_ERROR (Status)) { goto Done; }
++  if (Request.PanicBytes != 0) {
++    CopyMem ((UINT8 *)Snapshot + Request.LogBytes, (VOID *)(UINTN)Request.PanicAddress, Request.PanicBytes);
++  }
++  Status = gBS->CalculateCrc32 (Snapshot, Request.LogBytes, &LogCrc);
++  if (EFI_ERROR (Status)) { goto Done; }
++  PanicCrc = 0;
++  if (Request.PanicBytes != 0) {
++    Status = gBS->CalculateCrc32 ((UINT8 *)Snapshot + Request.LogBytes, Request.PanicBytes, &PanicCrc);
++    if (EFI_ERROR (Status)) { goto Done; }
++  }
++  Status = NativeLogNewDirectory (Root, &Directory, Name);
++  if (EFI_ERROR (Status)) { goto Done; }
++  Status = NativeLogWriteFile (Directory, L"NATIVE.BIN", Snapshot, Request.LogBytes);
++  if (EFI_ERROR (Status)) { goto Done; }
++  if (Request.PanicBytes != 0) {
++    Status = NativeLogWriteFile (Directory, L"PANIC.BIN", (UINT8 *)Snapshot + Request.LogBytes, Request.PanicBytes);
++    if (EFI_ERROR (Status)) { goto Done; }
++  }
++  Status = NativeLogWriteConsole (Directory, Snapshot);
++  if (EFI_ERROR (Status)) { goto Done; }
++  Status = NativeLogWriteFile (Directory, L"REQUEST.BIN", &Request, sizeof (Request));
++  if (EFI_ERROR (Status)) { goto Done; }
++  ReportBytes = AsciiSPrint (Report, sizeof (Report),
++    "SHENG retained RAM capture\r\nlog_pa=0x%lx bytes=%u crc32=%08x\r\n"
++    "panic_pa=0x%lx bytes=%u crc32=%08x\r\n"
++    "total=%lu dropped=%lu writer=%u panic_state=%u\r\n"
++    "ELR=%016lx ESR=%016lx FAR=%016lx SP=%016lx\r\n"
++    "Header and UUID matched. Warm retention and run freshness require hardware evidence.\r\n"
++    "Prefix=16384 tail=65536. Omitted and busy bytes are reported by decode_native_log.py.\r\n",
++    Request.LogAddress, Request.LogBytes, LogCrc, Request.PanicAddress, Request.PanicBytes, PanicCrc,
++    U64 ((UINT8 *)Snapshot + 24), U64 ((UINT8 *)Snapshot + 32),
++    U32 ((UINT8 *)Snapshot + 40), U32 ((UINT8 *)Snapshot + 44),
++    U64 ((UINT8 *)Snapshot + 72), U64 ((UINT8 *)Snapshot + 80),
++    U64 ((UINT8 *)Snapshot + 88), U64 ((UINT8 *)Snapshot + 64));
++  Status = NativeLogWriteFile (Directory, L"STATUS.TXT", Report, ReportBytes);
++  if (EFI_ERROR (Status)) { goto Done; }
++  // This last read-back-verified marker commits the capture; partial directories stay uncommitted.
++  Status = NativeLogWriteFile (Directory, L"DONE.TXT", "SHENG capture complete\r\n", 24);
++  if (!EFI_ERROR (Status)) { Status = Directory->Flush (Directory); }
++  if (!EFI_ERROR (Status)) { Status = Root->Flush (Root); }
++  if (!EFI_ERROR (Status)) {
++    Print (L"DARWINBOOT: RAM log saved to macoslog\\%s\n", Name);
++    Status = Root->Open (Root, &Consumed, L"\\NEXTLOG.BIN", EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE, 0);
++    if (!EFI_ERROR (Status)) {
++      Status = Consumed->Delete (Consumed);
++      if (Status == EFI_WARN_DELETE_FAILURE) { Status = EFI_DEVICE_ERROR; }
++    }
++  }
++Done:
++  if (Snapshot != NULL) { FreePool (Snapshot); }
++  if (Manifest != NULL) { FreePool (Manifest); }
++  if (PanicReserved) { gBS->FreePages (Request.PanicAddress, EFI_SIZE_TO_PAGES (Request.PanicBytes)); }
++  if (LogReserved) { gBS->FreePages (Request.LogAddress, EFI_SIZE_TO_PAGES (Request.LogBytes)); }
++  if (Directory != NULL) {
++    Closed = Directory->Close (Directory);
++    if (!EFI_ERROR (Status)) { Status = Closed; }
++  }
++  Closed = Root->Close (Root);
++  return EFI_ERROR (Status) ? Status : Closed;
++}
++STATIC EFI_STATUS
++NativeLogArm (CONST UINT8 *Image, UINTN ImageBytes, CONST KERNEL *Kernel,
++              UINT64 Address, UINT64 PanicAddress, BOOLEAN HasPanic)
++{
++  NATIVE_LOG_REQUEST Request;
++  EFI_FILE_PROTOCOL *Root;
++  EFI_FILE_PROTOCOL *Existing;
++  EFI_STATUS Status;
++  EFI_STATUS Closed;
++  UINTN Offset;
++  UINT32 Index;
++  UINT32 Count;
++  UINT32 Command;
++  UINT32 Length;
++  UINT32 SymbolOffset;
++  UINT32 SymbolCount;
++  UINT32 StringOffset;
++  UINT32 StringBytes;
++  UINT32 Name;
++  UINT64 Value;
++  BOOLEAN Found;
++  BOOLEAN HasUuid;
++  CONST UINT8 *Symbol;
++  STATIC CONST CHAR8 SymbolName[] = "_sheng_log_buffer";
++
++  ZeroMem (&Request, sizeof (Request));
++  if ((ImageBytes < 32) || (U32 (Image) != 0xfeedfacf) ||
++      (U32 (Image + 4) != 0x100000c)) { return EFI_UNSUPPORTED; }
++  Count = U32 (Image + 16);
++  if ((Count > 4096) || (U32 (Image + 20) > ImageBytes - 32)) { return EFI_COMPROMISED_DATA; }
++  SymbolOffset = 0; SymbolCount = 0; StringOffset = 0; StringBytes = 0;
++  HasUuid = FALSE; Found = FALSE; Offset = 32;
++  for (Index = 0; Index < Count; Index++) {
++    if (Offset > ImageBytes - 8) { return EFI_COMPROMISED_DATA; }
++    Command = U32 (Image + Offset); Length = U32 (Image + Offset + 4);
++    if ((Length < 8) || (Length > ImageBytes - Offset)) { return EFI_COMPROMISED_DATA; }
++    if (Command == 0x1b) {
++      if ((Length != 24) || HasUuid) { return EFI_COMPROMISED_DATA; }
++      CopyMem (Request.KernelUuid, Image + Offset + 8, 16); HasUuid = TRUE;
++    } else if (Command == 2) {
++      if ((Length != 24) || (SymbolCount != 0)) { return EFI_COMPROMISED_DATA; }
++      SymbolOffset = U32 (Image + Offset + 8); SymbolCount = U32 (Image + Offset + 12);
++      StringOffset = U32 (Image + Offset + 16); StringBytes = U32 (Image + Offset + 20);
++      if ((SymbolOffset > ImageBytes) || (SymbolCount > (ImageBytes - SymbolOffset) / 16) ||
++          (StringOffset > ImageBytes) || (StringBytes > ImageBytes - StringOffset)) { return EFI_COMPROMISED_DATA; }
++    }
++    Offset += Length;
++  }
++  if (!HasUuid || (SymbolCount == 0)) { return EFI_UNSUPPORTED; }
++  for (Index = 0; Index < SymbolCount; Index++) {
++    Symbol = Image + SymbolOffset + (UINTN)Index * 16;
++    Name = U32 (Symbol);
++    if ((Symbol[4] & 0xe0) || ((Symbol[4] & 0x0e) != 0x0e) ||
++        (Name > StringBytes) || (StringBytes - Name < sizeof (SymbolName)) ||
++        (CompareMem (Image + StringOffset + Name, SymbolName, sizeof (SymbolName)) != 0)) { continue; }
++    Value = U64 (Symbol + 8);
++    if (Found || (Value < Kernel->Base) || (Value >= Kernel->End) ||
++        (NATIVE_LOG_BYTES > Kernel->End - Value) || (Address > MAX_UINT64 - (Value - Kernel->Base))) {
++      return EFI_COMPROMISED_DATA;
++    }
++    Request.LogAddress = Address + Value - Kernel->Base; Found = TRUE;
++  }
++  if (!Found) { return EFI_UNSUPPORTED; }
++  CopyMem (Request.Magic, "SHNSAVE1", 8);
++  Request.Version = 1; Request.Bytes = sizeof (Request);
++  Request.LogBytes = NATIVE_LOG_BYTES;
++  if (HasPanic) { Request.PanicAddress = PanicAddress; Request.PanicBytes = NATIVE_PANIC_BYTES; }
++  CopyMem (&Request.PartitionGuid, &mNativeLogPartition, sizeof (EFI_GUID));
++  Status = gBS->CalculateCrc32 (&Request, sizeof (Request), &Request.Crc32);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = NativeLogValidateRequest (&Request);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = NativeLogOpenVolume (&Root);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = Root->Open (Root, &Existing, L"\\NEXTLOG.BIN", EFI_FILE_MODE_READ, 0);
++  if (!EFI_ERROR (Status)) {
++    Existing->Close (Existing);
++    Status = EFI_ALREADY_STARTED;
++  } else if (Status == EFI_NOT_FOUND) {
++    Status = NativeLogWriteFile (Root, L"\\NEXTLOG.BIN", &Request, sizeof (Request));
++    if (!EFI_ERROR (Status)) { Status = Root->Flush (Root); }
++    if (!EFI_ERROR (Status)) {
++      Print (L"DARWINBOOT: next RAM capture armed at 0x%lx\n", Request.LogAddress);
++    }
++  }
++  Closed = Root->Close (Root);
++  return EFI_ERROR (Status) ? Status : Closed;
++}
++
++#endif
