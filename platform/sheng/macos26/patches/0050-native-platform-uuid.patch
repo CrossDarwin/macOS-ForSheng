@@ -1,0 +1,24 @@
+--- a/iokit/Kernel/IOPlatformExpert.cpp
++++ b/iokit/Kernel/IOPlatformExpert.cpp
+@@ -2291,6 +2291,21 @@
+ 	}
+ #endif /* defined(__x86_64__) */
+ 
++#if SHENG && !defined(__x86_64__)
++	/* 非Apple平台可提供自己的UUID，不把芯片标识伪装成Apple硬件 */
++	if (!string) {
++		entry = IORegistryEntry::fromPath("/options", gIODTPlane);
++		if (entry) {
++			OSData *platformUUID = OSDynamicCast(OSData, entry->getProperty("platform-uuid"));
++			if (platformUUID && platformUUID->getLength() == sizeof(uuid_t)) {
++				uuid_unparse((const uint8_t *)platformUUID->getBytesNoCopy(), uuid);
++				string = OSString::withCString(uuid);
++			}
++			entry->release();
++		}
++	}
++#endif
++
+ 	if (string) {
+ 		setProperty( kIOPlatformUUIDKey, string );
+ 		gIOPlatformUUIDAndSerialDone = true;

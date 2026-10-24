@@ -82,6 +82,8 @@ def main() -> None:
                         help='save the owned 512 KiB XNU panic region through its actual gPanicBase pointer')
     parser.add_argument('--let-vector-log', action='store_true',
                         help='allow the kernel exception hook to retain the first fault before a bounded stop')
+    parser.add_argument('--qemu-platform-uuid', type=uuid.UUID,
+                        help='explicit identity of this owned VM; never an Apple device identity')
     parser.add_argument('--stream-retained-log', action='store_true',
                         help='copy the real log ring at one-second debugger stops; report gaps explicitly')
     parser.add_argument('--capture-screen', action='store_true', help='save the actual QEMU framebuffer')
@@ -133,6 +135,8 @@ def main() -> None:
     parser.add_argument('--decode-existing-snapshot', action='store_true',
                         help='decode a saved snapshot without restarting QEMU')
     args = parser.parse_args()
+    if args.qemu_platform_uuid is not None and not args.qemu_development_root:
+        parser.error('VM platform UUID requires the explicit QEMU development root')
     if args.owned_memory_mib + 512 > args.qemu_memory_mib:
         parser.error('leave at least 512 MiB outside the owned kernel window for UEFI and boot inputs')
     if args.capture_threads and not args.process_layout:
@@ -332,8 +336,10 @@ def main() -> None:
         subprocess.run(dt_command, check=True)
         configure_native_text_state(payload / 'kernel.macho.adt',
                                     development_root=args.qemu_development_root, root_hash=root_hash,
-                                    boot_volume_uuid=args.root_volume_uuid if root_hash is not None else None)
+                                    boot_volume_uuid=args.root_volume_uuid if root_hash is not None else None,
+                                    platform_uuid=args.qemu_platform_uuid)
         record['qemu_development_root'] = args.qemu_development_root
+        record['qemu_platform_uuid'] = str(args.qemu_platform_uuid) if args.qemu_platform_uuid else None
         record['qemu_memory_mib'] = args.qemu_memory_mib
         record['requested_owned_memory_mib'] = args.owned_memory_mib
         record['kernel_ctrr_to_be_enabled'] = 0
@@ -415,7 +421,7 @@ def main() -> None:
         instruction_request = f'{checkpoint:x}:10'
         command += ['--read-memory', instruction_request]
         for name, count in (('_physmap_base', 8), ('_physmap_end', 8), ('_gPhysBase', 8),
-                            ('_gPhysSize', 8), ('_segLOWEST', 8), ('_end_kern', 8),
+                            ('_gPhysSize', 8), ('_gIOPlatformUUIDAndSerialDone', 1), ('_segLOWEST', 8), ('_end_kern', 8),
                             ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                             ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                             ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
@@ -496,7 +502,7 @@ def main() -> None:
     regs = {name: int(value, 16) for name, value in snapshot['system_registers'].items()}
     tcr = regs['TCR_EL1']
     observed_globals = {}
-    for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
+    for name, width in (('_gIOPlatformUUIDAndSerialDone', 1), ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
                         ('_pthread_functions', 8), ('_csr_config', 4), ('_dyld_flags', 8),
                         ('_sheng_qemu_no_ignition_enabled', 4),

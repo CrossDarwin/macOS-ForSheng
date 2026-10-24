@@ -8,17 +8,23 @@ import uuid
 
 def configure_native_text_state(path: Path, *, development_root: bool = False,
                                 root_hash: bytes | None = None,
-                                boot_volume_uuid: uuid.UUID | None = None) -> None:
+                                boot_volume_uuid: uuid.UUID | None = None,
+                                platform_uuid: uuid.UUID | None = None) -> None:
     data = path.read_bytes()
-    chosen = asmb = auth = 0
+    chosen = asmb = auth = options = 0
     if root_hash is not None and not 16 <= len(root_hash) <= 16384:
         raise ValueError('invalid raw root-hash payload size')
 
     if boot_volume_uuid is not None and root_hash is None:
         raise ValueError('boot volume identity requires the paired recovery root hash')
 
+    if platform_uuid is not None and platform_uuid.int == 0:
+        raise ValueError('VM platform UUID cannot be nil')
+    if platform_uuid is not None and not development_root:
+        raise ValueError('synthetic platform UUID is restricted to the development fixture')
+
     def node(at: int, parents: tuple[str, ...] = ()) -> tuple[bytes, int]:
-        nonlocal chosen, asmb, auth
+        nonlocal chosen, asmb, auth, options
         if len(parents) > 32 or at + 8 > len(data):
             raise ValueError('invalid generated device-tree node')
         count, children = struct.unpack_from('<II', data, at)
@@ -52,6 +58,9 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
                                value + bytes(-len(value) % 4))
                 count += 1
 
+        if platform_uuid is not None and location == ('device-tree', 'options'):
+            options += 1
+            ensure('platform-uuid', platform_uuid.bytes)
         is_chosen = location == ('device-tree', 'chosen')
         if root_hash is not None and location == ('device-tree', 'chosen', 'secure-boot-hashes'):
             auth += 1
@@ -94,6 +103,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
 
     result, end = node(0)
     if (end != len(data) or chosen != 1 or development_root and asmb != 1
-            or root_hash is not None and auth != 1):
+            or root_hash is not None and auth != 1
+            or platform_uuid is not None and options != 1):
         raise ValueError('requires one complete generated /chosen node')
     path.write_bytes(result)

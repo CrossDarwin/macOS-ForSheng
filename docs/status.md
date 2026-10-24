@@ -1167,3 +1167,29 @@ cfprefsd多次exit(254)。原版25F71二进制在0x100000604调用_qtn_proc_appl
 当前容器没有原版Quarantine策略。下一轮加入配套com.apple.security.quarantine作运行对照，
 不把系统偏好服务退出直接归因于平台UUID；后者另用只读函数入口/返回观察验证。
 恢复组件清单已加入通过加载验证的原版Sandbox，Quarantine尚未纳入固定清单。
+
+### 原版Quarantine解除偏好服务早退，开始建立Aqua会话
+
+增加原版com.apple.security.quarantine后，候选含15个原版模块，
+SHA256 3f7eefaf752a8a5f26c5ba5755b4c8a3d4dd4aff666e86001e84a8ba22bf50e7。
+实际注册Quarantine policy及其Guarded vnode策略；cfprefsd此前exit(254)不再重复出现。
+原版pmset autorestart 1返回成功，recoveryosd越过该检查，没有再执行此前的重启分支。
+mountrecursive返回255后，原版仍继续Establishing an Aqua Session，创建审计会话100001。
+WindowServer被启动但反复exit(1)，尚未定位到具体原因，不能把进程创建解释为图形界面可用。
+logd和opendirectoryd也尚未稳定可用，仍有No such process查询失败。
+180秒观察到用户空间继续运行，没有最终panic头或同类重启；不表示长期稳定。
+全程保存292903字节，missing_bytes=0、guest_dropped_bytes=82。
+Quarantine已纳入固定恢复组件清单，没有修改原版守护进程或把pmset返回值强制改为成功。
+
+独立只读平台UUID对照：IOBSDGetPlatformUUID实际返回0x31（超时），
+gIOPlatformUUIDAndSerialDone=0，返回缓冲为全零。
+生成的QEMU树没有提供平台身份。仅增加/options/platform-uuid的运行正对照仍返回0x31，
+gIOPlatformUUIDAndSerialDone仍为0。这证伪了仅补设备树属性就够用的判断。
+源码中/options回退仅在x86分支；原版ARM64路径需要Apple的unique-chip-id/chip-id。
+0050给SHENG的ARM64增加显式platform-uuid回退，保留现有芯片身份优先路径，
+沿用XNU已有的OSString、平台属性及资源发布流程，不直接改gethostuuid返回值。
+观察器增加显式--qemu-platform-uuid，仅允许QEMU开发根卷，默认保持未设置。
+同一恢复候选的VM身份对照也已运行180秒，没有最终panic头；WindowServer仍有exit(1)，
+不能宣称该参数修复了所有服务。0050修复后的函数返回值尚待新内核验证。
+设备树检查覆盖卷UUID字符串和平台UUID二进制的不同ABI，冲突及缺少options时拒绝改写，
+并保证此合成身份不能通过默认路径进入硬件树。
