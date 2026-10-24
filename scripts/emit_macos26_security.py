@@ -26,7 +26,7 @@ BASE = 0xfffffe0007004000
 PAGE = 16384
 GROUPS = {'__PRELINK_TEXT': '__TEXT', '__PLK_TEXT_EXEC': '__TEXT_EXEC',
           '__PLK_DATA_CONST': '__DATA_CONST', '__PRELINK_DATA': '__DATA',
-          '__PLK_LINKEDIT': '__LINKEDIT'}
+          '__PLK_LINKEDIT': '__LINKEDIT', '__PLK_LINKINFO': '__LINKINFO'}
 
 
 def align(value, boundary=PAGE):
@@ -135,6 +135,8 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
     pending = {}
     for target, source in GROUPS.items():
         parts = [s for m in modules.values() for s in m['segments'] if s['name'] == source and s['size']]
+        if not parts:
+            continue
         low = min(s['va'] for s in parts) & -PAGE
         high = align(max(s['va'] + s['size'] for s in parts))
         if low + slide < BASE or high + slide > BASE + 0x20000000:

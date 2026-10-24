@@ -720,3 +720,8 @@ CI 40080070590构建成功，原生内核UUID 57B67A30-0E1E-3738-83EC-B3A3D5BF14
 
 
 同一40080070590内核补齐真实CTRR启动状态后，QEMU命中IOFindBSDRoot且当前指令字节匹配，16K/47位页表生效；已处理16次定时器中断。BSD的dlil/ifnet创建线程已实际调度，Skywalk自检通过，越过线程提供者与文本状态初始化阻断。原版Image4/AMFI/corecrypto/pthread均保持真实注册。此处是根设备查找入口，尚不代表找到磁盘、挂载APFS或执行launchd；未部署sheng。完整日志、寄存器与可读屏幕已保存image4-relink/macos26-security-native-text-live-40080070590。
+
+
+继续执行IOFindBSDRoot后，完整日志明确等待IOMedia，默认匹配Content=Apple_HFS；本次没有提供块设备，函数未返回，未发生新的panic。下一段需接入真实只读块设备，并按已验证BaseSystem的APFS卷UUID选择根卷，不能沿用默认HFS选择。
+
+原版IOStorageFamily依赖多出的__LINKINFO/__symbolsets只读段已纳入ARM64E封装，保留地址布局与原数据，内嵌段头的实际文件偏移已核对。附加APFS及其依赖的候选SHA256 38de20a179895c80094347fe6e287be39ce04ccbf5b1af304a26ea8df8da1984在QEMU再次到IOFindBSDRoot，处理15次定时器中断。日志确认APFS 2811.120.14、IOStorageFamily 2.1已注册为可加载模块；没有module start或磁盘I/O证据，不能据此宣称APFS已运行。尚需NativeVirtioBlock的26.5/ARM64E实际ABI接入、卷发布及根挂载，sheng则需单独验收UFS路径。
