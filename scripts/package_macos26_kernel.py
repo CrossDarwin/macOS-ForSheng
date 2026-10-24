@@ -188,7 +188,10 @@ def main() -> None:
                       native_mmu_on_exception_screen='_sheng_mmu_sync_fault' in symbols,
                       firmware_sha256=firmware['sha256'], temporary_ram_boot=True,
                       hardware_executed=False, userland_started=False,
-                      storage_drivers_linked=False, partition_images_written=False)
+                      storage_drivers_linked=False, partition_images_written=False,
+                      firmware_log_file_writes_enabled=True,
+                      firmware_log_partition="4cd2ed34-2142-4ea4-abf2-ec6c51d117d7",
+                      firmware_log_warm_retention_qualified=False)
         (destination / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
         (destination / 'experiment.md').write_text(
             '# sheng 原生内核早期实验\n\n'
@@ -203,8 +206,11 @@ def main() -> None:
             '这些标记均来自加载器，不能单独证明XNU已经执行。\n'
             'XNU=1 表示入口已执行；XNU=2 为低位异常，XNU=3 为控制台前 MMU 开启时的同步异常。\n'
             '若显示 XNU=2/3，请拍下 ELR/ESR/FAR 与全部控制寄存器。\n'
-            '若需要导出 RAM 日志，先返回 fastboot；根据本次实际 PA 构建只读 reader。\n'
-            'RAM 跨重启保留和 USB reader 尚需实机验收；不得使用 QEMU 的 PA。\n')
+            '交接页 MACOSLOG 的 next=Success 表示实际PA恢复请求已写入专用日志卷。\n'
+            '随后返回fastboot并再次临时启动同版UniXNU，加载器会先尝试保存上一轮RAM日志。\n'
+            '仅向已授权macoslog写普通文件，不修改GPT或刷写分区镜像。\n'
+            '跨重启RAM保留尚未实机验收；不可把next=Success当成已恢复日志。\n'
+            'root Recovery可用scripts/capture_persistent_log.py只读导出。\n')
         print(destination / image.name)
 
 

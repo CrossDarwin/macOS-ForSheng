@@ -54,7 +54,8 @@ static void sheng_status_render(const char *prefix, const char *message)
 
 void sheng_log_status(const char *message)
 {
-    if (!sheng_status_pinned) sheng_status_render("SHENG: ", message);
+    if (sheng_status_pinned) sheng_status_render("", sheng_status_message);
+    else sheng_status_render("SHENG: ", message);
 }
 
 static void sheng_status_panic(const char *message)

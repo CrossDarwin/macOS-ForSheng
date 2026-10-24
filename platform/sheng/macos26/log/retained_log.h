@@ -131,7 +131,13 @@ static void sheng_exception_hex(const char *name, uint64_t value)
 
 void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp)
 {
-    if (!sheng_panel_ready || sheng_status_pinned || __atomic_exchange_n(&sheng_first_sync_displayed, 1, __ATOMIC_RELAXED)) return;
+    if (!sheng_panel_ready) return;
+    if (sheng_status_pinned) {
+        /* 原生panic清屏可能覆盖标题，恢复原摘要但不替换首现场 */
+        sheng_status_render("", sheng_status_message);
+        return;
+    }
+    if (__atomic_exchange_n(&sheng_first_sync_displayed, 1, __ATOMIC_RELAXED)) return;
     sheng_status_pinned = 2;
     sheng_status_render("SYNC: ", "first EL1 sync - registers below");
     sheng_panel_reset();
