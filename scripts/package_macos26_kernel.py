@@ -45,6 +45,8 @@ def main() -> None:
     if '_sheng_mmu_sync_fault' in symbols and not observed.get('bootstrap_diagnostic_disarmed'):
         raise ValueError('requires this MMU-on diagnostic to disarm after console setup in QEMU')
     native_build = json.loads((kernel.parent / 'build.json').read_text())
+    if native_build.get('native_security_candidate') and native_build.get('hardware_admitted') is not True:
+        raise ValueError('security prelink candidates are QEMU-only until their native initialization is qualified')
     if '_sheng_status_pixels' in symbols:
         status = observed.get('observed_globals', {})
         if (int(status.get('_sheng_status_pixels', '0x0'), 16) == 0
