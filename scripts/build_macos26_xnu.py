@@ -439,7 +439,8 @@ def link_kernel(args, record, common, sdk, source, env):
     crypto = build_provider(args, record, sdk, source, env)
     crypto_input = '-Wl,-force_load,' + str(crypto) if ARCH == 'arm64e' else str(crypto)
     archives = [crypto_input, str(OUT / 'ArmDTPlatform.o'), str(OUT / 'ArmCpu.o'), str(firehose)]
-    native_link_flags = '-Wl,-map,' + str(OUT / 'kernel.development.sheng.map')
+    native_link_flags = ('-Wl,-headerpad,0x2000 -Wl,-map,'
+                         + str(OUT / 'kernel.development.sheng.map'))
     run(common + ['build', 'BUILD_STATIC_LINK=1', 'BUILD_XNU_LIBRARY=0',
                   'CFLAGS_KERNEL=-mkernel', 'CXXFLAGS_KERNEL=-fapple-kext',
                   'CFLAGS_EXTRA=-DXNU_NATIVE_ARCH_TIMER=1 -DXNU_DT_PANIC_REGION=1 ' +
