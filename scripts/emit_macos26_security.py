@@ -251,7 +251,7 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS, stor
                      _PrelinkExecutableSourceAddr=driver['header_va'],
                      _PrelinkExecutableSize=max(s['va'] + s['size'] for s in driver['image']['segments']),
                      _PrelinkKmodInfo=driver['kmod'],
-                     _PrelinkBundlePath='/System/Library/Extensions/NativeVirtioBlock.kext')
+                     _PrelinkBundlePath='/System/Library/Extensions/' + driver['component'] + '.kext')
         selected_entries.append(entry)
     cache_id = hashlib.sha256(native_data + original + struct.pack('<Q', slide)
                               + '\0'.join(sorted(modules)).encode()

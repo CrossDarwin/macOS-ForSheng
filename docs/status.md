@@ -1254,3 +1254,26 @@ UFS独立0027补丁把传输读计时移出可选VerifiedBlock条件，不改校
 使用真实RootLayout生产解析器运行两组ASan/UBSan测试：上游userdata路径及专用macosroot路径，
 原有GPT/清单错误和2048次变异检查均通过；只有userdata时专用版在读清单前拒绝。
 它证明解析范围受限，不代表设备已有该分区、UFS硬件可用或根盘内容已准备。
+
+
+### UFS配套构建、重定位与默认关闭路径通过
+
+CI40114236144成功，基核UUID F149677D-1FE8-3697-ABB0-3820611A9535。
+UFS独立组件使用原版25F71 IOStorageFamily，块设备326个虚函数槽及23个重载通过名称和PAC契约检查，
+389项导入全部解析，702个认证指针保留元数据后交给XNU原生签名器。
+含15个原版组件的候选SHA256为20b9343e00d0d8c46d572111e4f6a25e975f4d020ebfeb7a08426ade4ebc163b。
+QEMU到达IOFindBSDRoot；另一次断点实测NativeUfs::start真实返回false，调用栈匹配，
+matched=1、probe_requested=mapped=root_step=blocks_published=0。
+这验证组件可经IOKit调用且默认关闭，不代表QEMU执行了真实UFS读盘或sheng硬件已通过。
+
+独立macosroot镜像1579155456字节，清单后1MiB处放置原始BaseSystem完整磁盘，
+复制时校验字节数及已配套SHA256，源盘没有修改。生产RootLayout解析器读取其真实清单通过，
+并运行GPT错误、清单边界和2048次变异检查。普通清单哈希不是签名或原版sealed root认证。
+原版APFS认证仍由原有root-hash及原版挂载路径负责；尚未在UFS上执行挂载。
+
+历史GPT备份只读核对：LUN0(sda)没有未分配区，userdata占满其余空间。
+LUN4(sde)在macoslog创建前总空闲约284.6MiB，也放不下该根盘。
+因此macosroot目前只是镜像目标名，设备上没有该分区。
+保留Android时需要另行解决实际存储空间，不能把编译期分区名当成已完成的分区创建。
+历史布局和CRC验证结果保存在private/experiments/20261025-native-arm64e/ufs/saved-gpt-layout.json；
+它不是当前在线分区表。上述实验均未连接设备或写入分区。

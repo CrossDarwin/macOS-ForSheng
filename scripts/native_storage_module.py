@@ -30,7 +30,14 @@ def signed(value, bits):
 def prepare(directory: Path, base: int, native: dict, original: bytes,
             kc: dict, selected: dict, slide: int) -> dict:
     evidence = json.loads((directory / 'build.json').read_text())
-    binary = directory / 'NativeVirtioBlock.macho'
+    components = {
+        'org.unixnu.driver.NativeVirtioBlock': ('NativeVirtioBlock', 'NativeVirtioBlock'),
+        'org.blu-sharky.NativeUfs': ('NativeUfs', 'NativeUfsBlock'),
+    }
+    if evidence.get('bundle') not in components:
+        raise ValueError('unqualified standalone transport bundle')
+    component, block_class = components[evidence['bundle']]
+    binary = directory / (component + '.macho')
     data = binary.read_bytes()
     if evidence['binary_sha256'] != hashlib.sha256(data).hexdigest():
         raise ValueError('transport differs from its actual build record')
@@ -44,13 +51,23 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
     info = plistlib.loads((directory / 'Info.plist').read_bytes())
     if info['CFBundleIdentifier'] != evidence['bundle']:
         raise ValueError('transport bundle identity mismatch')
-    from build_macos26_storage import PROTOCOL_CHARACTERISTICS
-    personality = info['IOKitPersonalities']['NativeVirtioBlock']
-    existing = personality.get('Protocol Characteristics')
-    if existing is not None and existing != PROTOCOL_CHARACTERISTICS:
-        raise ValueError('transport describes a different physical interconnect')
-    # VirtIO实际是虚拟块设备，APFS据此选择BaseSystem根卷路径
-    personality['Protocol Characteristics'] = dict(PROTOCOL_CHARACTERISTICS)
+    if component == 'NativeVirtioBlock':
+        from build_macos26_storage import PROTOCOL_CHARACTERISTICS
+        personality = info['IOKitPersonalities']['NativeVirtioBlock']
+        existing = personality.get('Protocol Characteristics')
+        if existing is not None and existing != PROTOCOL_CHARACTERISTICS:
+            raise ValueError('transport describes a different physical interconnect')
+        # VirtIO实际是虚拟块设备，APFS据此选择BaseSystem根卷路径
+        personality['Protocol Characteristics'] = dict(PROTOCOL_CHARACTERISTICS)
+    else:
+        if (evidence.get('root_partition') != 'macosroot' or evidence.get('root_lun') != 0
+                or evidence.get('android_userdata_used') is not False
+                or evidence.get('read_only_transport') is not True
+                or evidence.get('hardware_enable_required') is not True):
+            raise ValueError('UFS transport must restrict its read-only root to macosroot on LUN0')
+        if info['CFBundleExecutable'] != component or any(
+                item['IOClass'] != component for item in info['IOKitPersonalities'].values()):
+            raise ValueError('UFS personality differs from the qualified component')
 
     if 'com.apple.iokit.IOStorageFamily' not in selected:
         raise ValueError('transport needs the original IOStorageFamily dependency')
@@ -171,7 +188,7 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
     driver = dict(data=data, image=image, base=base, header_va=base, info=info,
                 kmod=base + own['_kmod_info'], symbols={n: a + base for n, a in own.items()},
                 relocations=relocations, imports=dict(imports), pointer_formats=sorted(formats),
-                evidence=evidence, compatibility=compatibility)
+                evidence=evidence, compatibility=compatibility, component=component, block_class=block_class)
     driver['vtable_abi'] = audit_storage_vtable(driver, original, kc, native, slide)
     return driver
 
@@ -184,7 +201,8 @@ def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, 
     table = next(a for a, names in exports(original, family).items()
                  if '__ZTV20IOBlockStorageDevice' in names)
     original_slots = {p['site']: p for p in chains(original, kc)}
-    own_table = driver['symbols']['__ZTV17NativeVirtioBlock']
+    block_class = driver['block_class']
+    own_table = driver['symbols'][f'__ZTV{len(block_class)}{block_class}']
     own_slots = {p['new_site']: p for p in driver['relocations']}
     own_names = {}
     for name, address in driver['symbols'].items():
@@ -214,7 +232,7 @@ def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, 
         expected = {native[n] for n in names if n in native}
         expected.add(old['target'] + slide)
         override = own['new_target'] in own_names and any(
-            n.startswith(('__ZN17NativeVirtioBlock', '__ZNK17NativeVirtioBlock'))
+            n.startswith((f'__ZN{len(block_class)}{block_class}', f'__ZNK{len(block_class)}{block_class}'))
             for n in own_names[own['new_target']])
         if override:
             actual = own_names[own['new_target']]
@@ -231,7 +249,7 @@ def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, 
                           target=hex(own['new_target']), override=override))
     else:
         raise ValueError('unbounded transport vtable')
-    return dict(slots=len(slots), overrides=overrides, pac_metadata_matches=True, methods=slots)
+    return dict(block_class=block_class, slots=len(slots), overrides=overrides, pac_metadata_matches=True, methods=slots)
 
 
 def rewrite_header(driver, output, at):
