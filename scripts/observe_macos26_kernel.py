@@ -97,6 +97,8 @@ def main() -> None:
                         help='retain bounded real Unix/Mach saved-state calls after init starts')
     parser.add_argument('--virtio-block-image', type=Path, help='existing raw disk attached strictly read-only')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
+    parser.add_argument('--qemu-no-ignition', action='store_true',
+                        help='explicit development-only use of original dyld skipIgnition bit')
     parser.add_argument('--root-hash-payload', type=Path,
                         help='paired raw BaseSystemVolume payload and conversion evidence')
     parser.add_argument('--qemu-development-root', action='store_true',
@@ -127,6 +129,8 @@ def main() -> None:
         parser.error('following init requires the thread_setentrypoint checkpoint')
     if args.root_volume_uuid and not args.virtio_block_image:
         parser.error('APFS volume matching requires the actual block image')
+    if args.qemu_no_ignition and (not args.qemu_development_root or not args.root_hash_payload):
+        parser.error('no ignition requires the paired root hash and explicit QEMU development root')
     launchd_main = None
     if args.follow_launchd_main:
         if not args.follow_init_entry:
@@ -199,6 +203,11 @@ def main() -> None:
         record['loader_sha256'] = loader['sha256']
         shutil.copy2(kernel, payload / 'kernel.macho')
         boot_args = NATIVE_BOOT_ARGS
+        if args.qemu_no_ignition:
+            if '_sheng_qemu_no_ignition_enabled' not in addresses:
+                raise ValueError('kernel lacks the guarded QEMU skipIgnition path')
+            boot_args += ' -sheng-qemu-no-ignition'
+        record['qemu_no_ignition'] = args.qemu_no_ignition
         if args.kext_log is not None:
             boot_args += f' kextlog={args.kext_log:#x}'
         if args.early_console:
@@ -275,7 +284,8 @@ def main() -> None:
                             ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                             ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                             ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
-                            ('_pthread_functions', 8), ('_csr_config', 4),
+                            ('_pthread_functions', 8), ('_csr_config', 4), ('_dyld_flags', 8),
+                        ('_sheng_qemu_no_ignition_enabled', 4),
                             ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                             ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
                             ('_native_virtio_mmio_physical', 8), ('_native_virtio_first_sector_sha256', 32),
@@ -350,7 +360,8 @@ def main() -> None:
     observed_globals = {}
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
-                        ('_pthread_functions', 8), ('_csr_config', 4),
+                        ('_pthread_functions', 8), ('_csr_config', 4), ('_dyld_flags', 8),
+                        ('_sheng_qemu_no_ignition_enabled', 4),
                         ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                         ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
                         ('_native_virtio_mmio_physical', 8),

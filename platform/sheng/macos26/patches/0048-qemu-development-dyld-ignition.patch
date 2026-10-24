@@ -1,0 +1,35 @@
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -8065,6 +8065,12 @@
+  * 3		2		NA		/usr/appleinternal/sbin/launchd.development
+  * 4		3		1		/sbin/launchd
+  */
++#if SHENG && (DEVELOPMENT || DEBUG)
++#include <sys/csr.h>
++extern void commpage_update_dyld_flags(uint64_t value);
++volatile uint32_t sheng_qemu_no_ignition_enabled;
++#endif
++
+ void
+ load_init_program(proc_t p)
+ {
+@@ -8073,6 +8079,19 @@
+ 	vm_map_t map = current_map();
+ 	mach_vm_offset_t scratch_addr = 0;
+ 	mach_vm_size_t map_page_size = vm_map_page_size(map);
++
++#if SHENG && (DEVELOPMENT || DEBUG)
++	if (PE_parse_boot_argn("-sheng-qemu-no-ignition", NULL, 0)) {
++		if (PE_vmm_present != 1 || csr_check(CSR_ALLOW_UNAUTHENTICATED_ROOT) != 0) {
++			panic("SHENG: no-ignition requires the explicit QEMU development root");
++		}
++		/* dyld既有bit3只跳过ignition，不伪造Image4验证结果 */
++		dyld_flags |= UINT64_C(8);
++		commpage_update_dyld_flags(dyld_flags);
++		sheng_qemu_no_ignition_enabled = 1;
++		printf("SHENG: QEMU development root - dyld skipIgnition enabled\n");
++	}
++#endif
+ 
+ #if DEVELOPMENT || DEBUG
+ 	/* Use the opportunity to initialize exec's debug log stream */
