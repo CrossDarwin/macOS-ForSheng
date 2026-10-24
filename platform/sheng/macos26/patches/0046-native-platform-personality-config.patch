@@ -1,0 +1,11 @@
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -34,7 +34,7 @@
+ 
+ const char * gIOKernelConfigTables =
+     "("
+-#if SHENG
++#if defined(ARM64_BOARD_CONFIG_SHENG)
+     "   {"
+     "     'IOClass'         = ArmCpu;"
+     "     'IOProviderClass' = IOPlatformDevice;"

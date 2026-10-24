@@ -162,6 +162,8 @@ def main() -> None:
                         ('_sheng_native_crypto_state', 4),
                         ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
                         ('_armdt_platform_device_count', 4), ('_armdt_platform_nvram_proxy', 4),
+                        ('_armcpu_registered', 4), ('_armcpu_gic_ready', 4),
+                        ('_armcpu_timer_interrupts', 8),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
                         ('_sheng_early_exception_record', 192),
                         ('_sheng_bootstrap_fb_trace_ready', 8),
@@ -227,6 +229,8 @@ def main() -> None:
                         ('_sheng_native_crypto_state', 4),
                         ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
                         ('_armdt_platform_device_count', 4), ('_armdt_platform_nvram_proxy', 4),
+                        ('_armcpu_registered', 4), ('_armcpu_gic_ready', 4),
+                        ('_armcpu_timer_interrupts', 8),
                         ('_gPanicBase', 8), ('_gPanicSize', 4),
                         ('_sheng_bootstrap_capture_enabled', 4), ('_sheng_bootstrap_fb_trace_ready', 8),
                         ('_sheng_bootstrap_c_stage', 8),
@@ -240,6 +244,25 @@ def main() -> None:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    security_report = args.kernel_build / 'security-relink.json'
+    if security_report.is_file():
+        security = json.loads(security_report.read_text())
+        if (security['candidate_sha256'] != record['kernel_sha256']
+                or security['native_kernel_uuid'] != record['uuid']):
+            raise ValueError('security component map does not belong to the observed kernel')
+        owners = {'_g_crypto_funcs': 'com.apple.kec.corecrypto',
+                  '_img4if': 'com.apple.security.AppleImage4',
+                  '_amfi': 'com.apple.driver.AppleMobileFileIntegrity',
+                  '_libCoreEntitlements': 'com.apple.driver.AppleMobileFileIntegrity'}
+        record['original_component_interfaces'] = {}
+        for symbol, owner in owners.items():
+            value = observed_globals.get(symbol, 0)
+            module = security['modules'][owner]
+            mapped = any(segment['va'] <= value < segment['va'] + segment['size']
+                         for segment in module['segments'])
+            record['original_component_interfaces'][symbol] = dict(
+                pointer=hex(value), registered=bool(value), within_original_module=mapped,
+                module=owner, module_uuid=module['uuid'])
     if '_sheng_status_message' in addresses:
         key = f'{addresses["_sheng_status_message"]:x}:2d'
         record['mapped_status_text'] = bytes.fromhex(snapshot['memory'][key]).split(b'\0', 1)[0].decode('ascii', errors='replace')

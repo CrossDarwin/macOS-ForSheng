@@ -66,6 +66,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0043-native-corecrypto-single-init.patch',
     ROOT / 'platform/sheng/macos26/patches/0044-native-platform-compatible-match.patch',
     ROOT / 'platform/sheng/macos26/patches/0045-native-fatal-exception-panel.patch',
+    ROOT / 'platform/sheng/macos26/patches/0046-native-platform-personality-config.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -442,9 +443,16 @@ def link_kernel(args, record, common, sdk, source, env):
     binary = OUT / 'obj/DEVELOPMENT_ARM64_SHENG/kernel.development.sheng.unstripped.noctf'
     if not binary.exists() or struct.unpack_from('<I', binary.read_bytes(), 12)[0] != 2:
         raise ValueError('the native linker did not produce an executable Mach-O kernel')
+    kernel_bytes = binary.read_bytes()
+    for personality in (b"'IOClass'         = ArmDTPlatform;",
+                        b"'IOClass'         = ArmCpu;",
+                        b"'IONameMatch'     = ( 'device-tree', 'xiaomi,sheng' );"):
+        if personality not in kernel_bytes:
+            raise ValueError('linked kernel omitted a required SHENG platform personality')
+    record['native_platform_personalities_compiled'] = True
     if ARCH == 'arm64e':
         from native_macho import native_chained_fixups
-        record['native_pointer_fixups'] = native_chained_fixups(binary.read_bytes())
+        record['native_pointer_fixups'] = native_chained_fixups(kernel_bytes)
     destination = OUT / 'kernel.development.sheng'
     shutil.copy2(binary, destination)
     from seal_macos26_crypto import seal
