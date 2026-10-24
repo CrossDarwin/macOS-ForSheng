@@ -685,3 +685,5 @@ QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发�
 本次Recovery只读导出再次确认macoslog只有OBSERVED.JSON，既无NEXTLOG.BIN也无CAP目录。照片recovery=Not Found、next=Not Found，UEFI卷发现/访问尚未成功；未取得自动RAM落盘日志。厂商logfs、xbl_sc_logs及rawdump头已只读保存，它们不能替代当前XNU日志。
 
 2026-10-24 panic区域标量清零修正版CI 40070434490通过，内核UUID 66B40866-E424-3221-B3F2-A02D6F2AB308。实际链接函数sheng_zero_panic_region使用strb/str wzr与dsb sy，没有DC ZVA。QEMU读到panic RAM zero returned、控制台获取成功和corecrypto初始化完成；停止原因仍是Image4接口未接入，完整panic的CRC/UUID匹配，屏幕标题与原因可读。相同内核的sheng高PA交接、C入口及16个阶段像素通过。候选32e3a9700efe14aefcc872ee98e15ff8e5361f89c11588d6b4bdab0bb2038945已封装，实机清零修复尚待验证。
+
+2026-10-24 用户视频确认清零修正版实机到达kern_trustcache.c:584的image4 interface not available，与QEMU停止点一致。首次panic摘要持续可读，原来的panic区域DC ZVA异常不再阻断；未进入BSD或用户空间。原始视频、最后画面及摘要保存在panic-io-zero/hardware-result。被替代的两版部署镜像已删除，恢复备份、dSYM与日志保留。
