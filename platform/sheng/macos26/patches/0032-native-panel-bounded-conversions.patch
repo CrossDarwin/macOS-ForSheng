@@ -1,0 +1,22 @@
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -381,8 +381,8 @@
+ 	const uint64_t stride = v->v_rowBytes;
+ 	const unsigned scale = v->v_width >= 1600 ? 2 : 1;
+ 	const unsigned top = v->v_height >= 1024 ? 640 : 32;
+-	unsigned columns = v->v_width > 32 ? (v->v_width - 32) / (8 * scale) : 0;
+-	if (columns > 100) columns = 100;
++	const uint64_t available_columns = v->v_width > 32 ? (v->v_width - 32) / (8 * scale) : 0;
++	const unsigned columns = available_columns > 100 ? 100 : (unsigned)available_columns;
+ 	if (!v->v_baseAddr || (v->v_depth & 255) != 32 || stride < 2560 || stride > 65536 ||
+ 	    columns < 32 || v->v_width > stride / 4 || v->v_height > 16384 ||
+ 	    top + 8 * 16 * scale > v->v_height) return;
+@@ -393,7 +393,7 @@
+ 	const vm_size_t bytes = (offset + end - first + 16383) & ~(vm_size_t)16383;
+ 	if (bytes > 4 * 1048576) return;
+ 	const vm_offset_t mapped = ml_io_map(first - offset, bytes);
+-	if (mapped) sheng_log_bind_panel(mapped + offset, stride, columns, 8, scale);
++	if (mapped) sheng_log_bind_panel(mapped + offset, (unsigned)stride, columns, 8, scale);
+ 	sheng_log_stage(sheng_panel_ready ? "native log panel ready" : "native log panel refused");
+ }
+ #define SHENG_LOG_STAGE(message) sheng_log_stage(message)
