@@ -59,3 +59,6 @@ python3 scripts/observe_native_bootstrap.py \
 Actions 39992979541构建的新内核UUID为C9819D72-7190-3DF2-877C-6F93C6F722F5。
 同一物理地址及MDCR_EL2=0x400策略下，实际到达arm_init=0xfffffe0007c87b08，入口指令及x0启动参数匹配。
 ESR_EL2=0，SCTLR=0xFC54793D；这是QEMU中对0026的实际对照结果，尚待sheng实机反馈。
+
+GBL本身不构成新的EL2入口。[AOSP部署文档](https://source.android.com/docs/core/architecture/bootloader/generic-bootloader/gbl-dev)将其定义为UEFI应用；[Arm EBBR规范](https://github.com/ARM-software/ebbr/blob/main/source/chapter2-uefi.rst#aarch64-exception-levels)说明UEFI应用可能在EL1或EL2执行，取决于上游固件环境。
+sheng当前链路已经实测为EL1，尚无证据表明更早GBL入口可取得EL2。若后续找到这种入口，仍需确认其交接状态及对真实EL2的控制；仅有GBL、解锁或任意UEFI代码执行不改变当前EL1路线。
