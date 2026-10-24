@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
-| 原生 25F71 ARM64E QEMU | CI40084664897；原版安全组件、pthread、IOStorageFamily与NativeVirtioBlock已启动；只读恢复根卷已挂载；AppleFSCompression已接入，PID1进入配套dyld的真实EL0入口；launchd主函数尚未命中 |
+| 原生 25F71 ARM64E QEMU | CI40088447141；原版安全组件与线程、存储已运行，APFS恢复根卷已挂载；PID1执行原版dyld，显式开发开关绕过ignition等待；共享缓存读取后在libdyld helper虚表认证处触发用户态PAC异常；launchd主函数尚未命中 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -852,3 +852,50 @@ vm_shared_region_start_address返回0x1，尚不能仅凭这一行断言是致�
 HAS_APPLE_PAC的ARM64E另有jophash，计数为74，前部通用寄存器布局相同。
 集成补丁0016为GDB采集器提供显式72/74选择，按所选内核ABI读取并严格检查，
 保留默认72的旧参考用例，不把格式错误解释为运行失败。
+
+### 已定位dyld的实际Image4等待
+
+修正ARM64E保存帧后，同一候选采集到51次真实Unix/Mach系统调用，未耗尽采集预算。
+PID1打开/dev/null和/dev/console，输出原版libignition日志，随后查询
+security.mac.img4.ignition_blob，实际MIB为[101,101,118,100]。
+最后一次调用在41.954秒进入，120秒截止前没有后续调用，CPU处于内核空闲线程，无panic正文。
+这将当前阻断缩小到ignition数据读取等待；launchd的LC_MAIN仍未命中。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/ignition-sysctl-40084664897。
+
+配套dyld的DyldDelegates.h已定义commpage bit3为skipIgnition，
+DyldProcessConfig.cpp由此控制ignite调用。UniXNU也在开发启动中使用同一机制。
+补丁0048仅在SHENG的DEVELOPMENT/DEBUG内核、显式-sheng-qemu-no-ignition、
+实际VMM标识及CSR_ALLOW_UNAUTHENTICATED_ROOT同时满足时发布该位，
+不伪造Image4返回数据。观察器要求同时指定QEMU开发根策略和配对root-hash，
+并采集开关是否真正执行及dyld_flags值。CI40088447141已构建通过，
+候选SHA256 f1ddc71d14a8b22ba40c29c5f47176f59605606f5b5d1d794881c7de4df3a435，
+硬件验收状态保持false。实际QEMU采集到开关标记1、dyld_flags=0x9，
+不再进入ignition等待。dyld实际读取全部五个arm64e共享缓存文件，
+继续产生488次系统调用，随后用户态PAC认证失败：
+EXC_ARM_PAC_FAIL(0x105)、指令字0xdac11a30、退出原因namespace28。
+launchd LC_MAIN仍未命中，不能把共享缓存读取当作launchd启动。
+完整panic、stackshot与系统调用保存在private/experiments/20261024-native-arm64e/virtio-storage/no-ignition-40088447141。
+观察器新增handle_pac_fail检查点，在终止PID1前采集真实EL0保存帧。
+
+### 用户态PAC异常现场已取得
+
+handle_pac_fail入口停止时，实际ESR=0x72000002，保存帧flavor21/count74，
+CPSR=0x60000000，确认异常来自EL0。PC=0x102fcce88；实际指令字节
+301ac1da080240f9与配套dyld文件偏移0x20e88一致，第一条为AUTDA x16,x17。
+x16=0x1b5fd4d88，是没有PAC位的虚表地址；x24=0x1b5fd4468为helper对象，
+x17=0x9abf0001b5fd4468为对象地址混入0x9abf的认证discriminator。
+配套dyldMain.cpp的prepare正在取得libdyld __helper对象并调用version()，
+尚未到launchd主函数。完整寄存器保存在private/experiments/20261024-native-arm64e/virtio-storage/pac-state-40088447141。
+
+当前实际内核反汇编确认ml_default_jop_pid返回0，原始共享缓存签名代码在jop_key=0时
+只重定位地址，不调用pmap_sign_user_ptr。现有SHENG原生PAC补丁只完成EL1；
+ml_enable_user_jop_key仍明确拒绝未实现的EL0密钥生命周期，不能用返回空值冒充密钥切换。
+下一段应补齐共享缓存用户指针签名及EL0/EL1、任务切换的密钥保存与恢复。
+参考Snapintosh/compat/pauth-switch.S的完整保存/恢复边界，但其EL2/HCR路径不适用于sheng EL1。
+GDB采集器同时修正了旧39位内核指针下界，允许读取实际47位内核保存帧。
+
+运行时进一步命中shared_region_pager_match：按对应dSYM给出的结构偏移读取，
+si_ptrauth=1，实际jop_key参数x3=0。与先前普通滑页si_ptrauth=0的记录分开保存，
+不把普通映射的零参数当作认证映射证据。认证pager现场保存在
+private/experiments/20261024-native-arm64e/virtio-storage/auth-pager-40088447141。
+这确认原认证缓存页进入了零JOP标识路径，现有EL0 PAC接入仍不完整。

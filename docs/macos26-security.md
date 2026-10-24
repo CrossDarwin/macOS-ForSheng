@@ -1,7 +1,9 @@
 # macOS 26 原生安全组件
 
 实机最新确认的阻断是 `kern_trustcache.c:584: image4 interface not available`。
-QEMU现已通过原版Image4/AMFI初始化并执行BSD代码；当前仍有IRQ回调认证故障与pthread提供者缺失，见文末。
+QEMU现已通过原版Image4/AMFI、pthread和存储组件初始化，实际挂载配套APFS恢复根卷，
+PID1已执行原版ARM64E dyld及libignition。显式QEMU开发开关已越过ignition等待，
+dyld读取共享缓存后发生用户态PAC认证失败，尚未进入launchd的LC_MAIN。后文保留各轮故障记录，当前证据见docs/status.md。
 39973422068 的 ARM64E 内核在 QEMU 完成完整 corecrypto POST 后到达这里，尚未进入 BSD。
 完整 panic、回溯和 stackshot 已保存于 `out/macos26-arm64e-39973422068/`。
 字符环形日志已保留完整 panic 文字；标准 panic 区另保留寄存器、回溯和压缩 stackshot。
@@ -91,7 +93,7 @@ VMAPPLE 的 HVC 密钥接口不能用于现有 sheng EL1 启动链。
 - IOBlockStorageDevice 的宏分支影响虚表；除 XNU_TARGET_OS_OSX 外，还需对照 TARGET_OS_OSX，逐槽核对原版 ABI
 - 原版 kext 的 kalloc 类型信息可能包含真实签名，应按实际类型区分 KT_DATA_ONLY，不能统一当作数据指针
 - 用户空间的 16 KiB 签名页需要匹配真实 CodeDirectory，不能仅按内核 4 KiB 验证单位切分
-- 截图使用rootauth=0跳过sealed root验证；本项目已实测到APFS根认证拒绝，QEMU现使用配套CSR设备树接口做显式开发策略对照，尚未证明根挂载或launchd
+- 截图使用rootauth=0跳过sealed root验证；本项目QEMU已用配套CSR设备树接口、原始root-hash与实际虚拟存储属性挂载恢复根卷，尚未进入launchd主函数
 
 截图中的 NativeVirtioBlock 是 QEMU virtio-mmio 存储路径，不能直接当作 sheng 的 UFS 实现。
 
