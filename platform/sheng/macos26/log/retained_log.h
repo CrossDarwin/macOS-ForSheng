@@ -106,6 +106,7 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
 
 void sheng_log_stage(const char *message)
 {
+    sheng_log_status(message);
     const char *prefix = "\nSHENG: ";
     while (*prefix) sheng_log_putc(*prefix++);
     for (unsigned n = 0; message && message[n] && n < 160; n++) sheng_log_putc(message[n]);
@@ -155,6 +156,7 @@ void sheng_log_panic(uint64_t caller, const char *message)
 #endif
         __atomic_store_n(&r->panic_state, 2, __ATOMIC_RELEASE);
         sheng_log_clean(r, 128);
+        sheng_status_panic(message);
     }
     expected = 0;
     if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,

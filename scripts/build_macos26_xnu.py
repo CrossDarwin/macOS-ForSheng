@@ -53,6 +53,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0030-native-vm-console-stage-strip.patch',
     ROOT / 'platform/sheng/macos26/patches/0031-native-retained-log-panel.patch',
     ROOT / 'platform/sheng/macos26/patches/0032-native-panel-bounded-conversions.patch',
+    ROOT / 'platform/sheng/macos26/patches/0033-native-mapped-status-line.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

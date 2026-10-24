@@ -623,3 +623,11 @@ pexpert不提供osfmk源码包含路径，因此将固定XNU的原字体显式�
 新候选90ec47c969cc34116ec3639720f4f950a96a2c330aa4edc5269d2b27b4f20aa3已封装，Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次RAM启动收到Booting OKAY。
 本次实机验收读取文字面板的最后函数或panic原因，不再要求新增色条；结果待用户回传，记录位于private/experiments/20261024-native-arm64e/native-log-panel。
 已删除被替代的1d9ede2d部署镜像和完成观察的QEMU ESP，保留dSYM、诊断日志、配套输入和有效恢复备份。
+
+90ec47c9实机两张照片及用户回传确认仍为旧入口文字和紫色0–F，未出现新日志面板；不能据此判定实机也停在Image4接口。
+记录保存在private/experiments/20261024-native-arm64e/native-log-panel，交接地址为kernel PA 0x881004000、panic PA 0x882A10000。
+返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1，无切槽或分区写入。
+新面板额外依赖有界的大块I/O映射与保留日志writer，现有阶段条未验证它们；当前无法区分绑定前停顿、绑定拒绝和文字不可见。
+新增0033复用已通过的12行原生映射，直接显示44字符的末函数或首个panic摘要，不申请新映射，不等待保留日志writer；原始完整日志与标准panic仍保留。
+面板参数拒绝、映射和绑定分别输出明确文字，后续函数及原有kernel_bootstrap_log消息共用该通路；首次panic摘要固定，避免被回溯替换。
+定向QEMU故意保持writer占用且不启用完整面板，实际字体像素读回通过，panic摘要在80次后续状态消息后仍保留，12行映射之外的哨兵未变；完整内核构建与实机结果待完成。

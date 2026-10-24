@@ -158,6 +158,7 @@ def main() -> None:
                         ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
                         ('_sheng_bootstrap_vm_witness', 8),
                         ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
+                        ('_sheng_status_witness', 8), ('_sheng_status_message', 45),
                         ('_sheng_bootstrap_capture_enabled', 4)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
@@ -213,11 +214,15 @@ def main() -> None:
                         ('_sheng_bootstrap_c_stage', 8),
                         ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
                         ('_sheng_bootstrap_vm_witness', 8),
-                        ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8)):
+                        ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
+                        ('_sheng_status_witness', 8)):
         if name in addresses:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    if '_sheng_status_message' in addresses:
+        key = f'{addresses["_sheng_status_message"]:x}:2d'
+        record['mapped_status_text'] = bytes.fromhex(snapshot['memory'][key]).split(b'\0', 1)[0].decode('ascii', errors='replace')
     if '_sheng_bootstrap_capture_enabled' in addresses:
         record['bootstrap_diagnostic_disarmed'] = observed_globals['_sheng_bootstrap_capture_enabled'] == 0
     if '_sheng_early_exception_record' in addresses:

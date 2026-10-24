@@ -1,0 +1,87 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -166,6 +166,7 @@
+ void sheng_bootstrap_capture_end(void);
+ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
+ void sheng_log_stage(const char *message);
++void sheng_log_status(const char *message);
+ extern volatile uint64_t sheng_panel_ready;
+ #endif
+ 
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -377,6 +377,7 @@
+ static void
+ sheng_native_log_panel(const boot_args *args)
+ {
++	sheng_log_status("panel parameters enter");
+ 	const Boot_Video *v = &args->Video;
+ 	const uint64_t stride = v->v_rowBytes;
+ 	const unsigned scale = v->v_width >= 1600 ? 2 : 1;
+@@ -385,15 +386,30 @@
+ 	const unsigned columns = available_columns > 100 ? 100 : (unsigned)available_columns;
+ 	if (!v->v_baseAddr || (v->v_depth & 255) != 32 || stride < 2560 || stride > 65536 ||
+ 	    columns < 32 || v->v_width > stride / 4 || v->v_height > 16384 ||
+-	    top + 8 * 16 * scale > v->v_height) return;
++	    top + 8 * 16 * scale > v->v_height) {
++		sheng_log_status("panel geometry refused");
++		return;
++	}
+ 	const uint64_t first = v->v_baseAddr + top * stride + 64;
+ 	const uint64_t end = first + (8 * 16 * scale - 1) * stride + columns * 8 * scale * 4;
+-	if (first < v->v_baseAddr || end <= first || end >= (1ull << 47)) return;
++	if (first < v->v_baseAddr || end <= first || end >= (1ull << 47)) {
++		sheng_log_status("panel address refused");
++		return;
++	}
+ 	const uintptr_t offset = first & 16383;
+ 	const vm_size_t bytes = (offset + end - first + 16383) & ~(vm_size_t)16383;
+-	if (bytes > 4 * 1048576) return;
++	if (bytes > 4 * 1048576) {
++		sheng_log_status("panel size refused");
++		return;
++	}
++	sheng_log_status("panel map enter");
+ 	const vm_offset_t mapped = ml_io_map(first - offset, bytes);
+-	if (mapped) sheng_log_bind_panel(mapped + offset, (unsigned)stride, columns, 8, scale);
++	sheng_log_status("panel map returned");
++	if (mapped) {
++		sheng_log_status("panel bind enter");
++		sheng_log_bind_panel(mapped + offset, (unsigned)stride, columns, 8, scale);
++		sheng_log_status("panel bind returned");
++	}
+ 	sheng_log_stage(sheng_panel_ready ? "native log panel ready" : "native log panel refused");
+ }
+ #define SHENG_LOG_STAGE(message) sheng_log_stage(message)
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -122,6 +122,9 @@
+ #include <machine/static_if.h>
+ #include <libkern/version.h>
+ #include <pexpert/device_tree.h>
++#if SHENG
++#include <pexpert/pexpert.h>
++#endif
+ #include <sys/codesign.h>
+ #include <sys/kdebug.h>
+ #include <sys/random.h>
+@@ -222,6 +225,9 @@
+ static inline void
+ kernel_bootstrap_log(const char *message)
+ {
++#if SHENG
++	sheng_log_stage(message);
++#endif
+ 	if ((startup_debug & STARTUP_DEBUG_VERBOSE) &&
+ 	    startup_phase >= STARTUP_SUB_KPRINTF) {
+ 		kprintf("kernel_bootstrap: %s\n", message);
+@@ -232,6 +238,9 @@
+ static inline void
+ kernel_bootstrap_thread_log(const char *message)
+ {
++#if SHENG
++	sheng_log_stage(message);
++#endif
+ 	if ((startup_debug & STARTUP_DEBUG_VERBOSE) &&
+ 	    startup_phase >= STARTUP_SUB_KPRINTF) {
+ 		kprintf("kernel_bootstrap_thread: %s\n", message);
