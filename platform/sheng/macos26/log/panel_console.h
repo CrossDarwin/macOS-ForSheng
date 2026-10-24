@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* 使用XNU原字体，写屏只在保留日志的writer作用域内进行 */
+/* 复用XNU原字体，启动摘要独立于保留日志writer */
 #define iso_font sheng_panel_font
 #include "pe_sheng_font.h"
 #undef iso_font
@@ -9,12 +9,16 @@ volatile uint64_t sheng_status_witness;
 char sheng_status_message[45];
 static unsigned sheng_status_pinned;
 
-/* 复用已验证的12行原生映射，单启动核状态输出不依赖日志writer */
+volatile uint64_t sheng_status_pixels;
+uint64_t sheng_status_row_pa, sheng_status_scale;
+
+/* 同一次原生映射覆盖独立文字区，旧阶段条不再与文字共用像素 */
 static void sheng_status_render(const char *prefix, const char *message)
 {
-    const uintptr_t base = sheng_bootstrap_vm_pixels;
+    const uintptr_t base = sheng_status_pixels;
     const uintptr_t stride = sheng_bootstrap_vm_stride;
-    if (!base || stride < 2560 || stride > 65536) return;
+    const unsigned scale = (unsigned)sheng_status_scale;
+    if (!base || stride < 2560 || stride > 65536 || (scale != 1 && scale != 2)) return;
     unsigned length = 0;
     while (prefix && *prefix && length < 44) sheng_status_message[length++] = *prefix++;
     while (message && *message && length < 44) {
@@ -23,15 +27,23 @@ static void sheng_status_render(const char *prefix, const char *message)
     }
     sheng_status_message[length] = 0;
     uintptr_t white = 0;
-    for (unsigned row = 0; row < 12; row++) {
-        volatile uint32_t *pixels = (volatile uint32_t *)(base + row * stride);
-        for (unsigned col = 0; col < 44; col++) {
-            const unsigned bits = col < length ?
-                sheng_panel_font[(unsigned char)sheng_status_message[col] * 16 + row * 16 / 12] : 0;
-            for (unsigned x = 0; x < 8; x++) {
-                const uint32_t color = bits & (1u << x) ? 0xffffffffu : 0xff000000u;
-                pixels[col * 8 + x] = color;
-                if (!white && color == 0xffffffffu) white = (uintptr_t)&pixels[col * 8 + x];
+    for (unsigned line = 0; line < 2; line++) {
+        const char *text = line ? sheng_status_message :
+            (sheng_status_pinned ? "SHENG - FIRST PANIC" : "SHENG - BOOT LOG");
+        unsigned col = 0;
+        for (; col < 44; col++) {
+            const unsigned char c = *text ? (unsigned char)*text++ : ' ';
+            for (unsigned row = 0; row < 16; row++) {
+                const unsigned bits = sheng_panel_font[c * 16 + row];
+                for (unsigned y = 0; y < scale; y++) {
+                    volatile uint32_t *pixels = (volatile uint32_t *)(base +
+                        ((line * 16 + row) * scale + y) * stride + col * 8 * scale * 4);
+                    for (unsigned x = 0; x < 8; x++) {
+                        const uint32_t color = bits & (1u << x) ? 0xffffffffu : 0xff000000u;
+                        for (unsigned sx = 0; sx < scale; sx++) pixels[x * scale + sx] = color;
+                        if (!white && color == 0xffffffffu) white = (uintptr_t)&pixels[x * scale];
+                    }
+                }
             }
         }
     }

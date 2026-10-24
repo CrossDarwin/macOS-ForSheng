@@ -6,6 +6,8 @@ extern volatile uint64_t sheng_bootstrap_vm_stage;
 extern volatile uint64_t sheng_bootstrap_vm_pixels;
 extern uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
 extern volatile uint64_t sheng_bootstrap_vm_witness;
+extern volatile uint64_t sheng_status_pixels;
+extern uint64_t sheng_status_row_pa, sheng_status_scale;
 
 static __attribute__((always_inline)) inline void
 sheng_vm_trace(unsigned stage)
@@ -37,6 +39,9 @@ sheng_vm_trace_begin(const boot_args *args)
 {
     const Boot_Video *video = &args->Video;
     const uint64_t stride = video->v_rowBytes;
+    sheng_status_pixels = 0;
+    sheng_status_row_pa = 0;
+    sheng_status_scale = 0;
     sheng_bootstrap_vm_pixels = 0;
     sheng_bootstrap_vm_row_pa = 0;
     sheng_bootstrap_vm_witness = 0;
@@ -48,6 +53,16 @@ sheng_vm_trace_begin(const boot_args *args)
         if (first >= video->v_baseAddr && end > first && end < (1ull << 47)) {
             sheng_bootstrap_vm_row_pa = first;
             sheng_bootstrap_vm_stride = stride;
+            const uint64_t scale = video->v_width >= 960 ? 2 : 1;
+            const uint64_t top = video->v_height >= 1024 ? 608 : 32;
+            const uint64_t status = video->v_baseAddr + top * stride + 896;
+            const uint64_t status_end = status + (32 * scale - 1) * stride + 44 * 8 * scale * 4;
+            if (video->v_width >= 224 + 44 * 8 * scale &&
+                top + 32 * scale <= video->v_height && status >= video->v_baseAddr &&
+                status_end > status && status_end < (1ull << 47)) {
+                sheng_status_row_pa = status;
+                sheng_status_scale = scale;
+            }
             if (sheng_bootstrap_fb_trace_ready) {
                 sheng_bootstrap_vm_pixels = first;
             }
@@ -62,6 +77,7 @@ sheng_vm_trace_drop_identity(void)
     sheng_vm_trace(7);
     /* 先停用物理写屏，再让原生VM撤销TTBR0，不延长identity映射寿命 */
     sheng_bootstrap_vm_pixels = 0;
+    sheng_status_pixels = 0;
     __asm__ volatile ("dsb sy" ::: "memory");
 }
 #endif

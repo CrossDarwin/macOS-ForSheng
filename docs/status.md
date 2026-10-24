@@ -638,3 +638,10 @@ C与VM阶段F、corecrypto POST、诊断关闭及标准panic完整性均保持�
 实机部署前Android仍为sheng / _a / boot_completed=1，记录位于private/experiments/20261024-native-arm64e/mapped-log-status。
 单次RAM临时启动前a槽可启动检查通过，ABL返回Booting OKAY，无刷写或切槽。
 被替代的90ec47c9部署镜像及本次QEMU ESP已删除，完整诊断与有效恢复备份保留；实机文字结果待回传。
+
+b4904504实机照片和用户回传确认小字与旧阶段条混在一起，不能可靠读取；没有据此判定末函数或panic原因。
+照片保存在private/experiments/20261024-native-arm64e/mapped-log-status。返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1。
+0034将状态文字移至独立黑底区域：sheng从第608行开始，标题和摘要各32像素高，44列；旧阶段条仍在568–579行，二者不共用像素。
+原VM诊断的一次原生映射同时覆盖两个区域，限制为2 MiB；不再另行绑定0031大面板。控制台初始化前后分别绘制状态，后续视频字符回调避免覆盖文字区。
+共享渲染器按3048×2032、stride=12192定向运行，实际文字像素读回通过；阶段条重画、模拟清屏后重绘、writer占用及首个panic固定均通过，边界外哨兵未变。
+sheng映射需求为1277952字节，小型QEMU几何为1769472字节，均在2 MiB以内。ARM64E定向编译通过，完整内核构建和实机结果待完成。

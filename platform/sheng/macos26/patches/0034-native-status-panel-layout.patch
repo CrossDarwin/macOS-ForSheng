@@ -1,0 +1,77 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -168,6 +168,7 @@
+ void sheng_log_stage(const char *message);
+ void sheng_log_status(const char *message);
+ extern volatile uint64_t sheng_panel_ready;
++extern volatile uint64_t sheng_status_pixels;
+ #endif
+ 
+ void PE_init_printf(
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -363,20 +363,34 @@
+ 	sheng_vm_trace(10);
+ 	const uintptr_t first = sheng_bootstrap_vm_row_pa;
+ 	if (first) {
+-		const uintptr_t offset = first & 16383;
+-		const vm_size_t bytes = (offset + 11 * sheng_bootstrap_vm_stride + 1460 + 16383) & ~(vm_size_t)16383;
+-		if (bytes <= 1048576) {
+-			const vm_offset_t mapped = ml_io_map(first - offset, bytes);
++		const uintptr_t status = sheng_status_row_pa;
++		const uintptr_t start = status && status < first ? status : first;
++		uintptr_t end = first + 11 * sheng_bootstrap_vm_stride + 1460;
++		if (status) {
++			const uintptr_t status_end = status + (32 * sheng_status_scale - 1) *
++			    sheng_bootstrap_vm_stride + 44 * 8 * sheng_status_scale * 4;
++			if (status_end > end) end = status_end;
++		}
++		const uintptr_t offset = start & 16383;
++		const vm_size_t bytes = (offset + end - start + 16383) & ~(vm_size_t)16383;
++		if (end > start && bytes <= 2 * 1048576) {
++			const vm_offset_t mapped = ml_io_map(start - offset, bytes);
+ 			if (mapped) {
+-				sheng_bootstrap_vm_pixels = mapped + offset;
++				sheng_bootstrap_vm_pixels = mapped + offset + first - start;
++				if (status) sheng_status_pixels = mapped + offset + status - start;
+ 			}
+ 		}
+ 	}
+ 	sheng_vm_trace(11);
++	sheng_log_status("arm_vm_init returned");
+ }
+ static void
+ sheng_native_log_panel(const boot_args *args)
+ {
++	if (sheng_status_pixels) {
++		sheng_log_status("native status panel ready");
++		return;
++	}
+ 	sheng_log_status("panel parameters enter");
+ 	const Boot_Video *v = &args->Video;
+ 	const uint64_t stride = v->v_rowBytes;
+@@ -726,7 +740,13 @@
+ 		(void)switch_to_serial_console(); /* Switch into serial mode from video console */
+ 		disableConsoleOutput = FALSE;     /* Allow printfs to happen */
+ 	}
++#if SHENG
++	sheng_log_status("PE_create_console enter");
++#endif
+ 	PE_create_console();
++#if SHENG
++	sheng_log_status("PE_create_console returned");
++#endif
+ 	SHENG_VM_TRACE(15);
+ #if SHENG
+ 	sheng_native_log_panel(args);
+--- a/osfmk/console/video_console.c
++++ b/osfmk/console/video_console.c
+@@ -1232,7 +1232,7 @@
+ {
+ #if SHENG
+ 	/* 字符已进入保留日志，由原生面板显示，避免两个渲染器覆盖 */
+-	if (sheng_panel_ready) return;
++	if (sheng_panel_ready || sheng_status_pixels) return;
+ #endif
+ 	if (gc_initialized && gc_enabled) {
+ 		VCPUTC_LOCK_LOCK();

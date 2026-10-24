@@ -45,7 +45,12 @@ def main() -> None:
     if '_sheng_mmu_sync_fault' in symbols and not observed.get('bootstrap_diagnostic_disarmed'):
         raise ValueError('requires this MMU-on diagnostic to disarm after console setup in QEMU')
     native_build = json.loads((kernel.parent / 'build.json').read_text())
-    if native_build.get('panel_console_source_sha256'):
+    if '_sheng_status_pixels' in symbols:
+        status = observed.get('observed_globals', {})
+        if (int(status.get('_sheng_status_pixels', '0x0'), 16) == 0
+                or status.get('_sheng_status_scale') not in ('0x1', '0x2')):
+            raise ValueError('requires the independent native status panel mapping and valid font scale')
+    elif native_build.get('panel_console_source_sha256'):
         panel = observed.get('observed_globals', {})
         if (panel.get('_sheng_panel_ready') != '0x1' or panel.get('_sheng_panel_witness') != '0x1'
                 or int(panel.get('_sheng_panel_characters', '0x0'), 16) < 100):
