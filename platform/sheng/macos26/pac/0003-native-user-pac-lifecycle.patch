@@ -1,0 +1,285 @@
+--- a/osfmk/arm64/pac_asm.h
++++ b/osfmk/arm64/pac_asm.h
+@@ -45,6 +45,105 @@
+ 
+ 
+ /* BEGIN IGNORE CODESTYLE */
++
++#if HAS_NATIVE_EL1_PAC
++/* 四个不同域的PACGA结果组成128位密钥，GA始终最后切换 */
++.macro SHENG_DERIVE_USER_KEY seed, lo, hi, tag, part, domain
++ MOV32 \tag, (0x53480000 | (\domain << 8))
++ pacga \lo, \seed, \tag
++ lsr \lo, \lo, #32
++ MOV32 \tag, (0x53480001 | (\domain << 8))
++ pacga \part, \seed, \tag
++ orr \lo, \lo, \part
++ MOV32 \tag, (0x53480002 | (\domain << 8))
++ pacga \hi, \seed, \tag
++ lsr \hi, \hi, #32
++ MOV32 \tag, (0x53480003 | (\domain << 8))
++ pacga \part, \seed, \tag
++ orr \hi, \hi, \part
++.endmacro
++
++.macro SHENG_SAVE_KERNEL_KEYS cpu, lo, hi
++ mrs \lo, APIAKeyLo_EL1
++ mrs \hi, APIAKeyHi_EL1
++ str \lo, [\cpu, CPU_SHENG_PAC_BANK]
++ str \hi, [\cpu, (CPU_SHENG_PAC_BANK + 8)]
++ mrs \lo, APIBKeyLo_EL1
++ mrs \hi, APIBKeyHi_EL1
++ str \lo, [\cpu, (CPU_SHENG_PAC_BANK + 16)]
++ str \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 16) + 8)]
++ mrs \lo, APDAKeyLo_EL1
++ mrs \hi, APDAKeyHi_EL1
++ str \lo, [\cpu, (CPU_SHENG_PAC_BANK + 32)]
++ str \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 32) + 8)]
++ mrs \lo, APDBKeyLo_EL1
++ mrs \hi, APDBKeyHi_EL1
++ str \lo, [\cpu, (CPU_SHENG_PAC_BANK + 48)]
++ str \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 48) + 8)]
++ mrs \lo, APGAKeyLo_EL1
++ mrs \hi, APGAKeyHi_EL1
++ str \lo, [\cpu, (CPU_SHENG_PAC_BANK + 64)]
++ str \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 64) + 8)]
++.endmacro
++
++.macro SHENG_RESTORE_KERNEL_KEYS cpu, lo, hi
++ ldr \lo, [\cpu, CPU_SHENG_PAC_BANK]
++ ldr \hi, [\cpu, (CPU_SHENG_PAC_BANK + 8)]
++ msr APIAKeyLo_EL1, \lo
++ msr APIAKeyHi_EL1, \hi
++ ldr \lo, [\cpu, (CPU_SHENG_PAC_BANK + 16)]
++ ldr \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 16) + 8)]
++ msr APIBKeyLo_EL1, \lo
++ msr APIBKeyHi_EL1, \hi
++ ldr \lo, [\cpu, (CPU_SHENG_PAC_BANK + 32)]
++ ldr \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 32) + 8)]
++ msr APDAKeyLo_EL1, \lo
++ msr APDAKeyHi_EL1, \hi
++ ldr \lo, [\cpu, (CPU_SHENG_PAC_BANK + 48)]
++ ldr \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 48) + 8)]
++ msr APDBKeyLo_EL1, \lo
++ msr APDBKeyHi_EL1, \hi
++ ldr \lo, [\cpu, (CPU_SHENG_PAC_BANK + 64)]
++ ldr \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 64) + 8)]
++ msr APGAKeyLo_EL1, \lo
++ msr APGAKeyHi_EL1, \hi
++ isb
++.endmacro
++
++/* 仅在GPR尚未恢复且内核GA密钥仍有效时使用，保留x0/x16/x17/LR */
++.macro SHENG_INSTALL_USER_KEYS
++ mrs x2, TPIDR_EL1
++ ldr x1, [x2, ACT_CPUDATAP]
++ SHENG_SAVE_KERNEL_KEYS x1, x3, x4
++ ldr x7, [x2, TH_ROP_PID]
++ ldr x2, [x2, TH_JOP_PID]
++ cbz x2, Lsheng_bad_user_key_\@
++ SHENG_DERIVE_USER_KEY x2, x3, x4, x5, x6, 1
++ msr APIAKeyLo_EL1, x3
++ msr APIAKeyHi_EL1, x4
++ SHENG_DERIVE_USER_KEY x2, x3, x4, x5, x6, 3
++ msr APDAKeyLo_EL1, x3
++ msr APDAKeyHi_EL1, x4
++ SHENG_DERIVE_USER_KEY x7, x3, x4, x5, x6, 2
++ msr APIBKeyLo_EL1, x3
++ msr APIBKeyHi_EL1, x4
++ SHENG_DERIVE_USER_KEY x7, x3, x4, x5, x6, 4
++ msr APDBKeyLo_EL1, x3
++ msr APDBKeyHi_EL1, x4
++ SHENG_DERIVE_USER_KEY x2, x3, x4, x5, x6, 5
++ ldr x5, [x1, CPU_SHENG_PAC_RETURNS]
++ add x5, x5, #1
++ str x5, [x1, CPU_SHENG_PAC_RETURNS]
++ msr APGAKeyLo_EL1, x3
++ msr APGAKeyHi_EL1, x4
++ isb
++ b Lsheng_user_keys_done_\@
++Lsheng_bad_user_key_\@:
++ brk #0x5348
++Lsheng_user_keys_done_\@:
++.endmacro
++#endif /* HAS_NATIVE_EL1_PAC */
++
+ 
+ /**
+  * REPROGRAM_JOP_KEYS
+--- a/osfmk/arm/cpu_data_internal.h
++++ b/osfmk/arm/cpu_data_internal.h
+@@ -250,6 +250,14 @@
+ #if defined(HAS_APPLE_PAC)
+ 	uint64_t                        rop_key;
+ 	uint64_t                        jop_key;
++#if HAS_NATIVE_EL1_PAC
++	/* 密钥只归当前CPU持有，异常入口在任何PAC认证之前恢复 */
++	uint64_t                        sheng_kernel_pac_bank[10];
++	uint64_t                        sheng_pac_signing;
++	uint64_t                        sheng_pac_entries;
++	uint64_t                        sheng_pac_returns;
++	uint64_t                        sheng_pac_signs;
++#endif
+ #endif /* defined(HAS_APPLE_PAC) */
+ 
+ #if CONFIG_CPU_COUNTERS
+--- a/osfmk/arm64/genassym.c
++++ b/osfmk/arm64/genassym.c
+@@ -395,6 +395,13 @@
+ #if defined(HAS_APPLE_PAC)
+ 	DECLARE("CPU_ROP_KEY", offsetof(cpu_data_t, rop_key));
+ 	DECLARE("CPU_JOP_KEY", offsetof(cpu_data_t, jop_key));
++#if HAS_NATIVE_EL1_PAC
++	DECLARE("CPU_SHENG_PAC_BANK", offsetof(cpu_data_t, sheng_kernel_pac_bank));
++	DECLARE("CPU_SHENG_PAC_SIGNING", offsetof(cpu_data_t, sheng_pac_signing));
++	DECLARE("CPU_SHENG_PAC_ENTRIES", offsetof(cpu_data_t, sheng_pac_entries));
++	DECLARE("CPU_SHENG_PAC_RETURNS", offsetof(cpu_data_t, sheng_pac_returns));
++	DECLARE("CPU_SHENG_PAC_SIGNS", offsetof(cpu_data_t, sheng_pac_signs));
++#endif
+ #if __has_feature(ptrauth_function_pointer_type_discrimination)
+ 	DECLARE("THREAD_CONTINUE_T_DISC", __builtin_ptrauth_type_discriminator(thread_continue_t));
+ #else
+--- a/osfmk/arm64/locore.s
++++ b/osfmk/arm64/locore.s
+@@ -960,6 +960,19 @@
+ 
+ 
+ .macro EL0_64_VECTOR guest_label
++#if HAS_NATIVE_EL1_PAC
++	/* CpuDatap是原始内核指针，此处不能先认证UPCB或调用C */
++	stp x0, x1, [sp, #-16]!
++	stp x2, x3, [sp, #-16]!
++	mrs x0, TPIDR_EL1
++	ldr x0, [x0, ACT_CPUDATAP]
++	SHENG_RESTORE_KERNEL_KEYS x0, x1, x2
++	ldr x1, [x0, CPU_SHENG_PAC_ENTRIES]
++	add x1, x1, #1
++	str x1, [x0, CPU_SHENG_PAC_ENTRIES]
++	ldp x2, x3, [sp], #16
++	ldp x0, x1, [sp], #16
++#endif
+ 	stp		x0, x1, [sp, #-16]!					// Save x0 and x1 to the exception stack
+ #if __ARM_KERNEL_PROTECT__
+ 	mov		x18, #0 						// Zero x18 to avoid leaking data to user SS
+@@ -2117,6 +2130,15 @@
+ Lskip_eret_isb:
+ #endif /* ERET_NEEDS_ISB */
+ 
++#if HAS_NATIVE_EL1_PAC
++	/* 任务切换始终保持内核密钥，直到返回所选线程的最后边界 */
++	mrs x2, SPSR_EL1
++	tst x2, #PSR64_MODE_MASK
++	b.ne Lsheng_keep_kernel_keys
++	SHENG_INSTALL_USER_KEYS
++Lsheng_keep_kernel_keys:
++#endif
++
+ 	/* Restore arm_saved_state64 */
+ 
+ 	// Skip x0, x1 - we're using them
+--- a/osfmk/arm64/machine_routines_asm.s
++++ b/osfmk/arm64/machine_routines_asm.s
+@@ -117,9 +117,35 @@
+ 	ret
+ #endif /* HAS_PARAVIRTUALIZED_PAC */
+ #if HAS_NATIVE_EL1_PAC
+-	adrp	x0, Lsheng_el0_pac_pending@page
+-	add		x0, x0, Lsheng_el0_pac_pending@pageoff
+-	b		EXT(panic)
++	/* pmap调用者已屏蔽中断，只临时替换A密钥，保留C返回使用的IB */
++	cbz x0, Lsheng_bad_signing_window
++	mrs x2, TPIDR_EL1
++	ldr x2, [x2, ACT_CPUDATAP]
++	ldr x3, [x2, CPU_SHENG_PAC_SIGNING]
++	cbnz x3, Lsheng_bad_signing_window
++	mrs x3, DAIF
++	and x3, x3, #0xc0
++	cmp x3, #0xc0
++	b.ne Lsheng_bad_signing_window
++	mrs x3, APIAKeyLo_EL1
++	mrs x4, APIAKeyHi_EL1
++	str x3, [x2, CPU_SHENG_PAC_BANK]
++ str x4, [x2, (CPU_SHENG_PAC_BANK + 8)]
++	mrs x3, APDAKeyLo_EL1
++	mrs x4, APDAKeyHi_EL1
++	str x3, [x2, (CPU_SHENG_PAC_BANK + 32)]
++ str x4, [x2, ((CPU_SHENG_PAC_BANK + 32) + 8)]
++	mov x3, #1
++	str x3, [x2, CPU_SHENG_PAC_SIGNING]
++	SHENG_DERIVE_USER_KEY x0, x3, x4, x5, x6, 1
++	msr APIAKeyLo_EL1, x3
++	msr APIAKeyHi_EL1, x4
++	SHENG_DERIVE_USER_KEY x0, x3, x4, x5, x6, 3
++	msr APDAKeyLo_EL1, x3
++	msr APDAKeyHi_EL1, x4
++	isb
++	mov x0, #1
++	ret
+ #endif
+ 
+ /*
+@@ -138,17 +164,39 @@
+ 	ret
+ #endif /* HAS_PARAVIRTUALIZED_PAC */
+ #if HAS_NATIVE_EL1_PAC
+-	adrp	x0, Lsheng_el0_pac_pending@page
+-	add		x0, x0, Lsheng_el0_pac_pending@pageoff
+-	b		EXT(panic)
++	cmp x1, #1
++	b.ne Lsheng_bad_signing_window
++	mrs x2, TPIDR_EL1
++	ldr x2, [x2, ACT_CPUDATAP]
++	ldr x3, [x2, CPU_SHENG_PAC_SIGNING]
++	cmp x3, #1
++	b.ne Lsheng_bad_signing_window
++	ldr x3, [x2, CPU_SHENG_PAC_BANK]
++ ldr x4, [x2, (CPU_SHENG_PAC_BANK + 8)]
++	msr APIAKeyLo_EL1, x3
++	msr APIAKeyHi_EL1, x4
++	ldr x3, [x2, (CPU_SHENG_PAC_BANK + 32)]
++ ldr x4, [x2, ((CPU_SHENG_PAC_BANK + 32) + 8)]
++	msr APDAKeyLo_EL1, x3
++	msr APDAKeyHi_EL1, x4
++	isb
++	str xzr, [x2, CPU_SHENG_PAC_SIGNING]
++	ldr x3, [x2, CPU_SHENG_PAC_SIGNS]
++	add x3, x3, #1
++	str x3, [x2, CPU_SHENG_PAC_SIGNS]
++	ret
+ #endif
+ 
+ #endif /* defined(HAS_APPLE_PAC) */
+ 
+ #if HAS_NATIVE_EL1_PAC
++Lsheng_bad_signing_window:
++	adrp x0, Lsheng_el0_pac_pending@page
++	add x0, x0, Lsheng_el0_pac_pending@pageoff
++	b EXT(panic)
+ 	.const
+ Lsheng_el0_pac_pending:
+-	.asciz "SHENG: EL0 PAC key lifecycle is not implemented"
++	.asciz "SHENG: invalid or nested user PAC signing window"
+ 	.text
+ #endif
+ 
+--- a/osfmk/arm/machine_routines_apple.c
++++ b/osfmk/arm/machine_routines_apple.c
+@@ -249,6 +249,9 @@
+ #if HAS_PARAVIRTUALIZED_PAC
+ 	vmapple_pac_get_default_keys();
+ 	return vmapple_default_jop_pid;
++#elif HAS_NATIVE_EL1_PAC
++	/* 非零表示需要签名，实际128位密钥由内核GA及域标识推导 */
++	return 1;
+ #else
+ 	return 0;
+ #endif /* HAS_PARAVIRTUALIZED_PAC */
+@@ -261,7 +264,7 @@
+ uint64_t
+ ml_non_arm64e_user_jop_pid(void)
+ {
+-#if HAS_PARAVIRTUALIZED_PAC
++#if HAS_PARAVIRTUALIZED_PAC || HAS_NATIVE_EL1_PAC
+ 	return generate_jop_key();
+ #else
+ 	return 0;
