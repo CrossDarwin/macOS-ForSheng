@@ -707,3 +707,6 @@ CI 40076449616通过，UUID 51CEF8AA-71E7-3299-A98E-8BCF4425EA21。QEMU四个安
 
 
 原版pthread实验候选SHA256 96f29608afc48c052fb520d470f1e38a32bcd4f37d0389113e7eacdb81ddbcc6，UUID沿用40077286611。QEMU确认com.apple.kec.pthread依赖解析、真实module start成功，pthread_functions=0xfffffe000a896fc0位于原版线程组件映射内；尚未证明pthread_init及线程系统调用完成。继续运行仍复现IRQ空回调，启动CPUdata+0xd8实际读回0，故不能部署。
+
+
+只读断点确认根因时序：ArmCpu::enableGic入口的启动CPUdata中interrupt_handler为0，实际调用链为ArmCpu::start -> ml_processor_register+0x1d8 -> processor_boot -> cpu_start -> cpu_machine_init -> PE_cpu_machine_init -> initCPU。旧驱动移植自较早XNU，先注册CPU再安装IOCPUInterruptController回调，且返回后重复调用initCPU。machine-cpu-interrupt-order.patch将启动CPU控制器初始化、回调安装与动作注册移到ml_processor_register之前，预先设置CPUNumber，删除多余initCPU；次核路径和PAC认证不改。补丁在前两份现有适配补丁之后应用，实际运行修复仍待新CI内核验证。

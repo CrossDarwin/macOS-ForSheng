@@ -1,0 +1,27 @@
+--- a/ArmCpu/ArmCpu.cpp
++++ b/ArmCpu/ArmCpu.cpp
+@@ -403,11 +403,7 @@
+   info.log_id = logicalId;
+   info.cluster_id = static_cast<uint32_t> (ml_get_cluster_number (physical));
+   info.cluster_type = ml_get_boot_cluster_type ();
+-  perfmon_interrupt_handler_func pmi = nullptr;
+-  kern_return_t status = ml_processor_register (&info, &machProcessor, &ipi_handler, &pmi);
+-  if (status != KERN_SUCCESS) { panic ("ArmCpu: CPU %u registration failed: %d", logicalId, status); }
+   setCPUNumber (info.log_id);
+-  armcpu_registered = 1;
+   unsigned smp = 0;
+   PE_parse_boot_argn ("sheng-smp", &smp, sizeof (smp));
+   gSmpWanted = smp != 0;
+@@ -426,7 +422,11 @@
+     panic ("ArmCpu: CPU IRQ action registration failed");
+   }
+   gController = controller;
+-  initCPU (true);
++  // 新版注册函数会调用initCPU，先安装回调再开启中断源
++  perfmon_interrupt_handler_func pmi = nullptr;
++  kern_return_t status = ml_processor_register (&info, &machProcessor, &ipi_handler, &pmi);
++  if (status != KERN_SUCCESS) { panic ("ArmCpu: CPU %u registration failed: %d", logicalId, status); }
++  armcpu_registered = 1;
+   registerService ();
+   __atomic_store_n (&gBootRegistered, 1U, __ATOMIC_RELEASE);
+   drainPending ();

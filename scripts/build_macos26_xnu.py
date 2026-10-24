@@ -70,6 +70,7 @@ PATCHES = [
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
+CPU_INTERRUPT_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-interrupt-order.patch'
 
 
 # Preserve diagnostics for exported Apple source/tool-generated code on Clang 27.
@@ -359,6 +360,9 @@ def compile_sources(args, record: dict) -> None:
     subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
                     str(CPU_PATCH)], cwd=ROOT, check=True)
     record['cpu_registration_patch_sha256'] = sha(CPU_PATCH)
+    subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
+                    str(CPU_INTERRUPT_PATCH)], cwd=ROOT, check=True)
+    record['cpu_interrupt_order_patch_sha256'] = sha(CPU_INTERRUPT_PATCH)
     record['platform_objects'] = {}
     for component in ('ArmDTPlatform', 'ArmCpu'):
         original = ROOT / f'UniXNU/drivers/{component}/{component}.cpp'
