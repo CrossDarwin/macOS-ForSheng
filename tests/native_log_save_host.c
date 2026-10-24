@@ -28,7 +28,9 @@ static EFI_BLOCK_IO_MEDIA media;
 static EFI_BLOCK_IO_PROTOCOL block;
 static EFI_SIMPLE_FILE_SYSTEM_PROTOCOL fs;
 static int short_write, corrupt_read, reserve_fail, bad_mapping, opens, corrupt_verify;
-static unsigned held;
+static unsigned held, connects;
+static int fs_unbound;
+static EFI_STATUS connect_status;
 static char disk[1024];
 typedef struct { UINT64 Base, End; } KERNEL;
 static UINT32 U32(const void *p) { UINT32 v; memcpy(&v,p,4); return v; }
@@ -79,16 +81,23 @@ static EFI_STATUS EFIAPI openfile(EFI_FILE_PROTOCOL*self,EFI_FILE_PROTOCOL**out,
 static HFILE *wrap(const char *path,int directory,const char *mode){HFILE*h=calloc(1,sizeof(*h));assert(h);strcpy(h->path,path);h->directory=directory;if(!directory){h->stream=fopen(path,mode);if(!h->stream){free(h);return NULL;}}h->e.Open=openfile;h->e.Close=closefile;h->e.Delete=deletefile;h->e.Read=readfile;h->e.Write=writefile;h->e.Flush=flush;h->e.SetPosition=position;return h;}
 static EFI_STATUS EFIAPI volume(EFI_SIMPLE_FILE_SYSTEM_PROTOCOL*self,EFI_FILE_PROTOCOL**out){(void)self;opens++;*out=&wrap(disk,1,"rb")->e;return EFI_SUCCESS;}
 static EFI_STATUS EFIAPI locate(EFI_LOCATE_SEARCH_TYPE search,EFI_GUID*guid,VOID*key,UINTN*n,EFI_HANDLE**handles){(void)key;assert(search==ByProtocol && CompareGuid(guid,&gEfiPartitionInfoProtocolGuid));*n=1;*handles=malloc(sizeof(EFI_HANDLE));(*handles)[0]=(EFI_HANDLE)1;return EFI_SUCCESS;}
-static EFI_STATUS EFIAPI protocol(EFI_HANDLE handle,EFI_GUID*guid,VOID**out){assert(handle==(EFI_HANDLE)1);if(CompareGuid(guid,&gEfiPartitionInfoProtocolGuid))*out=&part;else if(CompareGuid(guid,&gEfiBlockIoProtocolGuid))*out=&block;else if(CompareGuid(guid,&gEfiSimpleFileSystemProtocolGuid))*out=&fs;else return EFI_NOT_FOUND;return EFI_SUCCESS;}
+static EFI_STATUS EFIAPI protocol(EFI_HANDLE handle,EFI_GUID*guid,VOID**out){assert(handle==(EFI_HANDLE)1);if(CompareGuid(guid,&gEfiPartitionInfoProtocolGuid))*out=&part;else if(CompareGuid(guid,&gEfiBlockIoProtocolGuid))*out=&block;else if(CompareGuid(guid,&gEfiSimpleFileSystemProtocolGuid)){if(fs_unbound)return EFI_UNSUPPORTED;*out=&fs;}else return EFI_NOT_FOUND;return EFI_SUCCESS;}
+static EFI_STATUS EFIAPI connect(EFI_HANDLE h,EFI_HANDLE *drivers,EFI_DEVICE_PATH_PROTOCOL *path,BOOLEAN recursive){assert(h==(EFI_HANDLE)1 && !drivers && !path && !recursive);connects++;if(!EFI_ERROR(connect_status) || connect_status==EFI_ALREADY_STARTED)fs_unbound=0;return connect_status;}
 static EFI_STATUS ReadFile(EFI_FILE_PROTOCOL*root,CONST CHAR16*path,UINTN limit,VOID**out,UINTN*bytes){EFI_FILE_PROTOCOL*f;*out=NULL;EFI_STATUS s=root->Open(root,&f,(CHAR16*)path,EFI_FILE_MODE_READ,0);if(EFI_ERROR(s))return s;HFILE*h=(HFILE*)f;fseek(h->stream,0,SEEK_END);long n=ftell(h->stream);rewind(h->stream);if(n<=0||(UINTN)n>limit){f->Close(f);return EFI_BAD_BUFFER_SIZE;}*bytes=n;*out=calloc(1,n);s=f->Read(f,bytes,*out);f->Close(f);return s;}
 #include "NativeLogSave.h"
 static void filebytes(const char *name,const void *p,size_t bytes){char path[1200];snprintf(path,sizeof(path),"%s/%s",disk,name);FILE*f=fopen(path,"wb");assert(f);assert(fwrite(p,1,bytes,f)==bytes);fclose(f);}
 static int exists(const char *name){char path[1200];snprintf(path,sizeof(path),"%s/%s",disk,name);return access(path,F_OK)==0;}
 static void checkfile(const char*name,const void*p,size_t n){char path[1200];snprintf(path,sizeof(path),"%s/%s",disk,name);FILE*f=fopen(path,"rb");assert(f);void*b=malloc(n+1);assert(fread(b,1,n+1,f)==n);assert(!memcmp(b,p,n));free(b);fclose(f);}
 int main(int argc,char**argv){assert(argc==2);strcpy(disk,argv[1]);
- services.LocateHandleBuffer=locate;services.HandleProtocol=protocol;services.AllocatePages=alloc;services.FreePages=release;services.CalculateCrc32=crc;
+ services.LocateHandleBuffer=locate;services.HandleProtocol=protocol;services.AllocatePages=alloc;services.FreePages=release;services.CalculateCrc32=crc;services.ConnectController=connect;
  part.Revision=EFI_PARTITION_INFO_PROTOCOL_REVISION;part.Type=PARTITION_TYPE_GPT;part.Info.Gpt.UniquePartitionGUID=mNativeLogPartition;part.Info.Gpt.PartitionTypeGUID=mNativeLogType;part.Info.Gpt.StartingLBA=448512;part.Info.Gpt.EndingLBA=464895;CHAR16 name[]=L"macoslog";memcpy(part.Info.Gpt.PartitionName,name,sizeof(name));
  media.LogicalPartition=TRUE;media.MediaPresent=TRUE;media.BlockSize=4096;media.LastBlock=16383;block.Media=&media;fs.OpenVolume=volume;
+ assert(NativeLogRange(0x880000000ULL,NATIVE_LOG_BYTES));assert(NativeLogRange(0x8c1004000ULL,NATIVE_LOG_BYTES));assert(NativeLogRange(0x981004000ULL,NATIVE_PANIC_BYTES));
+ assert(!NativeLogRange(0x8bb300000ULL,NATIVE_LOG_BYTES));assert(!NativeLogRange(0x8bb500000ULL,NATIVE_LOG_BYTES));assert(!NativeLogRange(0x8ffff0001ULL,NATIVE_LOG_BYTES));assert(!NativeLogRange(0x9ffffc000ULL,NATIVE_LOG_BYTES));assert(!NativeLogRange(0xffffffffffffc000ULL,NATIVE_LOG_BYTES));
+ EFI_FILE_PROTOCOL *v;fs_unbound=1;part.Info.Gpt.UniquePartitionGUID.Data1^=1;assert(NativeLogOpenVolume(&v)==EFI_NOT_FOUND);assert(!connects);part.Info.Gpt.UniquePartitionGUID.Data1^=1;
+ connect_status=EFI_DEVICE_ERROR;assert(NativeLogOpenVolume(&v)==EFI_DEVICE_ERROR);assert(connects==1 && !v);
+ connect_status=EFI_ALREADY_STARTED;assert(NativeLogOpenVolume(&v)==EFI_SUCCESS);assert(connects==2);v->Close(v);
+ fs_unbound=1;connect_status=EFI_SUCCESS;assert(NativeLogOpenVolume(&v)==EFI_SUCCESS);assert(connects==3);v->Close(v);
  UINT64 pa=0x881004000ULL,panicpa=0x882a10000ULL;unsigned char*log=mmap((void*)(uintptr_t)pa,NATIVE_LOG_BYTES,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);assert(log!=(void*)-1);unsigned char*panic=mmap((void*)(uintptr_t)panicpa,NATIVE_PANIC_BYTES,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);assert(panic!=(void*)-1);memset(panic,0xa7,NATIVE_PANIC_BYTES);
  NATIVE_LOG_REQUEST req={0};memcpy(req.Magic,"SHNSAVE1",8);req.Version=1;req.Bytes=80;req.LogAddress=pa;req.LogBytes=NATIVE_LOG_BYTES;req.PanicAddress=panicpa;req.PanicBytes=NATIVE_PANIC_BYTES;memset(req.KernelUuid,0x62,16);req.PartitionGuid=mNativeLogPartition;crc(&req,sizeof(req),&req.Crc32);
  memcpy(log,"SHNLOG01",8);UINT32 fields[]={1,128,16384,65536};memcpy(log+8,fields,sizeof(fields));UINT64 total=30,va=0xfffffe0007004000ULL;memcpy(log+24,&total,8);memcpy(log+48,&pa,8);memcpy(log+104,&va,8);memcpy(log+112,req.KernelUuid,16);memcpy(log+128,"synthetic console bytes\n",24);
@@ -96,7 +105,7 @@ int main(int argc,char**argv){assert(argc==2);strcpy(disk,argv[1]);
  filebytes("NEXTLOG.BIN",&req,sizeof(req));assert(NativeLogSave()==EFI_SUCCESS);assert(exists("CAP00002/DONE.TXT"));checkfile("CAP00001/NATIVE.BIN",log,NATIVE_LOG_BYTES);
  filebytes("NEXTLOG.BIN",&req,sizeof(req));log[112]^=1;assert(NativeLogSave()==EFI_COMPROMISED_DATA);assert(!exists("CAP00003"));log[112]^=1;
  part.Info.Gpt.UniquePartitionGUID.Data1^=1;int old=opens;assert(NativeLogSave()==EFI_NOT_FOUND);assert(opens==old);part.Info.Gpt.UniquePartitionGUID.Data1^=1;
- reserve_fail=1;assert(NativeLogSave()==EFI_NOT_FOUND);assert(!held);reserve_fail=0;
+ reserve_fail=1;assert(NativeLogSave()==EFI_NOT_FOUND);assert(!held);UINT8 failed[16]={0};memcpy(failed,"SHNREC01",8);UINT64 failure=EFI_NOT_FOUND;memcpy(failed+8,&failure,8);checkfile("RECOVERY.BIN",failed,sizeof(failed));reserve_fail=0;
  bad_mapping=1;assert(NativeLogSave()==EFI_NO_MAPPING);assert(!held);bad_mapping=0;
  req.LogAddress=0xffffffffffffc000ULL;assert(NativeLogValidateRequest(&req)==EFI_COMPROMISED_DATA);req.LogAddress=pa;
  req.Crc32^=1;assert(NativeLogValidateRequest(&req)==EFI_CRC_ERROR);req.Crc32^=1;
@@ -108,6 +117,9 @@ int main(int argc,char**argv){assert(argc==2);strcpy(disk,argv[1]);
  assert(NativeLogArm(image,sizeof(image),&kernel,pa-0x4000,panicpa,TRUE)==EFI_SUCCESS);checkfile("NEXTLOG.BIN",&req,sizeof(req));assert(NativeLogArm(image,sizeof(image),&kernel,pa-0x4000,panicpa,TRUE)==EFI_ALREADY_STARTED);assert(NativeLogSave()==EFI_SUCCESS);assert(exists("CAP00005/DONE.TXT"));
  total=100000;memcpy(log+24,&total,8);UINT64 dropped=9;memcpy(log+32,&dropped,8);UINT32 busy=1;memcpy(log+40,&busy,4);memset(log+128,'A',16384);for(unsigned i=0;i<65536;i++)log[128+16384+i]=(unsigned char)('a'+i%26);
  filebytes("NEXTLOG.BIN",&req,sizeof(req));assert(NativeLogSave()==EFI_SUCCESS);assert(exists("CAP00006/DONE.TXT"));
- puts("PASS - ring wrap, interrupted writer and omitted bytes; automatic actual-PA arming; raw log and panic persisted and read back; captures never overwritten; UUID, GPT, address, allocation, mapping, CRC and short-write rejection");
+ UINT64 highpa=0x8c1004000ULL,highpanic=0x981004000ULL;unsigned char*highlog=mmap((void*)(uintptr_t)highpa,NATIVE_LOG_BYTES,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);assert(highlog!=(void*)-1);unsigned char*highpanicbuf=mmap((void*)(uintptr_t)highpanic,NATIVE_PANIC_BYTES,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);assert(highpanicbuf!=(void*)-1);
+ memcpy(highlog,log,NATIVE_LOG_BYTES);memcpy(highlog+48,&highpa,8);memcpy(highpanicbuf,panic,NATIVE_PANIC_BYTES);req.LogAddress=highpa;req.PanicAddress=highpanic;req.Crc32=0;crc(&req,sizeof(req),&req.Crc32);
+ assert(NativeLogArm(image,sizeof(image),&kernel,highpa-0x4000,highpanic,TRUE)==EFI_SUCCESS);checkfile("NEXTLOG.BIN",&req,sizeof(req));assert(NativeLogSave()==EFI_SUCCESS);assert(!held && !exists("NEXTLOG.BIN"));checkfile("CAP00007/NATIVE.BIN",highlog,NATIVE_LOG_BYTES);checkfile("CAP00007/PANIC.BIN",highpanicbuf,NATIVE_PANIC_BYTES);
+ puts("PASS - high-bank 3 GiB window arming and capture; partition-bound FAT connect; ring wrap, interrupted writer and omitted bytes; automatic actual-PA arming; raw log and panic persisted and read back; captures never overwritten; UUID, GPT, address, allocation, mapping, CRC and short-write rejection");
  return 0;
 }

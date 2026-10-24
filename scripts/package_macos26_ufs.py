@@ -113,7 +113,7 @@ def main():
     firmware = json.loads(args.firmware_build.read_text())
     required = ('0007-native-16k-bootstrap-congruence', '0011-native-arm64e-loader',
                 '0013-native-handoff-progress', '0014-native-handoff-code-coherency',
-                '0015-native-retained-log-persistence')
+                '0015-native-retained-log-persistence', '0033-retained-log-high-bank-and-filesystem')
     for name in required:
         patch = ROOT / ('patches/UniXNU/' + name + '.patch')
         if firmware.get('patches_sha256', {}).get(str(patch.relative_to(ROOT))) != hashlib.sha256(patch.read_bytes()).hexdigest():
@@ -192,6 +192,10 @@ def main():
                 hardware_log_transport_qualified=False, firmware_sha256=firmware['sha256'],
                 log_symbol_va=hex(symbols['_sheng_log_buffer']),
                 firmware_log_partition='4cd2ed34-2142-4ea4-abf2-ec6c51d117d7',
+                firmware_log_repair=dict(high_bank=['0x8c0000000', '0xa00000000'],
+                    partition_bound_fat_connect=True, status_files=['ARM.BIN', 'RECOVERY.BIN'],
+                    patch_sha256=firmware['patches_sha256']['patches/UniXNU/0033-retained-log-high-bank-and-filesystem.patch'],
+                    warm_reboot_capture_qualified=False),
                 development_root=True, synthetic_vm_identity=False, qemu_only_boot_args=False,
                 root_variant='recoveryos', recovery_transport_is_not_authentication=True,
                 deployment_scope='fastboot boot only; no boot/recovery/UEFI partition flashing')

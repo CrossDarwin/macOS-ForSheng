@@ -16,6 +16,8 @@ from decode_xnu_panic import save as save_panic
 from observe_macos26_kernel import identify
 
 PARTITION = '4cd2ed34-2142-4ea4-abf2-ec6c51d117d7'
+# 与固件恢复器使用相同的sheng实际RAM表，保留两段之间的禁读间隔
+RAM_RANGES = ((0x880000000, 0x8bb300000), (0x8c0000000, 0xa00000000))
 
 
 def request(data: bytes) -> dict:
@@ -30,12 +32,27 @@ def request(data: bytes) -> dict:
             or zlib.crc32(checked) != checksum):
         raise ValueError('capture request identity, layout or CRC differs')
     spans = [(address, log_size)] + ([(panic, panic_size)] if panic_size else [])
-    if (not panic_size and panic or any(at & 0x3fff or not 0x880000000 <= at < at + length <= 0x8bb300000
+    if (not panic_size and panic or any(at & 0x3fff or not any(start <= at < at + length <= end for start, end in RAM_RANGES)
                                       for at, length in spans)
             or panic_size and max(address, panic) < min(address + log_size, panic + panic_size)):
         raise ValueError('capture request RAM bounds differ')
     return dict(uuid=str(uuid.UUID(bytes=identity)).upper(), log_pa=hex(address),
                 panic_pa=hex(panic), panic_bytes=panic_size)
+
+
+def status_record(data: bytes, magic: bytes) -> dict:
+    if len(data) != 16 or data[:8] != magic:
+        raise ValueError('unknown loader status record')
+    value, = struct.unpack_from('<Q', data, 8)
+    names = {0: 'Success', 2: 'Invalid Parameter', 3: 'Unsupported', 5: 'Buffer Too Small',
+             7: 'Device Error', 8: 'Write Protected', 9: 'Out Of Resources', 10: 'Volume Corrupted',
+             11: 'Volume Full', 14: 'Not Found', 17: 'No Mapping', 18: 'Timeout',
+             20: 'Already Started', 27: 'CRC Error', 33: 'Compromised Data'}
+    error = bool(value & (1 << 63))
+    code = value & ~(1 << 63)
+    name = names.get(code, 'Unknown') if error or value == 0 else 'Warning'
+    return dict(status=hex(value), name=name, error=error,
+                capture_verified=False, run_freshness_qualified=False)
 
 
 def inspect_capture(directory: Path, kernel_uuid: str) -> dict:
@@ -126,8 +143,16 @@ def main() -> None:
             captures.append(dict(capture=directory.name, decoded=True, complete=result['native']['complete']))
         except (ValueError, OSError) as error:
             captures.append(dict(capture=directory.name, decoded=False, reason=str(error)))
+    loader_status = {}
+    for name, magic in (('RECOVERY.BIN', b'SHNREC01'), ('ARM.BIN', b'SHNARM01')):
+        path = args.output / 'files' / name
+        if path.exists():
+            try:
+                loader_status[name] = status_record(path.read_bytes(), magic)
+            except ValueError as error:
+                loader_status[name] = dict(decode_error=str(error))
     result = dict(device=args.serial, kernel_uuid=native['uuid'], read_only_mount=True,
-                  captures=captures, raw_files_preserved=True,
+                  captures=captures, loader_status=loader_status, raw_files_preserved=True,
                   warm_reboot_retention_qualified=False, run_freshness_qualified=False)
     (args.output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
