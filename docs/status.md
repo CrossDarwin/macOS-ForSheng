@@ -7,8 +7,8 @@
 | UniXNU、Snapintosh、q1n1、依赖与两套 Mesa | 已固定提交并获取，补丁保存在本项目 |
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
-| 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
-| 原生 25F71 ARM64E QEMU | CI40088447141；原版安全组件与线程、存储已运行，APFS恢复根卷已挂载；PID1执行原版dyld，显式开发开关绕过ignition等待；共享缓存读取后在libdyld helper虚表认证处触发用户态PAC异常；launchd主函数尚未命中 |
+| 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
+| 原生 25F71 ARM64E QEMU | CI40096344826；原版组件、APFS恢复根卷与dyld已运行；原生EL0 PAC密钥接入后，原版launchd已创建system域并启动mount/apfs_boot_util；120秒无panic，当前等待缺失iSC/APFS角色卷 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -899,3 +899,80 @@ si_ptrauth=1，实际jop_key参数x3=0。与先前普通滑页si_ptrauth=0的记
 不把普通映射的零参数当作认证映射证据。认证pager现场保存在
 private/experiments/20261024-native-arm64e/virtio-storage/auth-pager-40088447141。
 这确认原认证缓存页进入了零JOP标识路径，现有EL0 PAC接入仍不完整。
+
+### 原生EL0密钥接入开始实施
+
+补丁pac/0003保留既有EL1补丁，新增每CPU的内核IA/IB/DA/DB/GA保存区。
+EL0异常入口先用原始CpuDatap恢复全部内核密钥，再认证UPCB和保存帧；
+返回所选用户线程的最后边界才根据其JOP/ROP标识安装用户密钥，
+内核任务切换期间保持内核密钥。A/GA按JOP域推导，B按ROP域推导，
+各128位密钥由内核GA下四个不同标签的PACGA结果组成。GA最后安装。
+
+ml_enable_user_jop_key与disable实现成屏蔽中断的临时A密钥窗口，
+保留C返回依赖的IB及内核GA，供原有pmap_sign_user_ptr执行真实签名；
+默认JOP标识改为非零1，避免原认证页绕过签名。普通ARM64任务使用独立标识。
+对照Snapintosh的保存/恢复约束，但没有使用其EL2/HCR调用。
+
+ARM64E汇编语法检查及补丁准备通过，CI40095627621正在构建。
+尚未证明launchd已运行，硬件验收保持false。
+本阶段使用cpus=1；多核、休眠恢复、内核初始密钥熵及密钥存储保护尚未验收。
+新增诊断只从配对DWARF读取四个计数，不导出密钥材料。
+
+### 原版ARM64E launchd主函数首次执行通过
+
+CI40095627621构建通过，内核UUID9C3F92D9-2AC7-3932-82F7-757ACDB856FF，
+组件候选SHA256 334dee70e8e838c080ecd2d5d74211c647588fef1483509b1261f5711c4ef063。
+QEMU在实际启动栈取得launchd Mach header=0x104e50000，配套LC_MAIN偏移95360，
+真实主函数0x104e67480命中。首条PACIBSP执行后PC=0x104e67484、PSTATE=0x60000000。
+缺页处理后的16字节7f2303d5ff4305d1fc6f11a9f65712a9与配套原版launchd相同。
+
+对应DWARF解析的每CPU计数为：kernel_entries=1191、user_returns=1192、
+completed_signing_windows=37428、signing_active=0，符合暂停在EL0时的一次未返回内核。
+块读取失败0，未见此前libdyld虚表认证错误。实际机器指令也确认pmap临时窗口内
+仅执行PACIA/PACDA与直接调用，不在用户A密钥安装期间认证内核指针或进行间接C调用。
+
+这确认QEMU进入原版launchd主函数，不等于launchd已稳定工作或桌面已启动。
+证据保存在private/experiments/20261024-native-arm64e/user-pac/launchd-main-40095627621。
+下一次观察继续原执行流，并将系统调用采集延后到launchd首条指令完成，
+避免前面的dyld调用耗尽512条预算；仍使用同一120秒期限。
+
+### launchd已开始恢复系统启动任务
+
+同一候选从实际LC_MAIN继续原执行流，保留原始120秒期限。
+原版launchd输出hello, launchd、Darwin Bootstrapper Version 7.0.0、
+BaseSystem environment starting，创建system域并执行mount-phase-1。
+真实mount[2]及apfs_boot_util[2]执行到内核shared-region路径，随后原版
+apfs_boot_util在等待磁盘中不存在的iSC/APFS角色卷：
+get_apfs_node role5 on 69646961-6700-11AA-AA11-00306543ECAC、
+mount_by_role role256 on iSC。没有对磁盘分区进行写入或伪造这些卷。
+
+采集466次主函数执行后的选定真实系统调用，预算未耗尽，
+120秒截止时无panic正文，signing_active=0、kernel_entries=user_returns=6584、
+completed_signing_windows=207524。这证明launchd已开展启动任务及实际子程序执行，
+不代表恢复系统启动流程完成、UI可用或sheng实机通过。
+证据保存在private/experiments/20261024-native-arm64e/user-pac/launchd-running-40095627621。
+
+补丁pac/0004补齐违规或嵌套签名窗口的失败出口：先恢复内核A密钥，再进入panic。
+CI40096344826构建通过，修正版已完成相同启动观测。
+
+后续磁盘布局参考已核对：Snapintosh/probes/bootmedia.py给原始恢复根卷与
+独立ISC镜像分别提供真实GPT分区，FULL-INSTALL.md说明ISC含xART及系统容器角色卷。
+当前磁盘仅含BaseSystem，不能把等待这些卷误判成launchd或PAC仍未启动。
+Snapintosh/tools/make-isc-fixture.py的输入契约是新格式化的空APFS测试镜像，
+不使用宿主私有xART内容，也不能称为SEP可信存储。下一阶段应先构造隔离的QEMU测试磁盘，
+再验证原版apfs_boot_util，当前不改sheng分区。
+
+### 当前保留候选与复测结果
+
+CI40096344826，内核UUID84D29D6C-AC14-38FA-BAF1-B9B0699BAC7E，
+候选SHA256 d8f7d6a47161482aeec76131bb0b4e0d5df14150f19e227a72982e3a7b7fd35b。
+QEMU再次进入原版launchd，43.730秒完成首条主函数指令，随后正常启动mount/apfs_boot_util，
+观测到120秒截止，无panic、磁盘读取失败0，466次选定系统调用，采集预算未耗尽。
+每CPU诊断kernel_entries=user_returns=6567、completed_signing_windows=207524、
+signing_active=0。违规窗口出口经过编译及正常路径复测，未注入违规调用。
+
+实际启动证据保存在private/experiments/20261024-native-arm64e/user-pac/launchd-running-40096344826。
+当前候选保留于out/macos26-user-pac-40096344826，原始内核、dSYM及map保留于
+private/ci/macos26-arm64e-kernel-40096344826。已替代的实验内核与一次性ESP副本删除，
+输入恢复卷、配套组件、现用实机恢复备份和全部诊断记录保留。
+本轮未部署sheng，hardware_admitted与loadable继续为false。

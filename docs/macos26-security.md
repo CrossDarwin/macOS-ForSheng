@@ -3,7 +3,9 @@
 实机最新确认的阻断是 `kern_trustcache.c:584: image4 interface not available`。
 QEMU现已通过原版Image4/AMFI、pthread和存储组件初始化，实际挂载配套APFS恢复根卷，
 PID1已执行原版ARM64E dyld及libignition。显式QEMU开发开关已越过ignition等待，
-dyld读取共享缓存后发生用户态PAC认证失败，尚未进入launchd的LC_MAIN。后文保留各轮故障记录，当前证据见docs/status.md。
+此前共享缓存用户态PAC失败已由原生密钥接入修正。CI40095627621首次、CI40096344826复测均在QEMU实际进入
+原版launchd的LC_MAIN并完成首条PACIBSP。继续运行后创建system域并启动mount及
+apfs_boot_util；120秒无panic，当前等待缺失iSC/APFS角色卷，尚未完成恢复系统启动流程。后文保留各轮故障记录，当前证据见docs/status.md。
 39973422068 的 ARM64E 内核在 QEMU 完成完整 corecrypto POST 后到达这里，尚未进入 BSD。
 完整 panic、回溯和 stackshot 已保存于 `out/macos26-arm64e-39973422068/`。
 字符环形日志已保留完整 panic 文字；标准 panic 区另保留寄存器、回溯和压缩 stackshot。
