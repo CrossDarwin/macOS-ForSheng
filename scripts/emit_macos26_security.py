@@ -14,7 +14,7 @@ import struct
 import sys
 import xml.etree.ElementTree as ET
 
-from inspect_macos26_security import ROOT, backed_offset, macho as kc_macho
+from inspect_macos26_security import ROOT, ROOTS, backed_offset, macho as kc_macho
 from native_macho import macho, native_chained_fixups
 from observe_macos26_kernel import identify
 from plan_macos26_security import MASK64, plan
@@ -114,13 +114,13 @@ def chain_blob(segments, relocations):
     return struct.pack('<7I', 0, 28, 0, 0, 0, 0, 0) + starts, writes
 
 
-def emit(native_data, original, native_names, identity, slide):
+def emit(native_data, original, native_names, identity, slide, roots=ROOTS):
     image = macho(native_data, 'arm64e')
     marker = native_names.get('_sheng_security_prelink_version')
     if marker is None or struct.unpack_from('<I', native_data,
             backed_offset(image['segments'], marker, 4, len(native_data)))[0] != 1:
         raise ValueError('kernel lacks the sparse security prelink contract')
-    report = plan(original, native_names, identity, slide)
+    report = plan(original, native_names, identity, slide, roots)
     if report['instruction_blockers']:
         raise ValueError('instruction relocation has unresolved blockers')
     kc = kc_macho(original)
@@ -200,7 +200,8 @@ def emit(native_data, original, native_names, identity, slide):
                     raise ValueError(f'early policy entry is not a security extension: {n}')
                 entry['_NativePrelinkEarlySecurityInit'] = early_initializers[n]
         selected_entries.append(entry)
-    cache_id = hashlib.sha256(native_data + original + struct.pack('<Q', slide)).digest()[:16]
+    cache_id = hashlib.sha256(native_data + original + struct.pack('<Q', slide)
+                              + '\0'.join(sorted(modules)).encode()).digest()[:16]
     xml = ET.tostring(to_xml(dict(_PrelinkInfoDictionary=selected_entries,
                                  _PrelinkLinkKASLROffsets=bytes(4), _PrelinkKCID=cache_id)),
                       encoding='utf-8').replace(b' />', b'/>') + b'\0'
@@ -371,10 +372,13 @@ def main():
     parser.add_argument('--slide', type=lambda s: int(s, 0), default=0x2000000)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--qemu-only', action='store_true', required=True)
+    parser.add_argument('--include-module', action='append', default=[], metavar='BUNDLE',
+                        help='include another original BootKC module and its dependency closure')
     args = parser.parse_args()
     try:
         kernel, names, identity = identify(args.kernel_build.resolve())
-        candidate, report = emit(kernel.read_bytes(), args.bootkc.read_bytes(), names, identity, args.slide)
+        candidate, report = emit(kernel.read_bytes(), args.bootkc.read_bytes(), names, identity,
+                                 args.slide, (*ROOTS, *args.include_module))
         args.output.mkdir(parents=True, exist_ok=False)
         (args.output / kernel.name).write_bytes(candidate)
         shutil.copytree(args.kernel_build / 'kernel.development.sheng.dSYM', args.output / 'kernel.development.sheng.dSYM')

@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 import struct
 
-from inspect_macos26_security import ROOT, chains, exports, inspect, macho
+from inspect_macos26_security import ROOT, ROOTS, chains, exports, inspect, macho
 from observe_macos26_kernel import identify
 
 PAGE = 16384
@@ -34,10 +34,10 @@ def relative(word: int, pc: int):
     return None
 
 
-def plan(data: bytes, native: dict, identity: dict, slide: int) -> dict:
+def plan(data: bytes, native: dict, identity: dict, slide: int, roots=ROOTS) -> dict:
     if slide <= 0 or slide % PAGE:
         raise ValueError('module slide must be positive and 16 KiB aligned')
-    report = inspect(data, native)
+    report = inspect(data, native, roots)
     selected = set(report['components'])
     kc = macho(data)
     modules = {name: macho(data, offset) for name, (_, offset) in kc['entries'].items()}
@@ -136,7 +136,7 @@ def plan(data: bytes, native: dict, identity: dict, slide: int) -> dict:
                                     replacement=replacement, target=target, new_target=new_target,
                                     symbols=old_exports.get(target, [])))
 
-    return dict(plan_version=1, native_kernel_uuid=identity['uuid'], kernel_sha256=identity['kernel_sha256'],
+    return dict(plan_version=1, roots=report['roots'], native_kernel_uuid=identity['uuid'], kernel_sha256=identity['kernel_sha256'],
                 bootkc_sha256=hashlib.sha256(data).hexdigest(), module_slide=slide,
                 modules={name: dict(uuid=modules[name]['uuid'],
                     dependencies=report['components'][name]['dependencies'],

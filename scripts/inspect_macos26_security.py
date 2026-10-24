@@ -139,7 +139,7 @@ def chains(data: bytes, kc: dict):
                 site += following * 4
 
 
-def inspect(data: bytes, native_names: dict) -> dict:
+def inspect(data: bytes, native_names: dict, roots=ROOTS) -> dict:
     kc = macho(data)
     if kc['kind'] != 12:
         raise ValueError('requires MH_FILESET')
@@ -150,7 +150,7 @@ def inspect(data: bytes, native_names: dict) -> dict:
     off = backed_offset(kc['segments'], section['va'], section['size'], len(data))
     metadata = plistlib.loads(data[off:off + section['size']].split(b'\0', 1)[0])
     entries = {e['CFBundleIdentifier']: e for e in metadata['_PrelinkInfoDictionary']}
-    pending, selected, interfaces = list(ROOTS), set(), set()
+    pending, selected, interfaces = list(roots), set(), set()
     while pending:
         name = pending.pop()
         if name in selected or name in interfaces:
@@ -234,7 +234,7 @@ def inspect(data: bytes, native_names: dict) -> dict:
         report['unresolved_direct_branch_candidates'] = sorted({e['target'] for e in edges
             if e['owner'] == 'com.apple.kernel' and e['kind'] != 'pointer' and not e['native_symbol_candidates']})
         report['undeclared_component_targets'] = sorted({e['owner'] for e in edges if e['owner'] not in selected | {'com.apple.kernel'}} , key=str)
-    return dict(bootkc_uuid=kc['uuid'], original_kernel_uuid=expected, roots=ROOTS,
+    return dict(bootkc_uuid=kc['uuid'], original_kernel_uuid=expected, roots=list(roots),
                 components=reports, kernel_interfaces=sorted(interfaces),
                 images_modified=False, loadable=False, original_component_abi_qualified=False,
                 branch_scan_limit='linear candidates include literal tables; disassemble before treating them as code',

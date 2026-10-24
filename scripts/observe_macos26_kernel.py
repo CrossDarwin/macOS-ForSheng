@@ -158,6 +158,7 @@ def main() -> None:
                         ('_ptov_index', 4), ('_ptov_table', 192), ('_const_boot_args', 1152),
                         ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
+                        ('_pthread_functions', 8),
                         ('_sheng_native_crypto_kmod', 8),
                         ('_sheng_native_crypto_state', 4),
                         ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
@@ -177,6 +178,10 @@ def main() -> None:
                         ('_sheng_bootstrap_capture_enabled', 4)):
         if name in addresses:
             command += ['--read-memory', f'{addresses[name]:x}:{count:x}']
+    cpu_handler_request = None
+    if '_CpuDataEntries' in addresses:
+        cpu_handler_request = f'{addresses["_CpuDataEntries"] + 8:x}:d8:8'
+        command += ['--read-indirect', cpu_handler_request]
     log_requests = []
     if '_sheng_log_buffer' in addresses:
         from decode_native_log import SIZE
@@ -225,6 +230,7 @@ def main() -> None:
     observed_globals = {}
     for name, width in (('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
+                        ('_pthread_functions', 8),
                         ('_sheng_native_crypto_kmod', 8),
                         ('_sheng_native_crypto_state', 4),
                         ('_armdt_platform_configured', 4), ('_armdt_platform_cpu_count', 4),
@@ -244,6 +250,9 @@ def main() -> None:
             key = f'{addresses[name]:x}:{width:x}'
             observed_globals[name] = int.from_bytes(bytes.fromhex(snapshot['memory'][key]), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
+    if cpu_handler_request:
+        handler = snapshot['indirect_memory'][cpu_handler_request]
+        record['boot_cpu_interrupt_handler'] = dict(handler)
     security_report = args.kernel_build / 'security-relink.json'
     if security_report.is_file():
         security = json.loads(security_report.read_text())
@@ -254,6 +263,8 @@ def main() -> None:
                   '_img4if': 'com.apple.security.AppleImage4',
                   '_amfi': 'com.apple.driver.AppleMobileFileIntegrity',
                   '_libCoreEntitlements': 'com.apple.driver.AppleMobileFileIntegrity'}
+        if 'com.apple.kec.pthread' in security['modules']:
+            owners['_pthread_functions'] = 'com.apple.kec.pthread'
         record['original_component_interfaces'] = {}
         for symbol, owner in owners.items():
             value = observed_globals.get(symbol, 0)

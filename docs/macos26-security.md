@@ -1,6 +1,7 @@
 # macOS 26 原生安全组件
 
-当前实际阻断是 `kern_trustcache.c:584: image4 interface not available`。
+实机最新确认的阻断是 `kern_trustcache.c:584: image4 interface not available`。
+QEMU现已通过原版Image4/AMFI初始化并执行BSD代码；当前仍有IRQ回调认证故障与pthread提供者缺失，见文末。
 39973422068 的 ARM64E 内核在 QEMU 完成完整 corecrypto POST 后到达这里，尚未进入 BSD。
 完整 panic、回溯和 stackshot 已保存于 `out/macos26-arm64e-39973422068/`。
 字符环形日志已保留完整 panic 文字；标准 panic 区另保留寄存器、回溯和压缩 stackshot。
@@ -119,3 +120,12 @@ CI 40075022559构建成功，UUID 8E5415E1-ECF6-361D-A502-DE18C23B24E3。QEMU确
 完整kextlog确认六个原版组件依赖全部解析成功，CoreAnalyticsFamily、CoreTrust、IOCryptoAcceleratorFamily、AppleImage4和AMFI的模块start均成功；AMFI只注册了C++类。固定输入中AMFI的__start读取__realmain，原值为0，因此返回成功但未调用安全策略注册。局部符号amfi_register_mac_policy调用真实_initializeAppleMobileFileIntegrity；生成器仅为AMFI设置该早期策略入口，Image4仍使用正常start。入口由当前组件自己的符号表解析，执行地址继续经过既有RX边界与PAC检查。
 
 AMFI真实入口接入后的QEMU结果：amfi=0xfffffe000a151dc0，libCoreEntitlements=0xfffffe000a154858，原版AMFI策略加载成功。trust_cache_init返回，OSKextRemoveKextBootstrap、machine_lockdown和kernel_do_post完成。下一处panic为Unable to find driver for this platform: xiaomi,sheng，未进入BSD；当前只是QEMU组件启动验证，硬件封装仍拒绝该实验候选。
+
+
+## BSD与线程提供者
+
+CI 40077286611（UUID 5428C76C-296B-3243-BE7B-E95BCE5257E9）的QEMU运行已通过平台与CPU驱动初始化，并实际执行BSD版权输出及MAC框架初始化。原版Image4、AMFI、CoreEntitlements与corecrypto指针均位于对应组件映射。该结果未部署sheng，不能替代实机验收。
+
+首次继续运行在sleh_irq的BLRAA x8发生PAC异常，x8为0。后续观察确认ml_install_interrupt_handler安装了非空已签名回调；监视该槽写入的另一次运行没有复现IRQ异常，实际停止于pthread_shims.c:319的函数表为空。IRQ问题仍未解决，不能把观察到更远处panic当成稳定通过。
+
+匹配BootKC包含com.apple.kec.pthread，UUID 89A0C193-9EB4-31CC-9153-31B9685406A7。匹配源码kern_init.c的pthread_start通过pthread_kext_register注册原始函数表；内核pthread_init必须在此之后运行。当前沿用UniXNU的真实模块依赖闭包和启动流程，给实验生成器增加--include-module，允许接入配套线程组件。新增组件保留认证链与模块启动语义，不填充空表、不跳过pthread_init。组件集合参与KCID计算，避免不同模块集复用同一标识；硬件验收状态保持false。
