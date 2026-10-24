@@ -292,6 +292,7 @@ jobs:
             ${{ env.NATIVE_OUT }}/kernel.development.sheng
             ${{ env.NATIVE_OUT }}/kernel.development.sheng.map
             ${{ env.NATIVE_OUT }}/kernel.development.sheng.dSYM/
+            ${{ env.NATIVE_OUT }}/storage-driver/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
@@ -312,6 +313,7 @@ jobs:
             ${{ env.NATIVE_OUT }}/logs/
             ${{ env.NATIVE_OUT }}/ArmCpu.o
             ${{ env.NATIVE_OUT }}/ArmDTPlatform.o
+            ${{ env.NATIVE_OUT }}/storage-driver/
             ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/libkernel.development.sheng.a
             ${{ env.NATIVE_OUT }}/obj/DEVELOPMENT_ARM64_SHENG/compile_commands.json
             ${{ env.NATIVE_OUT }}/kernel.development.sheng

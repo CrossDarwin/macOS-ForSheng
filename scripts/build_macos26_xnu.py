@@ -397,6 +397,10 @@ def compile_sources(args, record: dict) -> None:
         raise ValueError('; '.join(failures))
     if args.link_kernel:
         link_kernel(args, record, common, sdk, source, env)
+        if ARCH == 'arm64e':
+            from build_macos26_storage import build as build_storage
+            build_storage(ROOT, OUT, compile_record, source, run, record, env)
+            save(record)
 
 
 def link_kernel(args, record, common, sdk, source, env):
