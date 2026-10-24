@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import mmap
 from pathlib import Path
 import plistlib
 import struct
@@ -12,7 +13,7 @@ import sys
 import uuid
 import zlib
 
-SIZE = 512 << 20
+SIZE = 2 << 30
 ROLES = {'SHENG-xART': 0x100, 'SHENG-Preboot': 0x10, 'SHENG-Hardware': 0x140}
 ISC_TYPE = uuid.UUID('69646961-6700-11aa-aa11-00306543ecac')
 
@@ -30,14 +31,13 @@ def checksum(block):
     return struct.pack('<II', low, high)
 
 
-def assign_empty_roles(data, identities):
+def assign_empty_roles(data, identities, *, in_place=False):
     # Snapintosh/tools/make-isc-fixture.py encodes this same public role field.
     # Only this invocation's fresh, unmounted volumes may be changed.
     if (len(data) != SIZE or data[32:36] != b'NXSB'
             or struct.unpack_from('<IQ', data, 36) != (4096, SIZE // 4096)
             or data[:8] != checksum(data[:4096]) or set(identities) != set(ROLES)):
         raise ValueError('not the fresh formatter output')
-    result = bytearray(data)
     changed = []
     seen = set()
     for at in range(0, len(data), 4096):
@@ -53,11 +53,14 @@ def assign_empty_roles(data, identities):
                 or struct.unpack_from('<Q', block, 264)[0] != 1):
             raise ValueError(f'unexpected or nonempty volume superblock at {at:#x}')
         seen.add(name)
-        struct.pack_into('<H', result, at + 964, ROLES[name])
-        result[at:at + 8] = checksum(result[at:at + 4096])
         changed.append(dict(offset=at, name=name, uuid=identity, role=ROLES[name]))
     if seen != set(ROLES):
         raise ValueError('formatter did not create exactly the three owned volume identities')
+    result = data if in_place else bytearray(data)
+    for item in changed:
+        at = item['offset']
+        struct.pack_into('<H', result, at + 964, item['role'])
+        result[at:at + 8] = checksum(result[at:at + 4096])
     return result, changed
 
 
@@ -112,7 +115,7 @@ def main():
         return plistlib.loads(result.stdout) if plist else result.stdout.decode()
 
     seed = out / 'fresh.cdr'
-    run('hdiutil', 'create', '-size', '512m', '-layout', 'NONE', '-type', 'UDTO', str(seed))
+    run('hdiutil', 'create', '-size', '2048m', '-layout', 'NONE', '-type', 'UDTO', str(seed))
     attached = run('hdiutil', 'attach', '-nomount', '-nobrowse', '-plist', str(seed), plist=True)
     whole = attached['system-entities'][0]['dev-entry']
     identities = {}
@@ -121,8 +124,8 @@ def main():
         owned = [i for i in images if Path(i['image-path']).resolve() == seed]
         if len(owned) != 1 or whole not in [e.get('dev-entry') for e in owned[0]['system-entities']]:
             raise ValueError('attachment does not belong to the newly created test file')
-        # hdiutil's -fs APFS creates a container limited to one volume.
-        # diskutil formats the owned blank image with ordinary container limits.
+        # The 512 MiB container admitted only one volume on the actual formatter.
+        # A fresh 2 GiB image leaves capacity for the three ordinary volumes.
         run('diskutil', 'apfs', 'createContainer', whole)
         containers = run('diskutil', 'apfs', 'list', '-plist', plist=True)['Containers']
         found = [c for c in containers if whole.removeprefix('/dev/') in
@@ -144,19 +147,20 @@ def main():
             identities[volume['Name']] = volume['APFSVolumeUUID']
     finally:
         run('hdiutil', 'detach', whole)
-    source = seed.read_bytes()
-    source_hash = hashlib.sha256(source).hexdigest()
-    data, changed = assign_empty_roles(source, identities)
     disk = out / 'isc.raw'
     digest = hashlib.sha256()
-    with disk.open('xb') as stream:
-        for chunk in wrap_gpt(data):
-            stream.write(chunk)
-            digest.update(chunk)
+    with seed.open('r+b') as source, mmap.mmap(source.fileno(), 0) as data:
+        source_hash = hashlib.sha256(data).hexdigest()
+        data, changed = assign_empty_roles(data, identities, in_place=True)
+        container_hash = hashlib.sha256(data).hexdigest()
+        with disk.open('xb') as stream:
+            for chunk in wrap_gpt(data):
+                stream.write(chunk)
+                digest.update(chunk)
     record = dict(schema='sheng-qemu-isc-v1', bytes=disk.stat().st_size,
                   sha256=digest.hexdigest(), partition_type=str(ISC_TYPE),
                   container_offset=1 << 20, container_bytes=SIZE,
-                  container_sha256=hashlib.sha256(data).hexdigest(),
+                  container_sha256=container_hash,
                   formatter_source_sha256=source_hash, superblocks=changed,
                   roles=ROLES, volumes=identities, sep_trusted_storage=False,
                   guest_read_only=True, host_devices_modified=False,
