@@ -1,0 +1,17 @@
+--- a/osfmk/kern/kalloc.c
++++ b/osfmk/kern/kalloc.c
+@@ -1119,8 +1119,12 @@
+ 		uint64_t header_index = 0, header_count = 0;
+ 		uintptr_t previous_header = 0;
+ 		if (headers) {
+-			if (headers->addr < cur || headers->size % sizeof(uintptr_t) ||
+-			    headers->addr > end || headers->size > end - headers->addr) {
++			kernel_segment_command_t *text_segment = getsegbynamefromheader(
++			    xnu_mh, kPrelinkTextSegment);
++			if (!text_segment || headers->addr < text_segment->vmaddr ||
++			    headers->size % sizeof(uintptr_t) ||
++			    headers->addr - text_segment->vmaddr > text_segment->vmsize ||
++			    headers->size > text_segment->vmsize - (headers->addr - text_segment->vmaddr)) {
+ 				panic("SHENG: invalid sparse security header index");
+ 			}
+ 			header_count = headers->size / sizeof(uintptr_t);
