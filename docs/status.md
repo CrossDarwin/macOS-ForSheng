@@ -732,3 +732,18 @@ CI 40080070590构建成功，原生内核UUID 57B67A30-0E1E-3738-83EC-B3A3D5BF14
 独立模块与原版IOBlockStorageDevice的实际虚表均为326槽，PAC参数逐槽相同，25处为驱动覆盖。唯一继承差异是第16槽：公开源码保留_RESERVEDOSMetaClassBase3，配套二进制使用OSMetaClassBase::Dispatch。实验绑定器只在本驱动实例及MetaClass对应的该槽改接内核现有真实Dispatch；无关保留槽、函数实现和PAC参数不改。C++签名比较使用实际解码后的类型，正确处理probe中S_与显式类名的等价编码。首轮完整封装已通过此检查，因原生头部只有400字节余量，新增映射命令放不下而拒绝输出；链接参数已增加0x2000预留，待新CI产物。
 
 配套BaseSystem UDIF已按其Copy/Zero2描述重建完整GPT/APFS只读QEMU输入，1577092608字节，SHA256 6199e53d3cf60c59790e507851ef48141dbfa23875fdde5e838446984ed56881。UDIF六张表的实际CRC及GPT头CRC通过；Zero2按格式不参与表CRC，完整原始盘SHA256仍包含这些零区。7z从重建盘读回SystemVersion，确认26.5/25F71。实际QEMU导出的VirtIO FDT已转换，根卷匹配808EAC5E-8275-478D-814C-2229D8EB8D07。尚无驱动实际扇区读取或APFS挂载结果，未对sheng部署。
+
+### NativeVirtioBlock首次实测：VM接管遗漏独立段
+
+CI40083871388已成功构建带头部预留的原生ARM64E内核与独立NativeVirtioBlock。
+配套25F71 BaseSystem已还原为只读raw磁盘，GPT与APFS卷身份通过输入校验。
+首次QEMU实测尚未进入驱动：启动期kalloc_type_view_copy访问驱动__DATA_CONST时异常，
+FAR=0xfffffe0009cb4b88，新驱动代码、数据的GDB读取均返回E14。
+源码确认arm_vm_prot_init只映射固定KC段名，新增__NVB_*封装段没有进入接管后的页表。
+因此这次没有磁盘读取、根卷挂载或launchd进展，原有BSD入口基线仍有效。
+
+补丁0047为独立段增加严格按段权限的VM映射：代码RX、数据RWNX、
+DATA_CONST在初始化时可写并在最终保护时改为RNX，同时映射IOStorageFamily的只读LINKINFO。
+采集器现将E14等不可读结果保留为unavailable_globals，不再将其误当十六进制数解析；
+已有快照可以离线重新解码，不重复启动QEMU。修正内核CI40084664897正在构建。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/unmapped-40083871388。
