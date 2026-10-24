@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* 使用XNU原字体，写屏只在保留日志的writer作用域内进行 */
 #define iso_font sheng_panel_font
-#include <console/iso_font.c>
+#include "pe_sheng_font.h"
 #undef iso_font
 
 volatile uint64_t sheng_panel_ready, sheng_panel_characters, sheng_panel_witness;

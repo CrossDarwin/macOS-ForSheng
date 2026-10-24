@@ -153,6 +153,8 @@ def prepare() -> dict:
     stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
     panel_console = ROOT / 'platform/sheng/macos26/log/panel_console.h'
     stage_file(panel_console, source / 'pexpert/arm/pe_sheng_panel.h')
+    panel_font = source / 'osfmk/console/iso_font.c'
+    stage_file(panel_font, source / 'pexpert/arm/pe_sheng_font.h')
     early_exception = ROOT / 'platform/sheng/macos26/log/early_exception.h'
     stage_file(early_exception, source / 'osfmk/arm64/sheng_early_exception.h')
     bootstrap_sync = ROOT / 'platform/sheng/macos26/log/bootstrap_sync.h'
@@ -169,7 +171,7 @@ def prepare() -> dict:
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
                     'osfmk/arm64/sheng_c_trace.h', 'osfmk/arm64/sheng_vm_trace.h',
-                    'pexpert/arm/pe_sheng_panel.h'], check=True)
+                    'pexpert/arm/pe_sheng_panel.h', 'pexpert/arm/pe_sheng_font.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -179,6 +181,7 @@ def prepare() -> dict:
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   retained_log_source_sha256=sha(retained_log),
                   panel_console_source_sha256=sha(panel_console),
+                  panel_font_source_sha256=sha(panel_font),
                   early_exception_source_sha256=sha(early_exception),
                   bootstrap_sync_source_sha256=sha(bootstrap_sync),
                   bootstrap_trace_source_sha256=sha(bootstrap_trace),
