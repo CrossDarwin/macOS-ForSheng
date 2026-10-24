@@ -62,6 +62,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0039-native-security-init-build.patch',
     ROOT / 'platform/sheng/macos26/patches/0040-native-prelink-structor-signing.patch',
     ROOT / 'platform/sheng/macos26/patches/0041-native-prelink-index-bounds.patch',
+    ROOT / 'platform/sheng/macos26/patches/0042-native-security-entry-pac.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

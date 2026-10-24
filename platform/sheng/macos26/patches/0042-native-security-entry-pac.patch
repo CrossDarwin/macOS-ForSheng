@@ -1,0 +1,16 @@
+--- a/libkern/c++/OSKext.cpp
++++ b/libkern/c++/OSKext.cpp
+@@ -8515,8 +8515,11 @@
+ 		}
+ 		if (!executable) panic("SHENG: security initializer outside module code");
+ 		typedef void (*initializer_t)(void);
+-		initializer_t initializer = ptrauth_sign_unauthenticated((initializer_t)target,
+-		    ptrauth_key_function_pointer, 0);
++		initializer_t initializer;
++		__builtin_memcpy(&initializer, &target, sizeof(initializer));
++		initializer = ptrauth_sign_unauthenticated(initializer,
++		    ptrauth_key_function_pointer,
++		    ptrauth_function_pointer_type_discriminator(initializer_t));
+ 		initializer();
+ 	}
+ 	}
