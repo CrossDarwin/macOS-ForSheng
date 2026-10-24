@@ -615,3 +615,11 @@ Actions 40059689947（513345f）成功构建0030，UUID 59C3AB6E-8EFC-3D7F-9501-
 返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1，无切槽或分区写入。
 新增0031将已有保留日志镜像到独立、有界的原生I/O文字面板，复用XNU字体；不依赖视频控制台锁，固定首个panic原因，原RAM日志格式不变。
 增加控制台后的函数进入/返回文字，覆盖到machine_startup入口；不再增加阶段色条。ARM64E目标定向编译通过，完整内核构建与QEMU文字结果待完成。
+
+Actions 40061902792（6466ed7）完成0031/0032内核，UUID 02DC95BF-0E2F-338F-B603-8F00758EF931。
+pexpert不提供osfmk源码包含路径，因此将固定XNU的原字体显式暂存到pexpert/arm；启动参数中的64位尺寸经过边界限制后再转为面板的unsigned接口，未关闭编译警告。
+完整UEFI QEMU确认面板ready=1、字符数9083、实际像素读回witness=1，截图首行保留image4 interface not available @kern_trustcache.c:584，后续回溯未覆盖原因。
+同版正式VM与控制台阶段F、corecrypto POST及完整标准panic仍通过；尚未进入BSD。实际高物理地址启动观察到arm_init入口，16个汇编阶段像素全绿。
+新候选90ec47c969cc34116ec3639720f4f950a96a2c330aa4edc5269d2b27b4f20aa3已封装，Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次RAM启动收到Booting OKAY。
+本次实机验收读取文字面板的最后函数或panic原因，不再要求新增色条；结果待用户回传，记录位于private/experiments/20261024-native-arm64e/native-log-panel。
+已删除被替代的1d9ede2d部署镜像和完成观察的QEMU ESP，保留dSYM、诊断日志、配套输入和有效恢复备份。

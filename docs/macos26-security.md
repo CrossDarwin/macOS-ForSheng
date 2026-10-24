@@ -4,7 +4,7 @@
 39973422068 的 ARM64E 内核在 QEMU 完成完整 corecrypto POST 后到达这里，尚未进入 BSD。
 完整 panic、回溯和 stackshot 已保存于 `out/macos26-arm64e-39973422068/`。
 字符环形日志已保留完整 panic 文字；标准 panic 区另保留寄存器、回溯和压缩 stackshot。
-这些是 QEMU 结果。sheng实机已确认ARM64E启动汇编及早期C阶段0–F，执行到arm_vm_init调用前；corecrypto、Image4和BSD入口尚未实机确认。
+这些是 QEMU 结果。sheng实机已确认ARM64E正式VM、原生I/O映射、首条kprintf及PE_create_console返回；可读文字、corecrypto、Image4和BSD入口尚未实机确认。
 
 ## 匹配输入与加载范围
 
