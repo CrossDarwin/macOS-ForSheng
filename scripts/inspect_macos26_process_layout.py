@@ -66,6 +66,8 @@ def main():
             task_disable_user_jop=field('task', 'disable_user_jop'),
             thread_link=field('thread', 'task_threads'), thread_ro=field('thread', 't_tro'),
             thread_owner=field('thread_ro', 'tro_owner'), thread_task=field('thread_ro', 'tro_task'),
+            thread_proc=field('thread_ro', 'tro_proc'),
+            task_shared_region=field('task', 'shared_region'), region_slide=field('vm_shared_region', 'sr_slide'),
             thread_id=field('thread', 'thread_id'), thread_state=field('thread', 'state'),
             continuation=field('thread', 'continuation'), wait_event=field('thread', 'wait_event'),
             kernel_stack=field('thread', 'kernel_stack'),

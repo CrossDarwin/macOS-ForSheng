@@ -1224,3 +1224,26 @@ gIOPlatformUUIDAndSerialDone=1。该身份只属于自建VM，不是Apple设备�
 构建独立ARM64E传输组件。它与QEMU VirtIO组件分别输出，不自动替换根盘。
 CI通过native_ufs=true启用，默认关闭；组件仍保留原版boot-arg硬件开关和只读根盘行为。
 当前只建立编译入口，尚未确认构建、原版存储ABI链接或实机运行；硬件准入继续关闭。
+
+UFS参考路径的生产解析器固定读取LUN0名为userdata的GPT分区，并要求首块为SHNGROOT清单。
+因此即使组件编译通过，也不能原样启用在现有Android数据分区上。
+后续需要单独的根盘区域及严格匹配的布局入口；本轮没有重分区、刷写或改动Android数据。
+
+
+### WindowServer主动退出定位到HID及显示初始化
+
+只读断点捕获原版WindowServer(pid 92)调用exit1，原始等待状态0x100，即exit(1)。
+使用匹配DWARF的thread_ro/proc_ro/task归属，取得原始74字ARM64E保存状态和实际共享缓存slide。
+用户调用栈为libsystem_kernel ___exit、libsystem_c、SkyLight _WSInitialize、_SLXServer。
+原版25F71缓存内的实际返回点0x186dc2ee4前一条调用是exit(1)，同一错误出口记录
+Cannot open the HID and display/cursor system.。这把图形失败定位到HID及显示初始化，
+不是本次内核panic；具体是哪个前置IOKit查询失败仍需单独验证，不能仅由共同出口推定。
+
+观察器增加独立0026补丁：支持47位原生内核的进程选择，校验匹配内核哈希及双向归属，
+PAC元数据仅为只读地址查找移除，记录原始值，不宣称认证。保存状态计数必须显式选74；
+此前默认72的读取未取得用户栈，其局限和失败工具现场均已保留。
+3项定向测试及真实WindowServer退出捕获通过；完整现场在recovery-services/windowserver-state-40111511884。
+
+UFS构建40113551826已进入实际编译。第一处错误是未开启旧VerifiedBlock功能时，
+读计时代码仍引用被条件编译隐藏的timerTicks和native_ufs_read_ticks；不是macOS存储类接口错误。
+内核和VirtIO已构建，UFS尚未生成可用组件，后续单独修复该条件边界。
