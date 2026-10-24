@@ -224,10 +224,17 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS, stor
         raise ValueError('matched AMFI has no original policy registration entry')
     early_initializers[amfi] = registration_symbols[amfi]
 
+    native_boot_primary = '_sheng_native_boot_prelink_version' in native_names
+    if native_boot_primary:
+        marker = backed_offset(image['segments'], native_names['_sheng_native_boot_prelink_version'], 4, len(native_data))
+        if struct.unpack_from('<I', native_data, marker)[0] != 1:
+            raise ValueError('unsupported native boot prelink identity contract')
     selected_entries = []
     for n in [*report['kernel_interfaces'], *sorted(modules)]:
         entry = copy.deepcopy(entries[n])
         if n in modules:
+            if native_boot_primary:
+                entry['_NativePrelinkPrimary'] = True
             for key in ('_PrelinkExecutableLoadAddr', '_PrelinkExecutableSourceAddr', '_PrelinkKmodInfo'):
                 entry[key] = (entry[key] & MASK64) + slide
             # Image4 registers during normal start; AMFI's null __realmain
@@ -416,6 +423,7 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS, stor
         original_corecrypto_hmac=digest.hex(), native_pointer_fixups=fixup_summary,
         original_security_registration_symbols=registration_symbols,
         early_security_initializers=early_initializers, cache_id=cache_id.hex(),
+        native_boot_prelink_identity=native_boot_primary,
         source_inputs_modified=False, qemu_only=True, hardware_admitted=False,
         runtime_qualified=False, loadable=False)
     report['pending'] = ['validate instruction dataflow and native callback ABI',
@@ -442,12 +450,25 @@ def main():
     parser.add_argument('--qemu-only', action='store_true', required=True)
     parser.add_argument('--include-module', action='append', default=[], metavar='BUNDLE',
                         help='include another original BootKC module and its dependency closure')
+    parser.add_argument('--recovery-components', action='store_true',
+                        help='include the paired original BaseSystem startup components')
     parser.add_argument('--storage-driver', type=Path, help='standalone ARM64E transport build directory')
     args = parser.parse_args()
     try:
         kernel, names, identity = identify(args.kernel_build.resolve())
+        modules = list(args.include_module)
+        recovery_contract = None
+        if args.recovery_components:
+            contract_path = ROOT / 'config/macos26-recovery-modules.json'
+            recovery_contract = json.loads(contract_path.read_text())
+            if (recovery_contract['build'] != '25F71' or recovery_contract['xnu'] != '12377.121.6'
+                    or recovery_contract['architecture'] != identity['architecture']):
+                raise ValueError('recovery component contract differs from the paired native kernel')
+            modules += recovery_contract['original_modules']
         candidate, report = emit(kernel.read_bytes(), args.bootkc.read_bytes(), names, identity,
-                                 args.slide, (*ROOTS, *args.include_module), args.storage_driver)
+                                 args.slide, (*ROOTS, *modules), args.storage_driver)
+        if recovery_contract:
+            report['recovery_components'] = recovery_contract
         args.output.mkdir(parents=True, exist_ok=False)
         (args.output / kernel.name).write_bytes(candidate)
         shutil.copytree(args.kernel_build / 'kernel.development.sheng.dSYM', args.output / 'kernel.development.sheng.dSYM')

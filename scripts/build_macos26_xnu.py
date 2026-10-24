@@ -69,6 +69,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0046-native-platform-personality-config.patch',
     ROOT / 'platform/sheng/macos26/patches/0047-native-storage-vm-mappings.patch',
     ROOT / 'platform/sheng/macos26/patches/0048-qemu-development-dyld-ignition.patch',
+    ROOT / 'platform/sheng/macos26/patches/0049-native-boot-prelink-identity.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

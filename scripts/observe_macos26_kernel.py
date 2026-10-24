@@ -364,6 +364,9 @@ def main() -> None:
                 command += ['--step-followed-entry', '16']
         if not args.let_vector_log:
             command += ['--also-stop', hex(addresses['_panic'])]
+        elif args.continue_after_launchd_main:
+            # 完整保留panic输出，在最终停机入口结束观察，避免继续等满期限
+            command += ['--also-stop', hex(addresses['_halt_all_cpus'])]
         if args.capture_screen:
             command += ['--capture-screen']
         if args.virtio_block_image:
@@ -453,6 +456,7 @@ def main() -> None:
         with (args.output / 'observer.log').open('w') as log:
             subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
+    record['stopped_at_halt'] = int(snapshot['pc'], 16) == addresses.get('_halt_all_cpus')
     if log_requests:
         from decode_native_log import decode
         raw = b''.join(bytes.fromhex(snapshot['memory'][key]) for key in log_requests)

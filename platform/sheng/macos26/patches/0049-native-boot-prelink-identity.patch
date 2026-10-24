@@ -1,0 +1,27 @@
+--- a/osfmk/kern/kalloc.c
++++ b/osfmk/kern/kalloc.c
+@@ -1028,6 +1028,7 @@
+ 
+ #if SHENG
+ __attribute__((used)) const uint32_t sheng_security_prelink_version = 1;
++__attribute__((used)) const uint32_t sheng_native_boot_prelink_version = 1;
+ #endif
+ 
+ __startup_func
+--- a/libkern/c++/OSKext.cpp
++++ b/libkern/c++/OSKext.cpp
+@@ -10509,7 +10509,13 @@
+ 	if (taskOnlyManagesBootKC &&
+ 	    theKext &&
+ 	    theKext->isInFileset() &&
+-	    theKext->kc_type != KCKindPrimary) {
++	    theKext->kc_type != KCKindPrimary
++#if SHENG
++	    /* 原生启动预链接容器的组件保留文件集头，但旧容器类型为Unknown */
++	    && !(theKext->isPrelinked() && theKext->kc_type == KCKindUnknown &&
++	    theKext->getPropertyForHostArch("_NativePrelinkPrimary") == kOSBooleanTrue)
++#endif
++	    ) {
+ 		OSKextLog(/* kext */ NULL,
+ 		    kOSKextLogErrorLevel |
+ 		    kOSKextLogIPCFlag,
