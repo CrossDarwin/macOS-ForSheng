@@ -1,11 +1,17 @@
 /* SPDX-License-Identifier: MIT */
 /* 冷启动使用，MMU开启后的标记要求临时Device映射，x16-x18和NZCV为临时状态 */
-#ifndef SHENG_EARLY_ADDRESS
+#ifndef SHENG_EARLY_ADDRESS_DEFINED
+#define SHENG_EARLY_ADDRESS_DEFINED
+/* Darwin汇编把分号视为注释，两条指令必须分别成行 */
+.macro SHENG_EARLY_ADDRESS reg, name
 #ifdef __APPLE__
-#define SHENG_EARLY_ADDRESS(reg, name) adrp reg, name@page; add reg, reg, name@pageoff
+    adrp \reg, \name@page
+    add \reg, \reg, \name@pageoff
 #else
-#define SHENG_EARLY_ADDRESS(reg, name) adrp reg, name; add reg, reg, :lo12:name
+    adrp \reg, \name
+    add \reg, \reg, :lo12:\name
 #endif
+.endmacro
 #endif
 .macro SHENG_BOOTSTRAP_TRACE stage, color=0xff00ff00, record=1
 #if SHENG
@@ -15,7 +21,7 @@
 	adr x17, EXT(sheng_early_exception_record)
 	str x16, [x17, #184]
 	.if \stage >= 13
-	SHENG_EARLY_ADDRESS(x17, EXT(sheng_bootstrap_fb_trace_ready))
+	SHENG_EARLY_ADDRESS x17, EXT(sheng_bootstrap_fb_trace_ready)
 	ldr x16, [x17]
 	cbz x16, 9f
 	.endif
@@ -59,7 +65,7 @@
 .macro SHENG_BOOTSTRAP_MAP_TRACE
 #if SHENG
 	cbnz x21, 9f
-	SHENG_EARLY_ADDRESS(x8, EXT(sheng_bootstrap_fb_trace_ready))
+	SHENG_EARLY_ADDRESS x8, EXT(sheng_bootstrap_fb_trace_ready)
 	str xzr, [x8]
 	ldr x0, [x20, BA_VIDEO_BASE]
 	cbz x0, 9f
@@ -98,7 +104,7 @@
 	add x2, x25, x2, lsl #3
 	ldr x3, [x2]
 	cbnz x3, 2f
-	SHENG_EARLY_ADDRESS(x4, EXT(sheng_bootstrap_fb_l2))
+	SHENG_EARLY_ADDRESS x4, EXT(sheng_bootstrap_fb_l2)
 	mov x5, x4
 	mov x6, #2048
 1:
@@ -140,7 +146,7 @@
 	str x2, [x8]
 	dsb sy
 9:
-	SHENG_EARLY_ADDRESS(x17, EXT(sheng_bootstrap_fb_trace_ready))
+	SHENG_EARLY_ADDRESS x17, EXT(sheng_bootstrap_fb_trace_ready)
 	ldr x16, [x17]
 	cbz x16, 10f
 	// 蓝色表示映射已准备，不能作为该阶段已执行的证据

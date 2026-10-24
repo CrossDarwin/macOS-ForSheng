@@ -47,8 +47,8 @@ qemu_mmu_setup:
  adr x0, LowExceptionVectorBase
  msr vbar_el1, x0
  isb
- SHENG_EARLY_ADDRESS(x0, bootstrap_pagetables)
- SHENG_EARLY_ADDRESS(x1, test_l2)
+ SHENG_EARLY_ADDRESS x0, bootstrap_pagetables
+ SHENG_EARLY_ADDRESS x1, test_l2
  orr x2, x1, #3
  str x2, [x0]
  ldr x2, =0x40000701
@@ -57,7 +57,7 @@ qemu_mmu_setup:
  SHENG_BOOTSTRAP_MAP_TRACE
 .global qemu_trace_mapped
 qemu_trace_mapped:
- SHENG_EARLY_ADDRESS(x0, bootstrap_pagetables)
+ SHENG_EARLY_ADDRESS x0, bootstrap_pagetables
  dsb sy
  msr ttbr0_el1, x0
  msr ttbr1_el1, x0
@@ -96,7 +96,7 @@ qemu_transition_fault:
  br x0
 qemu_high:
  SHENG_BOOTSTRAP_TRACE 15
- SHENG_EARLY_ADDRESS(x0, test_stack_end)
+ SHENG_EARLY_ADDRESS x0, test_stack_end
  mov sp, x0
  adr x0, qemu_high_vectors
  msr vbar_el1, x0

@@ -1,11 +1,17 @@
 /* SPDX-License-Identifier: MIT */
 /* 与低位向量一起复制，不依赖栈、C全局变量、固件或MMIO串口 */
-#ifndef SHENG_EARLY_ADDRESS
+#ifndef SHENG_EARLY_ADDRESS_DEFINED
+#define SHENG_EARLY_ADDRESS_DEFINED
+/* Darwin汇编把分号视为注释，两条指令必须分别成行 */
+.macro SHENG_EARLY_ADDRESS reg, name
 #ifdef __APPLE__
-#define SHENG_EARLY_ADDRESS(reg, name) adrp reg, name@page; add reg, reg, name@pageoff
+    adrp \reg, \name@page
+    add \reg, \reg, \name@pageoff
 #else
-#define SHENG_EARLY_ADDRESS(reg, name) adrp reg, name; add reg, reg, :lo12:name
+    adrp \reg, \name
+    add \reg, \reg, :lo12:\name
 #endif
+.endmacro
 #endif
 Lsheng_early_enter:
 	adr x19, EXT(sheng_early_exception_record)
@@ -14,7 +20,7 @@ Lsheng_early_enter:
 	str x20, [x19, #176]
 	ldp x0, x1, [x20, BA_VIRT_BASE]
 	stp x0, x1, [x19, #144]
-	SHENG_EARLY_ADDRESS(x0, EXT(bootstrap_pagetables))
+	SHENG_EARLY_ADDRESS x0, EXT(bootstrap_pagetables)
 	str x0, [x19, #160]
 	adr x0, Lsheng_mmu_off_fault
 	str x0, [x19, #168]
@@ -244,7 +250,7 @@ LEXT(sheng_mmu_sync_fault)
 	tbz x12, #0, 1f
 	mov x18, sp
 1:
-	SHENG_EARLY_ADDRESS(x0, EXT(sheng_early_exception_record))
+	SHENG_EARLY_ADDRESS x0, EXT(sheng_early_exception_record)
 	ldr x1, [x0, #160]
 	ldr x2, [x0, #168]
 	ldr x3, [x0, #176]

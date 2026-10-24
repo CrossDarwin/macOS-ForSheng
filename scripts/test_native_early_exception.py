@@ -17,6 +17,27 @@ linker.write_text('ENTRY(_start)\nSECTIONS { . = 0x40200000; .text : { *(.text*)
 source=ROOT/'probes/native-early-exception/qemu.S'
 subprocess.run([args.clang.resolve(),'--target=aarch64-none-elf','-march=armv8.3-a','-nostdlib','-fuse-ld=lld','-Wl,-T,'+str(linker),source,'-o',p/'test.elf'],check=True,timeout=60)
 subprocess.run([args.clang.resolve(),'--target=arm64e-apple-macos26.5','-c',source,'-o',p/'test-mach.o'],check=True,timeout=60)
+# ELF接受分号分隔指令，Darwin汇编却将后半行作为注释
+# 检查实际Mach-O重定位和指令，不能仅以编译成功作为地址计算通过
+mach=(p/'test-mach.o').read_bytes();cursor=32;address_pairs=0
+for _ in range(struct.unpack_from('<I',mach,16)[0]):
+ cmd,size=struct.unpack_from('<II',mach,cursor)
+ if cmd==0x19:
+  for index in range(struct.unpack_from('<I',mach,cursor+64)[0]):
+   at=cursor+72+80*index
+   offset=struct.unpack_from('<I',mach,at+48)[0]
+   reloc,count=struct.unpack_from('<II',mach,at+56)
+   entries=[struct.unpack_from('<II',mach,reloc+8*i) for i in range(count)]
+   for address,info in entries:
+    if info>>28!=3:continue
+    assert (address+4,(info&0x0effffff)|(4<<28)) in entries, 'Darwin address lost PAGEOFF12'
+    adrp,add=struct.unpack_from('<II',mach,offset+address)
+    reg=adrp&31
+    assert adrp&0x9f000000==0x90000000 and add&0xffc00000==0x91000000
+    assert add&31==reg and (add>>5)&31==reg
+    address_pairs+=1
+ cursor+=size
+assert address_pairs>=8, 'Expected all bootstrap address pairs in the Mach-O object'
 symbols={line.split()[2]:int(line.split()[0],16) for line in subprocess.check_output([llvm/'llvm-nm',p/'test.elf'],text=True).splitlines() if len(line.split())==3}
 listener=socket.socket();listener.bind(('127.0.0.1',0));port=listener.getsockname()[1];listener.close()
 env=dict(os.environ,LD_LIBRARY_PATH=str(args.qemu.resolve().parent.parent/'lib/x86_64-linux-gnu'))
@@ -178,6 +199,7 @@ try:
  unchanged=struct.unpack('<24Q',memory(high+symbols['sheng_early_exception_record'],192))
  assert unchanged[:23]==transition[:23] and unchanged[23]==15
  result={'entry_returned':True,'relocated_vector_fault_captured':True,
+         'darwin_address_pairs_qualified':address_pairs,
          'mmu_on_fault_captured':True,'disabled_gate_uses_original_dispatch':True,
          'first_translation_fault_without_stack_captured':True,
          'bootstrap_stage_strip_captured':True,
