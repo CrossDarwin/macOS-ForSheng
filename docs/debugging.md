@@ -4,7 +4,7 @@
 共享渲染器定向运行覆盖清屏后回放、writer占用时首次异常寄存器显示及原因固定；实际设备仍需验证。KDP和UART没有因此取得实机传输能力。
 
 内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
-root Recovery已经实测挂载、普通文件写入和读回；`OBSERVED.JSON`是人工读取屏幕后的结构化记录，不是RAM导出。XNU仍没有已验证的UFS写入后端。新增DarwinBoot保存流程使用固件文件系统，宿主EFI服务测试已通过，跨重启RAM留存与实机UEFI文件系统枚举仍未验证。
+root Recovery已经实测挂载、普通文件写入和读回，并完成capture_persistent_log.py只读导出；`OBSERVED.JSON`是人工读取屏幕后的结构化记录，不是RAM导出。XNU仍没有已验证的UFS写入后端。新增DarwinBoot保存流程使用固件文件系统，宿主EFI服务测试已通过，跨重启RAM留存与实机UEFI文件系统枚举仍未验证。
 禁止向现有厂商logfs或userdata裸写日志。64 MiB来自当前sde的未分配尾部，未调整原分区边界或Android数据大小；有效GPT及空闲区回滚备份保存在`private/backups/20261024-macoslog-partition`。
 
 `0015-native-retained-log-persistence.patch`在加载下一份内核前读取macoslog上的NEXTLOG.BIN，核对指定RAM范围、日志头、内核UUID和物理地址。先独占原RAM页，再分配快照，防止分配快照时覆盖来源；原页已被固件占用或不具备恒等映射时拒绝读取。
@@ -21,7 +21,7 @@ python3 scripts/capture_persistent_log.py --serial 29d9c0be \
   --output private/experiments/CAPTURE
 ```
 
-脚本不自动重启，不改分区；核对sheng/root Recovery、sde78及FAT卷后只读挂载，导出完成即卸载。原始文件全部保留，只有UUID匹配且完成标记有效的记录才解码。EFI文本还会与现有环形解码器逐字节核对。
+脚本不自动重启，不改分区；核对sheng/root Recovery、sde78、主GPT CRC与分区GUID/边界及FAT16卷后只读挂载，导出完成即卸载。原始文件全部保留，只有UUID匹配且完成标记有效的记录才解码。EFI文本还会与现有环形解码器逐字节核对。
 
 自构建 XNU 优先使用 KDP 保留现场，避免仅用定时复位判断路径。
 当前 UEFI 页表/PAC 探针不是 XNU，不能通过内核 KDP 调试。

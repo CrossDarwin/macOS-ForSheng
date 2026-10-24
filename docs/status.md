@@ -672,3 +672,5 @@ QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发�
 保存原始日志、解码文本、原始panic区、请求及寄存器/CRC摘要；每个文件Flush后读回比对，最后提交DONE标记。旧捕获和未完成捕获都不覆盖；不存在固件文件协议、页已占用、地址不恒等、UUID不匹配时拒绝。
 宿主运行实际保存代码并模拟EFI服务，覆盖自动PA登记、二进制往返、环形回绕、writer中断、丢失字节、错误UUID/GPT/CRC、页独占失败、映射失败、短写及读回损坏，现有Python解码器逐字节确认EFI文本。ARM64 UEFI编译通过；宿主测试使用合成RAM及临时文件系统，不是实机跨重启成功。
 新增capture_persistent_log.py用于root Recovery只读导出并校验配套UUID；跨重启RAM是否仍在、sheng固件是否发布日志卷文件协议，仍需下一轮实机确认。屏幕六行实时日志继续保留。
+
+2026-10-24 实机Recovery完成capture_persistent_log.py只读导出。该环境没有blkid，读取器改为读取并校验主GPT及FAT16首扇区，核对唯一GUID、类型、LBA和卷标后挂载。实际成功导出既有OBSERVED.JSON并卸载；当前尚无CAP目录，不能视为RAM恢复成功。

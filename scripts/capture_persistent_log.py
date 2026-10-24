@@ -10,6 +10,7 @@ import subprocess
 import uuid
 import zlib
 
+from backup_device import parse_gpt
 from decode_native_log import decode, SIZE
 from decode_xnu_panic import save as save_panic
 from observe_macos26_kernel import identify
@@ -75,15 +76,34 @@ def main() -> None:
     def adb(*parts: str) -> str:
         return subprocess.check_output(['adb', '-s', args.serial, *parts], text=True, timeout=120).strip()
 
-    state = adb('shell', 'id -u; getprop ro.product.device; getprop ro.bootmode').splitlines()
-    if state != ['0', 'sheng', 'recovery']:
+    state = [adb('get-state')] + adb('shell', 'id -u; getprop ro.product.device').splitlines()
+    if state != ['recovery', '0', 'sheng']:
         raise ValueError(f'root sheng Recovery required, observed {state!r}')
-    probe = adb('shell', 'readlink -f /dev/block/by-name/macoslog; blockdev --getsize64 /dev/block/by-name/macoslog; blkid /dev/block/by-name/macoslog')
-    lines = probe.splitlines()
-    if (lines[:2] != ['/dev/block/sde78', '67108864'] or 'TYPE="vfat"' not in probe
-            or 'LABEL="MACOSLOG"' not in probe):
-        raise ValueError('macoslog device, size or FAT label differs')
-    args.output.mkdir(parents=True)
+    probe = adb('shell', 'readlink -f /dev/block/by-name/macoslog; blockdev --getsize64 /dev/block/by-name/macoslog; cat /sys/block/sde/queue/logical_block_size; blockdev --getsize64 /dev/block/sde').splitlines()
+    if probe[:3] != ['/dev/block/sde78', '67108864', '4096'] or len(probe) != 4:
+        raise ValueError('macoslog device, extent or logical block size differs')
+    disk_lbas = int(probe[3]) // 4096
+    def read_block(command: str) -> bytes:
+        return subprocess.check_output(['adb', '-s', args.serial, 'exec-out', 'sh', '-c', command], timeout=30)
+    gpt = read_block('dd if=/dev/block/sde bs=4096 count=256 2>/dev/null')
+    if len(gpt) != 1048576:
+        raise ValueError('short GPT identity read')
+    parse_gpt(gpt, 4096, disk_lbas, 0)
+    entries, count, stride = struct.unpack_from('<QII', gpt, 4096 + 72)
+    if count <= 77 or stride < 128:
+        raise ValueError('macoslog GPT entry is absent')
+    at = entries * 4096 + 77 * stride
+    entry = gpt[at:at + stride]
+    if (len(entry) != stride or str(uuid.UUID(bytes_le=entry[16:32])) != PARTITION
+            or str(uuid.UUID(bytes_le=entry[:16])) != 'ebd0a0a2-b9e5-4433-87c0-68b6b72699c7'
+            or struct.unpack_from('<QQ', entry, 32) != (448512, 464895)
+            or entry[56:128].decode('utf-16-le').rstrip('\0') != 'macoslog'):
+        raise ValueError('macoslog GPT identity differs')
+    boot = read_block('dd if=/dev/block/by-name/macoslog bs=4096 count=1 2>/dev/null')
+    if (len(boot) != 4096 or boot[43:54].rstrip() != b'MACOSLOG'
+            or boot[54:62] != b'FAT16   ' or struct.unpack_from('<H', boot, 11)[0] != 4096):
+        raise ValueError('macoslog FAT16 geometry or label differs')
+    args.output.mkdir(parents=True, mode=0o700)
     mount = adb('shell', 'mktemp -d /tmp/sheng-log.XXXXXX')
     if not re.fullmatch(r'/tmp/sheng-log\.[A-Za-z0-9]+', mount):
         raise ValueError('Recovery returned an unexpected mount path')
