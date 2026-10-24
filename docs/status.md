@@ -664,3 +664,6 @@ Actions 40064245546（01b1239）成功构建0034，UUID 85932C1F-1D24-340B-B242-
 主备GPT、现有分区条目及当前boot_a/boot_b属性保留；未缩小userdata，未刷写启动/固件分区。最新GPT与待使用空闲区已备份至private/backups/20261024-macoslog-partition，写入后逐范围读回一致。
 Recovery重新启动后识别/dev/block/sde78与/dev/block/by-name/macoslog，实际挂载vfat、写入OBSERVED.JSON并读回一致，已卸载。
 OBSERVED.JSON仅为实机照片观察记录，不能当作原始RAM日志。当前XNU UFS写入、跨重启RAM读取及自动落盘尚未接通，日志分区本身不改变这些边界。
+
+2026-10-24 六行实时日志的CI 40066276268已完成，QEMU保存11,366字节完整保留日志，配套UUID 8171796D-28EC-36BC-888D-3C54DB4C4B7F。corecrypto POST通过，仍在已知Image4接口缺失处panic，未进入BSD或用户空间。
+QEMU暴露panic之后的同步异常会替换已固定标题，新增“先发生的现场保留”规则：panic后异常不覆盖panic；同步异常先发生则保留寄存器，后续panic只进入日志尾部。独立实际字体/写屏运行测试覆盖两种顺序，含sheng屏幕尺寸和六行滚动边界。

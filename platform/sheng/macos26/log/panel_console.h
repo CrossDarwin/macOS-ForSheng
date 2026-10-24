@@ -29,7 +29,8 @@ static void sheng_status_render(const char *prefix, const char *message)
     uintptr_t white = 0;
     for (unsigned line = 0; line < 2; line++) {
         const char *text = line ? sheng_status_message :
-            (sheng_status_pinned ? "SHENG - FIRST PANIC" : "SHENG - BOOT LOG");
+            (sheng_status_pinned == 2 ? "SHENG - FIRST EL1 SYNC" :
+             sheng_status_pinned ? "SHENG - FIRST PANIC" : "SHENG - BOOT LOG");
         unsigned col = 0;
         for (; col < 44; col++) {
             const unsigned char c = *text ? (unsigned char)*text++ : ' ';
@@ -58,6 +59,7 @@ void sheng_log_status(const char *message)
 
 static void sheng_status_panic(const char *message)
 {
+    if (sheng_status_pinned) return;
     sheng_status_pinned = 1;
     sheng_status_render("PANIC: ", message);
 }

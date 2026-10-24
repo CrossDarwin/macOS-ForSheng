@@ -131,8 +131,9 @@ static void sheng_exception_hex(const char *name, uint64_t value)
 
 void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp)
 {
-    if (!sheng_panel_ready || __atomic_exchange_n(&sheng_first_sync_displayed, 1, __ATOMIC_RELAXED)) return;
-    sheng_status_panic("first EL1 sync - registers below");
+    if (!sheng_panel_ready || sheng_status_pinned || __atomic_exchange_n(&sheng_first_sync_displayed, 1, __ATOMIC_RELAXED)) return;
+    sheng_status_pinned = 2;
+    sheng_status_render("SYNC: ", "first EL1 sync - registers below");
     sheng_panel_reset();
     sheng_exception_hex("ELR=", pc);
     sheng_exception_hex("ESR=", esr);
@@ -182,7 +183,7 @@ void sheng_log_panic(uint64_t caller, const char *message)
     int first = 0;
     if (__atomic_compare_exchange_n(&r->panic_state, &expected, 1, 0,
                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-        first = 1;
+        first = !sheng_status_pinned;
         r->pc = caller;
 #if defined(__aarch64__)
         __asm__ volatile ("mov %0, sp" : "=r"(r->sp));
