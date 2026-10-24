@@ -186,10 +186,9 @@ void sheng_log_panic(uint64_t caller, const char *message)
 {
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
-    int first = 0;
+    int first = !sheng_status_pinned;
     if (__atomic_compare_exchange_n(&r->panic_state, &expected, 1, 0,
                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-        first = !sheng_status_pinned;
         r->pc = caller;
 #if defined(__aarch64__)
         __asm__ volatile ("mov %0, sp" : "=r"(r->sp));
@@ -200,8 +199,9 @@ void sheng_log_panic(uint64_t caller, const char *message)
 #endif
         __atomic_store_n(&r->panic_state, 2, __ATOMIC_RELEASE);
         sheng_log_clean(r, 128);
-        sheng_status_panic(message);
     }
+    /* 原始可恢复异常可能已占用RAM头，不影响真正panic的屏幕固定 */
+    sheng_status_panic(message);
     expected = 0;
     if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
         __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
