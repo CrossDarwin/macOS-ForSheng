@@ -1,0 +1,15 @@
+--- a/drivers/NativeUfs/RootLayout.h
++++ b/drivers/NativeUfs/RootLayout.h
+@@ -103,7 +103,11 @@
+     *why = "GPT entries CRC";
+     return false;
+   }
+-  static const char wanted[] = "userdata";
++#ifndef NATIVE_UFS_ROOT_PARTITION_NAME
++#define NATIVE_UFS_ROOT_PARTITION_NAME "userdata"
++#endif
++  static const char wanted[] = NATIVE_UFS_ROOT_PARTITION_NAME;
++  static_assert (sizeof (wanted) > 1 && sizeof (wanted) <= 36, "bounded GPT root partition name");
+   bool found = false;
+   for (uint32_t index = 0; index < count; index++) {
+     const uint8_t *entry = gScratch + index * 128;

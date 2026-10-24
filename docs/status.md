@@ -1247,3 +1247,10 @@ PAC元数据仅为只读地址查找移除，记录原始值，不宣称认证�
 UFS构建40113551826已进入实际编译。第一处错误是未开启旧VerifiedBlock功能时，
 读计时代码仍引用被条件编译隐藏的timerTicks和native_ufs_read_ticks；不是macOS存储类接口错误。
 内核和VirtIO已构建，UFS尚未生成可用组件，后续单独修复该条件边界。
+
+
+UFS独立0027补丁把传输读计时移出可选VerifiedBlock条件，不改校验策略。
+独立0028允许编译期限定根盘分区；本项目UFS组件明确只匹配macosroot，不回退userdata。
+使用真实RootLayout生产解析器运行两组ASan/UBSan测试：上游userdata路径及专用macosroot路径，
+原有GPT/清单错误和2048次变异检查均通过；只有userdata时专用版在读清单前拒绝。
+它证明解析范围受限，不代表设备已有该分区、UFS硬件可用或根盘内容已准备。

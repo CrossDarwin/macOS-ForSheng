@@ -60,6 +60,8 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
     command[1:1] = ['-I', str(destination / 'include')]
     if transport == 'virtio':
         command[1:1] = ['-DNATIVE_QEMU_SCRATCH_BLOCK=1']
+    else:
+        command[1:1] = ['-DNATIVE_UFS_ROOT_PARTITION_NAME="macosroot"']
     sdk = Path(subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
     command += ['-I', str(source / 'osfmk'), '-I', str(sdk / 'usr/include'),
                 '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
@@ -101,5 +103,8 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                     explicit_qemu_scratch_writes=transport == 'virtio',
                     hardware_enable_required=transport == 'ufs', root_transport_read_only=True,
                     original_storage_runtime_qualified=False, hardware_admitted=False)
+    if transport == 'ufs':
+        evidence.update(root_partition='macosroot', root_lun=0,
+                        android_userdata_used=False, root_media_layout_qualified=False)
     (destination / 'build.json').write_text(json.dumps(evidence, indent=2) + '\n')
     record['storage_driver' if transport == 'virtio' else 'ufs_driver'] = evidence
