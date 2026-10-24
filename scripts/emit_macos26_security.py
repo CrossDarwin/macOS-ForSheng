@@ -185,7 +185,8 @@ def emit(native_data, original, native_names, identity, slide):
         selected_entries.append(entry)
     cache_id = hashlib.sha256(native_data + original + struct.pack('<Q', slide)).digest()[:16]
     xml = ET.tostring(to_xml(dict(_PrelinkInfoDictionary=selected_entries,
-                                 _PrelinkLinkKASLROffsets=bytes(4), _PrelinkKCID=cache_id)), encoding='utf8') + b'\0'
+                                 _PrelinkLinkKASLROffsets=bytes(4), _PrelinkKCID=cache_id)),
+                      encoding='utf-8').replace(b' />', b'/>') + b'\0'
     info_va = align(max(s['va'] + s['size'] for s in segments if s['size']))
     blob = bytearray(xml)
     crypto_offset = align(len(blob), 8)
