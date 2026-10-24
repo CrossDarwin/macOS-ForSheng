@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | CI40106907035已执行sh、bash及恢复系统Data卷脚本；tmpfs已封装，当前被旧预链接容器的KC身份判定拒绝加载；修复由CI40108221784构建 |
+| 原生 25F71 ARM64E QEMU | 原版launchd、sh/bash及恢复系统Data脚本已执行；tmpfs、FSCompression、Sandbox、Quarantine已通过；WindowServer主动退出定位到HID及显示初始化 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -16,13 +16,13 @@
 | ShengPreflight | 实机运行完成；照片已取得启动核寄存器、内存统计和 GOP 摘要；MP Services 不可用 |
 | 上游 EL2 监控层 | 本地及 xcode-27 Actions 编译通过，仍为 A16 构建基线 |
 | 完整 sheng UEFI | 本地构建及 FV 检查通过；fastboot 临时启动成功，菜单和探针输出已由照片及视频确认 |
-| 设备备份 | 六个 LUN 主备 GPT、16 个引导分区已读取并校验，userdata 未备份 |
+| 设备备份 | 六个LUN主备GPT及引导分区保留；当前重分区前后GPT均已保存；userdata按授权丢弃，未备份 |
 | 完整上游 sheng 配置 | 35 项与上游字节一致，19 步及两个外部归档、预链接全部通过，Actions 39919525158 成功 |
 | 旧 XNU 完整配置实机 | 控制台、BSD 入口、BSD 缓冲区、IOKitBSDInit 前与 IOFindBSDRoot 前检查点均实机通过；Android 恢复到槽 a；不代表25F71通过 |
 | 旧 XNU 完整配置 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
-| macOS 实机启动 / 双系统 | 未实现；实验使用临时启动，Android槽a；已获授权在空闲区建立64 MiB macoslog，自动RAM日志落盘尚未成功 |
+| macOS 实机启动 / 双系统 | 64 GiB macosroot已创建，配套BaseSystem写入并完整读回一致；剩余userdata重建后Android槽a正常启动；macOS实机挂载及自动RAM日志落盘尚未通过 |
 
 ## 已定位的引导问题
 
@@ -1277,3 +1277,42 @@ LUN4(sde)在macoslog创建前总空闲约284.6MiB，也放不下该根盘。
 保留Android时需要另行解决实际存储空间，不能把编译期分区名当成已完成的分区创建。
 历史布局和CRC验证结果保存在private/experiments/20261025-native-arm64e/ufs/saved-gpt-layout.json；
 它不是当前在线分区表。上述实验均未连接设备或写入分区。
+
+
+### 64 GiB根分区已部署，Android数据重建完成
+
+用户明确允许丢弃userdata，并选择64 GiB给macOS、剩余给Android。
+root Recovery核对LUN0真实4 KiB逻辑块、原GPT及未挂载状态后，
+仅缩小sda29的结束位置并新增sda30/macOS根盘条目；其余GPT条目、磁盘身份保持不变。
+macosroot实际名称为macosroot，GUID 66ac0996-e1bb-4e93-8ffe-c90ed97a61ff，
+LBA47229696..64006911，68719476736字节。
+userdata保留原起点、类型、GUID及属性，结束于LBA47229695，180777385984字节。
+先更新备用GPT，再更新主GPT，每次写入及最终两个1 MiB窗口均读回一致。
+当前恢复材料在private/backups/20261025-macosroot-64g，不包含已丢弃的userdata内容。
+
+原Recovery执行wipe_data，日志确认按缩小后的容量丢弃userdata、重建metadata。
+Android vold随后重新创建加密F2FS；sys.boot_completed=1，槽_a，/data挂载正常，
+macosroot仍指向sda30。boot、系统、Recovery、UEFI及64 MiB macoslog保持原内容。
+现场在private/device/macosroot-write-20261025/android-fresh-data.txt。
+
+根盘只写入一次，首次ADB exec-in未提供可靠远端完成确认，后续flush确认超时。
+未自动重试；独立读取全部1579155456字节后，SHA256与本地完整镜像一致：
+ca20f14cef97cbab92807ebc37afe81af76a4a629a5bf6947a7cb88f517a78c0。
+之后flush成功，写入状态依据完整读回标记verified，传输确认局限单独保留。
+安装工具改用adb shell -T并等待远端dd fsync退出；未因此重复写盘。
+
+同一40114236144候选又通过sheng物理放置、16K页表及MMU后16格实际像素的QEMU执行检查，
+但这不是UFS实机执行。封装时先修复生成ADT中main与恢复卷recoveryos不一致。
+进一步核对真实NativeUfs::startRoot发现：上游协调器要求OS与SystemOS两个窗口，
+且未启用旧VerifiedBlock时始终拒绝发布。当前单BaseSystem清单不能经过该流程。
+此前封装的实验镜像已撤销并删除，没有向设备发送。
+
+独立0030补丁和显式recovery_root构建头增加单恢复卷只读发布：
+严格限定一个OS窗口、25F71字节数与已配套摘要，使用实际恢复卷UUID等待原版APFS发布。
+SHNGROOT及预期摘要只限定传输布局，不被描述为认证；原版APFS root-hash路径仍负责卷认证。
+未启用此恢复模式时保留旧OS/SystemOS与VerifiedBlock规则，二者不能混用。
+实际生产协调器的单卷发布、身份拒绝、调度失败回收及启动/媒体失败路径经ASan/UBSan通过，
+旧版协调器测试也通过。CI40120489871因设备树补丁归属目录错误而停止，
+已修正至UniXNU-sheng目录，CI40120646478正在构建匹配ARM64E组件。
+新封装入口会拒绝旧UFS组件、不同内核的观察结果、非零硬件访问计数及错误根分区，
+不会把QEMU准入或原版组件注册当作UFS硬件已通过。

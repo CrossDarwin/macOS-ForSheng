@@ -168,6 +168,13 @@ Adreno 740 macOS 驱动或双系统安装结果。
 
 ## 双系统
 
-预期总空间为 96 GiB，包含引导空间和 APFS。不要使用上游硬编码的 userdata 扇区边界。
-先完成 GPT、引导/恢复和 Android 数据备份及恢复验证，再在离线环境重建 userdata。
-当前不提供未经实机布局验证的分区写入脚本，不修改 XBL、ABL、TZ 或 HYP。
+当前设备按用户明确选择划分64 GiB给macosroot，其余约168.4 GiB重建Android userdata。
+userdata内容已按授权丢弃，Android重新创建加密F2FS后正常启动，槽位仍为a。
+macosroot位于LUN0/sda30，GUID为66ac0996-e1bb-4e93-8ffe-c90ed97a61ff。
+配套BaseSystem已写入，完整1579155456字节读回一致；尚未证明XNU能从UFS挂载它。
+
+`scripts/repartition_macos26_root.py`只接受已核对的设备及原布局，主备GPT先保存再逐范围写入和读回。
+它拒绝重复应用、已有macosroot或任何准备后的GPT变化，不是日常启动步骤。
+`scripts/install_macos26_ufs_root.py`只在root Recovery中向匹配GUID的macosroot写入，要求先完成缩小后的userdata清除。
+当前GPT恢复材料保留在private/backups/20261025-macosroot-64g；恢复旧GPT不会恢复已丢弃的Android数据。
+XBL、ABL、TZ、HYP、boot、Recovery及UEFI分区没有改写。内核实验继续使用临时fastboot boot。
