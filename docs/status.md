@@ -804,3 +804,13 @@ QEMU输出mount-complete volume macOS Base System，卷UUID与输入一致，
 根哈希原始数据已导入；本次采用显式QEMU开发CSR策略，不能称为个性化生产启动。
 尚未执行launchd，下一观测点跟随thread_setentrypoint传出的真实EL0地址。
 证据保存在private/experiments/20261024-native-arm64e/virtio-storage/mounted-40084664897。
+
+### PID1装载失败已定位到文件压缩类型8
+
+挂载根卷后，真实PID1/init执行load_init_program，尝试/sbin/launchd。
+原生decmpfs报告tried to access a compressed file of unregistered type 8，
+读取返回ENOTSUP(45)，随后Process 1 exec of /sbin/launchd failed。
+因此尚未命中thread_setentrypoint或执行用户态代码，不将装载入口当作launchd运行。
+下一候选补入同一BootKC的com.apple.AppleFSCompression.AppleFSCompressionTypeZlib
+及自动解析出的真实依赖，保留原文件压缩内容，不在宿主改写系统盘。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/init-compression-missing-40084664897。
