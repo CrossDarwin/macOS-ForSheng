@@ -88,7 +88,8 @@ def main() -> None:
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot',
                         'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program',
-                        'thread_setentrypoint'), default='arm_init')
+                        'thread_setentrypoint', 'handle_pac_fail',
+                        'vm_shared_region_slide_page', 'shared_region_pager_match'), default='arm_init')
     parser.add_argument('--follow-init-entry', action='store_true',
                         help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
     parser.add_argument('--follow-launchd-main', action='store_true',
@@ -254,6 +255,13 @@ def main() -> None:
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        if args.checkpoint == 'handle_pac_fail':
+            command += ['--arm64-saved-state-count', '74' if record['architecture'] == 'arm64e' else '72',
+                        '--inspect-entry-user-state']
+        if args.checkpoint == 'vm_shared_region_slide_page':
+            command += ['--read-entry-region', '0:0:48']
+        if args.checkpoint == 'shared_region_pager_match':
+            command += ['--read-entry-region', '2:0:48']
         if args.trace_init_syscalls:
             command += ['--arm64-saved-state-count', '74' if record['architecture'] == 'arm64e' else '72',
                         '--syscall-start-address', hex(addresses['_load_init_program']),

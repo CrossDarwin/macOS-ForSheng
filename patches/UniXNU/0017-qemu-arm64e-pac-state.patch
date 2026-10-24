@@ -1,0 +1,55 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -1297,7 +1297,7 @@
+                     if not 0 <= index < 8 or not 0 <= offset <= 4096 or not 0 < length <= 4096:
+                         raise ValueError('Read bounded direct entry regions from kernel x0-x7')
+                     pointer = region_arguments[index] + offset
+-                    if not 0xfffffff000000000 <= pointer <= (1 << 64) - length:
++                    if not 0xffff800000000000 <= pointer <= (1 << 64) - length:
+                         raise ValueError('Entry region must be actual bounded kernel memory')
+                     raw = packet(f'm{pointer:x},{length:x}')
+                     if len(raw) != 2 * length or raw.startswith('E'):
+@@ -1354,7 +1354,7 @@
+                     report['entry_user_vectors'][request] = capture
+             if args.inspect_entry_user_state and values[32] == args.address and not interrupted:
+                 report['entry_user_state_candidates'] = []
+-                state_pointers=[(f'x{index}',values[index]) for index in range(19,29)]
++                state_pointers=[(f'x{index}',values[index]) for index in (*range(4), *range(19,29))]
+                 if process_plan:
+                     current=process_identity()
+                     if current.get('user_state'):state_pointers.append(('current-thread.upcb',int(current['user_state'],16)))
+@@ -1362,13 +1362,13 @@
+                 for source,pointer in state_pointers:
+                     if pointer in seen_state_pointers:continue
+                     seen_state_pointers.add(pointer)
+-                    if not 0xfffffff000000000 <= pointer < (1 << 64) - 304 or pointer % 8:
++                    if not 0xffff800000000000 <= pointer < (1 << 64) - 304 or pointer % 8:
+                         continue
+                     raw = packet(f'm{pointer:x},130')
+                     if raw.startswith('E') or len(raw) != 608:
+                         continue
+                     saved = bytes.fromhex(raw)
+-                    if struct.unpack_from('<2I', saved) != (21, 72):
++                    if struct.unpack_from('<2I', saved) != (21, args.arm64_saved_state_count):
+                         continue
+                     regs = struct.unpack_from('<33Q', saved, 8)
+                     cpsr = struct.unpack_from('<I', saved, 272)[0]
+@@ -1376,7 +1376,8 @@
+                         continue
+                     candidate = dict(source_register=source, pointer=hex(pointer), saved_bytes=raw,
+                         user_pc=hex(regs[32]), user_sp=hex(regs[31]), user_fp=hex(regs[29]), user_lr=hex(regs[30]),
+-                        user_arguments=[hex(v) for v in regs[:8]], cpsr=hex(cpsr),
++                        user_arguments=[hex(v) for v in regs[:8]],
++                        user_registers={f'x{i}':hex(v) for i,v in enumerate(regs[:31])}, cpsr=hex(cpsr),
+                         far=hex(struct.unpack_from('<Q', saved, 280)[0]), esr=hex(struct.unpack_from('<I', saved, 288)[0]),
+                         instruction_bytes=packet(f'm{regs[32]:x},20'), frames=[])
+                     candidate['register_memory']={}
+@@ -1443,7 +1444,7 @@
+                 if raw.startswith('E') or len(raw) != 16:
+                     raise RuntimeError('Cannot read actual kernel frame pointer slot')
+                 pointer = int.from_bytes(bytes.fromhex(raw), 'little')
+-                if not 0xfffffff000000000 <= pointer <= (1 << 64) - length:
++                if not 0xffff800000000000 <= pointer <= (1 << 64) - length:
+                     raise RuntimeError('Actual frame slot is not a bounded kernel pointer')
+                 report['frame_indirect_memory'][request] = dict(slot_address=hex(frame + offset),
+                     pointer=hex(pointer), bytes=packet(f'm{pointer:x},{length:x}'))
