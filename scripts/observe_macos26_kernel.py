@@ -246,7 +246,8 @@ def main() -> None:
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
         if args.trace_init_syscalls:
-            command += ['--syscall-start-address', hex(addresses['_load_init_program']),
+            command += ['--arm64-saved-state-count', '74' if record['architecture'] == 'arm64e' else '72',
+                        '--syscall-start-address', hex(addresses['_load_init_program']),
                         '--syscall-log-address', hex(addresses['_unix_syscall']),
                         '--syscall-log-address', hex(addresses['_mach_syscall'])]
         if args.follow_init_entry:

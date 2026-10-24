@@ -1,0 +1,29 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -41,6 +41,8 @@
+ parser.add_argument('--timeout', type=float, default=3, help='Maximum seconds waiting for the guest breakpoint')
+ parser.add_argument('--primary-start-address', type=lambda value: int(value, 0), help='Arm the primary breakpoint only after this actual one-shot kernel entry')
+ parser.add_argument('--trace-address', action='append', default=[], type=lambda value: int(value, 0))
++parser.add_argument('--arm64-saved-state-count', type=int, choices=(72, 74), default=72,
++                    help='Compiler ABI: ARM64 uses 72 words; ARM64E includes the jophash word (74)')
+ parser.add_argument('--syscall-number', type=int, action='append', default=[], help='Capture only these genuine syscall numbers, preserving the bounded event budget')
+ parser.add_argument('--syscall-start-address', type=lambda value: int(value, 0), help='Arm syscall saved-state observation only after this actual kernel entry')
+ parser.add_argument('--kext-log-address', type=lambda value: int(value, 0), help='Capture up to 256 real OSKextLog calls within the same guest deadline')
+@@ -632,12 +634,13 @@
+                         continue
+                     if timed_out or current[32] not in args.syscall_log_address:
+                         return stopped, current, timed_out
+-                    raw = packet(f'm{current[0]:x},128')
+-                    if len(raw) != 592 or raw.startswith('E'):
++                    size = 8 + args.arm64_saved_state_count * 4
++                    raw = packet(f'm{current[0]:x},{size:x}')
++                    if len(raw) != size * 2 or raw.startswith('E'):
+                         raise RuntimeError('Cannot read actual ARM64 syscall saved state')
+                     state = bytes.fromhex(raw)
+-                    if struct.unpack_from('<2I', state) != (21, 72):
+-                        raise RuntimeError('Unexpected saved-state ABI for pinned Darwin 23 ARM64')
++                    if struct.unpack_from('<2I', state) != (21, args.arm64_saved_state_count):
++                        raise RuntimeError('Unexpected saved-state ABI for the selected kernel')
+                     regs = struct.unpack_from('<33Q', state, 8)
+                     event = {'number': struct.unpack_from('<i', state, 136)[0], 'handler': hex(current[32]),
+                         'user_pc': hex(regs[32]), 'arguments': [hex(v) for v in regs[:8]],

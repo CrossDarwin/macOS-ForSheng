@@ -846,3 +846,9 @@ libignition-58及其arguments/ignition level等真实用户态日志，证明此
 vm_shared_region_start_address返回0x1，尚不能仅凭这一行断言是致命错误。
 下一轮采集init开始后的有界Unix/Mach系统调用，定位实际等待对象和共享缓存流程。
 证据保存在private/experiments/20261024-native-arm64e/virtio-storage/libignition-40084664897。
+
+系统调用观测首次被旧工具的ARM64保存帧检查拒绝，未产生新的内核panic。
+配套thread_status.h定义ARM64的arm_saved_state64为72个u32，
+HAS_APPLE_PAC的ARM64E另有jophash，计数为74，前部通用寄存器布局相同。
+集成补丁0016为GDB采集器提供显式72/74选择，按所选内核ABI读取并严格检查，
+保留默认72的旧参考用例，不把格式错误解释为运行失败。
