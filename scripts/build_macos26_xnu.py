@@ -58,6 +58,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0035-native-preconsole-live-log.patch',
     ROOT / 'platform/sheng/macos26/patches/0036-native-live-log-rebind.patch',
     ROOT / 'platform/sheng/macos26/patches/0037-native-panic-io-zero.patch',
+    ROOT / 'platform/sheng/macos26/patches/0038-native-security-prelink.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

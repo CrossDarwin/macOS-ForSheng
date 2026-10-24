@@ -1,0 +1,179 @@
+--- a/osfmk/kern/kalloc.c
++++ b/osfmk/kern/kalloc.c
+@@ -1026,6 +1026,10 @@
+ 	}
+ }
+ 
++#if SHENG
++__attribute__((used)) const uint32_t sheng_security_prelink_version = 1;
++#endif
++
+ __startup_func
+ static uint64_t
+ kalloc_type_view_parse(const kalloc_type_variant_t type)
+@@ -1109,7 +1113,35 @@
+ 		cur = prelink_sect->addr;
+ 		end = prelink_sect->addr + prelink_sect->size;
+ 
++#if SHENG
++		kernel_section_t *headers = getsectbynamefromheader(
++			xnu_mh, kPrelinkTextSegment, "__macho_list");
++		uint64_t header_index = 0, header_count = 0;
++		uintptr_t previous_header = 0;
++		if (headers) {
++			if (headers->addr < cur || headers->size % sizeof(uintptr_t) ||
++			    headers->addr > end || headers->size > end - headers->addr) {
++				panic("SHENG: invalid sparse security header index");
++			}
++			header_count = headers->size / sizeof(uintptr_t);
++		}
++		while (headers ? header_index < header_count : cur < end) {
++			if (headers) {
++				uintptr_t unslid = ((const uintptr_t *)headers->addr)[header_index++];
++				if ((header_index > 1 && unslid <= previous_header) ||
++				    __builtin_add_overflow(unslid, vm_kernel_slide, &cur) ||
++				    cur < prelink_sect->addr || cur > end || end - cur < sizeof(kernel_mach_header_t)) {
++					panic("SHENG: sparse security header outside prelink text");
++				}
++				previous_header = unslid;
++				kernel_mach_header_t *header = (kernel_mach_header_t *)cur;
++				if (header->magic != MH_MAGIC_64 || header->sizeofcmds > end - cur - sizeof(*header)) {
++					panic("SHENG: malformed sparse security header");
++				}
++			}
++#else
+ 		while (cur < end) {
++#endif
+ 			uint64_t kext_text_sz = 0;
+ 			kernel_mach_header_t *kext_mh = (kernel_mach_header_t *) cur;
+ 
+@@ -1177,6 +1209,9 @@
+ 				break;
+ 			}
+ 
++#if SHENG
++			if (!headers)
++#endif
+ 			cur += ((kext_text_sz + (KEXT_ALIGN_BYTES - 1)) & (~KEXT_ALIGN_MASK));
+ 		}
+ #endif /* __BUILDING_XNU_LIB_UNITTEST__ */
+--- a/osfmk/prng/prng_random.c
++++ b/osfmk/prng/prng_random.c
+@@ -507,11 +507,25 @@
+ #include <kern/startup.h>
+ #include <mach/kmod.h>
+ #include <mach-o/loader.h>
++#include <libkern/kernel_mach_header.h>
++#include <libkern/libkern.h>
+ #include "sheng_crypto_image.h"
+ 
+ extern struct mach_header_64 _mh_execute_header;
+ extern kern_return_t corecrypto_kext_start(kmod_info_t *, void *);
+ SECURITY_READ_ONLY_LATE(kern_return_t) sheng_corecrypto_status = KERN_FAILURE;
++SECURITY_READ_ONLY_LATE(kmod_info_t *) sheng_native_crypto_kmod;
++extern vm_offset_t vm_kernel_slide;
++
++kern_return_t
++sheng_native_crypto_started(kmod_info_t *module)
++{
++	if (!sheng_native_crypto_kmod || module != sheng_native_crypto_kmod ||
++	    sheng_corecrypto_status != KERN_SUCCESS) {
++		panic("SHENG: original corecrypto initialization was not completed");
++	}
++	return sheng_corecrypto_status;
++}
+ 
+ static void
+ sheng_corecrypto_bootstrap(void)
+@@ -527,6 +541,31 @@
+ 	if (PE_parse_boot_argn("fips_mode", &mode, sizeof(mode)) && mode != 0) {
+ 		panic("SHENG source corecrypto requires complete default POST");
+ 	}
++	kernel_section_t *section = getsectbynamefromheader(
++		&_mh_execute_header, "__PRELINK_INFO", "__crypto_early");
++	if (section) {
++		kernel_segment_command_t *data = getsegbynamefromheader(
++			&_mh_execute_header, "__PRELINK_DATA");
++		uintptr_t address;
++		if (!data || section->size != sizeof(uintptr_t) || vm_kernel_slide != 0) {
++			panic("SHENG: unsupported original corecrypto bootstrap layout");
++		}
++		__builtin_memcpy(&address, (const void *)section->addr, sizeof(address));
++		if (address < data->vmaddr || address - data->vmaddr > data->vmsize ||
++		    sizeof(kmod_info_t) > data->vmsize - (address - data->vmaddr)) {
++			panic("SHENG: original corecrypto descriptor outside prelink data");
++		}
++		sheng_native_crypto_kmod = (kmod_info_t *)address;
++		if (strncmp(sheng_native_crypto_kmod->name, "com.apple.kec.corecrypto", KMOD_MAX_NAME) != 0) {
++			panic("SHENG: original corecrypto descriptor identity mismatch");
++		}
++		printf("SHENG: original corecrypto bootstrap enter\n");
++		sheng_corecrypto_status = sheng_native_crypto_kmod->start(sheng_native_crypto_kmod, NULL);
++		if (sheng_corecrypto_status != KERN_SUCCESS) {
++			panic("SHENG: original corecrypto failed: %d", sheng_corecrypto_status);
++		}
++		return;
++	}
+ 	info.address = sheng_crypto_image_prepare();
+ 	sheng_corecrypto_status = corecrypto_kext_start(&info, NULL);
+ 	if (sheng_corecrypto_status != KERN_SUCCESS) {
+--- a/libkern/c++/OSKext.cpp
++++ b/libkern/c++/OSKext.cpp
+@@ -75,6 +75,12 @@
+ 
+ #include <libkern/OSKextLibPrivate.h>
+ #include <libkern/c++/OSKext.h>
++#if SHENG
++#include <ptrauth.h>
++extern "C" kmod_info_t *sheng_native_crypto_kmod;
++extern "C" kern_return_t sheng_native_crypto_started(kmod_info_t *module);
++extern "C" int mac_late;
++#endif
+ #include <libkern/c++/OSLib.h>
+ 
+ #include <IOKit/IOLib.h>
+@@ -8475,9 +8481,44 @@
+ 	OSKextLogKextInfo(this, kmod_info->address, kmod_info->size, firehose_tracepoint_code_load);
+ 	result = OSRuntimeInitializeCPP(this);
+ 	if (result == KERN_SUCCESS) {
++#if SHENG
++		if (kmod_info == sheng_native_crypto_kmod) {
++			/* EARLY_BOOT已执行同一原版模块，避免重复注册PRNG */
++			result = sheng_native_crypto_started(kmod_info);
++		} else
++#endif
+ 		result = startfunc(kmod_info, kmodStartData);
+ 	}
+ 
++#if SHENG && CONFIG_MACF
++	OSObject *earlyProperty = getPropertyForHostArch("_NativePrelinkEarlySecurityInit");
++	if (result == KERN_SUCCESS && earlyProperty != NULL) {
++		OSNumber *entry = OSDynamicCast(OSNumber, earlyProperty);
++		uintptr_t target = 0;
++		bool executable = false;
++		if (!entry || !isPrelinked() || mac_late ||
++		    getPropertyForHostArch("AppleSecurityExtension") != kOSBooleanTrue ||
++		    __builtin_add_overflow((uintptr_t)entry->unsigned64BitValue(), vm_kernel_slide, &target) ||
++		    (target & 3)) {
++			panic("SHENG: invalid early security initializer");
++		}
++		kernel_mach_header_t *header = (kernel_mach_header_t *)kmod_info->address;
++		for (kernel_segment_command_t *seg = firstsegfromheader(header);
++		    seg != NULL; seg = nextsegfromheader(header, seg)) {
++			if (seg->initprot == (VM_PROT_READ | VM_PROT_EXECUTE) &&
++			    !(seg->maxprot & VM_PROT_WRITE) && seg->vmsize >= 4 &&
++			    target >= seg->vmaddr && target - seg->vmaddr <= seg->vmsize - 4) {
++				executable = true;
++				break;
++			}
++		}
++		if (!executable) panic("SHENG: security initializer outside module code");
++		typedef void (*initializer_t)(void);
++		initializer_t initializer = ptrauth_sign_unauthenticated((initializer_t)target,
++		    ptrauth_key_function_pointer, 0);
++		initializer();
++	}
++#endif
+ 	flags.starting = 0;
+ 
+ 	/* On success overlap the setting of started/starting. On failure just
