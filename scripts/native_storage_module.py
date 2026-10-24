@@ -44,6 +44,14 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
     info = plistlib.loads((directory / 'Info.plist').read_bytes())
     if info['CFBundleIdentifier'] != evidence['bundle']:
         raise ValueError('transport bundle identity mismatch')
+    from build_macos26_storage import PROTOCOL_CHARACTERISTICS
+    personality = info['IOKitPersonalities']['NativeVirtioBlock']
+    existing = personality.get('Protocol Characteristics')
+    if existing is not None and existing != PROTOCOL_CHARACTERISTICS:
+        raise ValueError('transport describes a different physical interconnect')
+    # VirtIO实际是虚拟块设备，APFS据此选择BaseSystem根卷路径
+    personality['Protocol Characteristics'] = dict(PROTOCOL_CHARACTERISTICS)
+
     if 'com.apple.iokit.IOStorageFamily' not in selected:
         raise ValueError('transport needs the original IOStorageFamily dependency')
     own = symbols(binary)

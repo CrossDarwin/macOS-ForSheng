@@ -10,6 +10,10 @@ import subprocess
 from native_macho import macho
 
 BUNDLE = 'org.unixnu.driver.NativeVirtioBlock'
+PROTOCOL_CHARACTERISTICS = {
+    'Physical Interconnect': 'Virtual Interface',
+    'Physical Interconnect Location': 'External',
+}
 
 
 def build(root, out, compile_record, source, run, record, env):
@@ -72,7 +76,8 @@ def build(root, out, compile_record, source, run, record, env):
                     'com.apple.kpi.private': '25.0'},
                 IOKitPersonalities={'NativeVirtioBlock': dict(CFBundleIdentifier=BUNDLE,
                     IOClass='NativeVirtioBlock', IOProviderClass='IOPlatformDevice',
-                    IONameMatch='virtio,mmio', IOProbeScore=1000)})
+                    IONameMatch='virtio,mmio', IOProbeScore=1000,
+                    **{'Protocol Characteristics': dict(PROTOCOL_CHARACTERISTICS)})})
     (destination / 'Info.plist').write_bytes(plistlib.dumps(info))
     evidence = dict(bundle=BUNDLE, upstream_source_sha256=hashlib.sha256(upstream.read_bytes()).hexdigest(),
                     binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
