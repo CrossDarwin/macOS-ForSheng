@@ -601,3 +601,11 @@ Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次R
 返回fastboot后a槽可启动，正常重启恢复sheng / _a / boot_completed=1，无切槽或分区写入。
 新增0030沿用UniXNU的VM入口/返回进度与framebuffer重绑定思路，分阶段记录VM页表建立/切换，再通过原生ml_io_map映射至多1 MiB的阶段行页面，观察到PE_create_console返回。
 诊断物理指针在TTBR0撤销前停用，不修改原生页表切换策略；紫色像素只在写后实际读回时设置witness。完整QEMU目标构建和新实机结果待完成。
+
+Actions 40059689947（513345f）成功构建0030，UUID 59C3AB6E-8EFC-3D7F-9501-257EA134FE1B。
+同版内核高物理地址启动观察通过。完整UEFI QEMU确认C阶段F、VM阶段F，原生I/O映射的阶段行VA为0xfffffe000a003f80，B–F实际像素读回witness=0xF800。
+控制台后关闭早期异常截获，corecrypto POST通过；仍停在已知Image4接口缺失处，512 KiB标准panic完整、CRC/UUID匹配，未进入BSD。
+定向运行共用VM头确认阶段7后物理写屏指针为0，阶段8只更新保留记录，不再触碰旧identity映射。
+新候选1d9ede2dd3818cfd1ed8b192d2e242b97f5d3051c89011af1cd4a6209f130557已封装；Android基线sheng / _a / boot_completed=1，a槽可启动检查通过，单次RAM启动收到Booting OKAY。
+实机紫色阶段结果待用户反馈，记录位于private/experiments/20261024-native-arm64e/vm-console-stage-strip。
+旧88b607ff部署镜像及本次QEMU的ESP暂存已删除，配套诊断、dSYM和有效恢复备份保留。
