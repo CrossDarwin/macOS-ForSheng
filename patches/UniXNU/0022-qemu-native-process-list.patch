@@ -1,0 +1,20 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -72,6 +72,8 @@
+ parser.add_argument('--proc-comm-offset', type=int, default=1468, help='Byte offset of p_comm')
+ parser.add_argument('--proc-stat-offset', type=int, default=100, help='Byte offset of p_stat')
+ parser.add_argument('--proc-list-max', type=int, default=128, help='Bounded number of actual process entries')
++parser.add_argument('--kernel-va-bits', type=int, choices=(36, 47), default=36,
++                    help='Qualified canonical kernel range for read-only process inspection')
+ parser.add_argument('--inspect-ui-threads', action='store_true', help='Read original UI task thread lists and kernel-owned saved user registers, without changing address spaces')
+ parser.add_argument('--capture-scratch-data', metavar='BASE_SYMBOL:SIZE_SYMBOL:EXPECTED_BYTES',
+                     help='Read the exact native mutable Data RAM range into an offline snapshot; never flush or modify guest state')
+@@ -1673,7 +1675,7 @@
+                     report['qemu_screen_capture']=dict(error=str(error))
+             if args.allproc_address is not None:
+                 def mem_bytes(address, length):
+-                    if not 0xfffffff000000000 <= address < (1 << 64) - length:
++                    if not (1 << 64) - (1 << args.kernel_va_bits) <= address < (1 << 64) - length:
+                         return None
+                     raw = packet(f'm{address:x},{length:x}')
+                     if len(raw) != length * 2 or raw.startswith('E'):

@@ -1,0 +1,29 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -74,6 +74,8 @@
+ parser.add_argument('--proc-list-max', type=int, default=128, help='Bounded number of actual process entries')
+ parser.add_argument('--kernel-va-bits', type=int, choices=(36, 47), default=36,
+                     help='Qualified canonical kernel range for read-only process inspection')
++parser.add_argument('--native-thread-plan', type=Path, help='Matching native DWARF kernel-thread layout')
++parser.add_argument('--native-thread-reader', type=Path, help='Bounded read-only native kernel-frame reader')
+ parser.add_argument('--inspect-ui-threads', action='store_true', help='Read original UI task thread lists and kernel-owned saved user registers, without changing address spaces')
+ parser.add_argument('--capture-scratch-data', metavar='BASE_SYMBOL:SIZE_SYMBOL:EXPECTED_BYTES',
+                     help='Read the exact native mutable Data RAM range into an offline snapshot; never flush or modify guest state')
+@@ -1702,6 +1704,17 @@
+                         state=(stat_raw[0] if stat_raw else None)))
+                     node = int.from_bytes(next_raw, 'little')
+                 report['process_list'] = entries
++                report['process_list_complete'] = bool(head) and node == 0
++                if args.native_thread_plan:
++                    import importlib.util
++                    plan = json.loads(args.native_thread_plan.read_text())
++                    if (not args.native_thread_reader or args.kernel_va_bits != 47
++                            or plan['kernel_sha256'] != state['sha256'] or plan['read_only'] is not True):
++                        raise RuntimeError('Native thread layout must match the actual kernel')
++                    spec = importlib.util.spec_from_file_location('native_threads', args.native_thread_reader)
++                    reader = importlib.util.module_from_spec(spec)
++                    spec.loader.exec_module(reader)
++                    report['native_thread_snapshots'] = reader.capture(packet, entries, plan)
+                 if args.inspect_ui_threads:
+                     from thread_snapshot import capture
+                     report['ui_thread_snapshots'] = capture(packet, entries, process_plan, report['system_registers'])

@@ -1,4 +1,4 @@
-# 实施状态 - 2026-10-24
+# 实施状态 - 2026-10-25
 
 系统目标已改为配对的 macOS 26.5 / 25F71。旧 XNU 独立验证 EL1 硬件交接，不能作为 macOS 26/27 用户空间的替代内核。
 
@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | CI40100580890；原版launchd已创建system域，原版APFS成功挂载独立iSC的xART、Preboot、Hardware；越过mount-phase-1，当前最后任务为data-protection；180秒观察未见panic正文 |
+| 原生 25F71 ARM64E QEMU | 原版launchd创建system域，iSC三个辅助卷已挂载；data-protection派生子进程时，缺页被错误诊断入口截获；地址宏修复已提交，CI40105000086构建中 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -1007,9 +1007,38 @@ kernel_entries=user_returns=6522、completed_signing_windows=208161、signing_ac
 本轮实际块写入及flush计数均为0，因此只确认介质权限接入及原版APFS挂载通过，
 尚未用客体实际I/O验收新增写入与flush请求路径。两块原始输入在运行后重新核对哈希，均未改变。
 
-下一项是定位data-protection任务的真实等待点，并核对AppleKeyStore依赖。
+后续只读现场已确认这里并非正常等待，见下节；没有panic正文不能排除异常循环。
 当前日志包含failed to find AppleKeyStore service，但尚不能只凭这行确定任务内部的停止原因。
 完整日志、截图、首次异常记录、配套符号身份和采集报告保存在
 private/experiments/20261024-native-arm64e/isc/overlay-40100580890。
 已删除本轮一次性ESP、写入层及被替代的旧实验内核，保留当前候选、原始配套输入与诊断记录。
 本轮未部署sheng；实机的最新验证点仍为旧版Image4检查，硬件准入保持false。
+
+### data-protection停止原因已定位到诊断地址宏
+
+编译器DWARF与实际proc_name_address指令给出47位进程和线程布局。
+只读快照中PID1仍为launchd，PID3也为尚未完成exec的launchd子进程。
+原版Boot配置将data-protection指向init_data_protection，后者链接seputil，
+但当前没有证据证明该子程序已执行，不能将停止原因归于SEP等待。
+
+最终PC位于sheng_mmu_sync_fault。将断点延迟到load_init_program后，
+捕获首次进入：ELR=0xfffffe00075c7178、ESR=0x96000046、FAR=0x16d4dfd90。
+实际故障指令为_bcopyout中的stp x3,x4,[x1]，目标是用户栈。
+这是本应由正常缺页路径处理的访问，此时sheng_bootstrap_capture_enabled实际已为0。
+
+实际Mach-O反汇编显示，SHENG_EARLY_ADDRESS的分号被Darwin汇编器解释为注释，
+ADRP之后的ADD被删除。开关读取了所在页的起始字，而非开关本身；
+故障出口又按错误记录地址恢复TTBR0及跳转地址，引起后续异常循环。
+同一个宏还影响早期记录和framebuffer映射地址。
+
+0c6ea1b改为逐行汇编宏，修复三个头文件的全部调用。
+回归测试拒绝旧版Mach-O对象，修正版含12对PAGE21/PAGEOFF12及完整ADRP/ADD指令。
+QEMU独立异常用例通过：复制向量、MMU切换、无有效栈异常捕获、
+诊断关闭后的原分发、framebuffer映射冲突拒绝。
+CI40105000086正在构建完整内核，尚不能宣称完整启动阻断已解除。
+
+观察工具新增按配套符号身份校验的allproc及线程快照，读取有数量和地址范围限制。
+保留的用户寄存器只表示最近EL0边界，保存的内核帧来自调度上下文，
+均不能单独当作正在执行的故障位置；本次归因依据是延迟断点取得的首次异常寄存器。
+现场保存在private/experiments/20261025-native-arm64e/data-protection，
+回归对照保存在同日期的bootstrap-address目录。一次性ESP及写入层已删除。

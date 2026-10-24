@@ -89,7 +89,10 @@ def main() -> None:
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot',
                         'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program',
                         'thread_setentrypoint', 'handle_pac_fail',
-                        'vm_shared_region_slide_page', 'shared_region_pager_match'), default='arm_init')
+                        'vm_shared_region_slide_page', 'shared_region_pager_match',
+                        'sheng_mmu_sync_fault'), default='arm_init')
+    parser.add_argument('--checkpoint-start', choices=('load_init_program',),
+                        help='arm the checkpoint only after this real kernel entry')
     parser.add_argument('--follow-init-entry', action='store_true',
                         help='follow thread_setentrypoint x1 into actual EL0 and step 16 instructions')
     parser.add_argument('--follow-launchd-main', action='store_true',
@@ -103,6 +106,10 @@ def main() -> None:
                         help='fresh isolated ISC fixture attached as a second read-only disk')
     parser.add_argument('--isc-write-overlay', action='store_true',
                         help='enable guest writes only in a new disposable ISC qcow2 overlay')
+    parser.add_argument('--process-layout', type=Path,
+                        help='matching DWARF process-list layout for read-only snapshots')
+    parser.add_argument('--capture-threads', action='store_true',
+                        help='read owned kernel thread frames using the matching process layout')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
     parser.add_argument('--qemu-no-ignition', action='store_true',
                         help='explicit development-only use of original dyld skipIgnition bit')
@@ -118,6 +125,8 @@ def main() -> None:
     parser.add_argument('--decode-existing-snapshot', action='store_true',
                         help='decode a saved snapshot without restarting QEMU')
     args = parser.parse_args()
+    if args.capture_threads and not args.process_layout:
+        parser.error('--capture-threads requires --process-layout')
     if not 15 <= args.timeout <= 180:
         parser.error('--timeout must be between 15 and 180 seconds')
     if args.kext_log is not None and not 0 <= args.kext_log <= 0xffffffff:
@@ -311,6 +320,8 @@ def main() -> None:
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
                    '--qemu-memory-mib', '1024', '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        if args.checkpoint_start:
+            command += ['--primary-start-address', hex(addresses['_' + args.checkpoint_start])]
         if pac_request:
             command += ['--read-indirect', pac_request]
         if args.checkpoint == 'handle_pac_fail':
@@ -348,6 +359,23 @@ def main() -> None:
             command += ['--virtio-extra-block-image', str(args.isc_block_image.resolve())]
         if args.isc_write_overlay:
             command += ['--virtio-extra-block-overlay']
+        if args.process_layout:
+            layout = json.loads(args.process_layout.read_text())
+            if (layout['kernel_uuid'] != record['uuid'] or layout['kernel_sha256'] != record['kernel_sha256']
+                    or layout['allproc'] != addresses['_allproc'] or layout['read_only'] is not True
+                    or layout['kernel_va_bits'] != 47
+                    or any(not 0 <= v < 65536 for v in layout['offsets'].values())):
+                raise ValueError('process-list layout does not match the actual candidate')
+            command += ['--allproc-address', hex(addresses['_allproc']),
+                        '--kernel-va-bits', '47', '--proc-pid-offset', str(layout['offsets']['pid']),
+                        '--proc-stat-offset', str(layout['offsets']['stat']),
+                        '--proc-list-offset', str(layout['offsets']['next']),
+                        '--proc-comm-offset', str(layout['offsets']['comm'])]
+            if args.capture_threads:
+                if not layout.get('threads'):
+                    raise ValueError('missing compiler thread layout')
+                command += ['--native-thread-plan', str(args.process_layout.resolve()),
+                            '--native-thread-reader', str(ROOT / 'scripts/native_thread_snapshot.py')]
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
         vector_base = addresses['_ExceptionVectorsBase']
         if not args.let_vector_log:
