@@ -14,6 +14,7 @@ import tomllib
 
 from observe_macos26_kernel import identify, ROOT, NATIVE_BOOT_ARGS
 from package_reference_xnu import vendor_dtbs
+from native_devtree import configure_native_text_state
 
 
 def main() -> None:
@@ -154,6 +155,7 @@ def main() -> None:
                         '--output', files / 'kernel.macho.adt', '--dram-size', '0x200000000',
                         '--owned-memory-size', '0x20000000', '--panic-log', '--cpu-regs', '0',
                         '--cpu-compatible', 'arm,cortex-a510', '--random-seed-bytes', '256'], check=True)
+        configure_native_text_state(files / 'kernel.macho.adt')
         (stage / 'unixnu.toml').write_text(
             'version = 1\n[boot]\ntimeout = 3\ndefault = "native26"\n'
             '[kits]\nautoload = false\n[[entry]]\nid = "native26"\n'

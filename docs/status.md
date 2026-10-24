@@ -710,3 +710,11 @@ CI 40076449616通过，UUID 51CEF8AA-71E7-3299-A98E-8BCF4425EA21。QEMU四个安
 
 
 只读断点确认根因时序：ArmCpu::enableGic入口的启动CPUdata中interrupt_handler为0，实际调用链为ArmCpu::start -> ml_processor_register+0x1d8 -> processor_boot -> cpu_start -> cpu_machine_init -> PE_cpu_machine_init -> initCPU。旧驱动移植自较早XNU，先注册CPU再安装IOCPUInterruptController回调，且返回后重复调用initCPU。machine-cpu-interrupt-order.patch将启动CPU控制器初始化、回调安装与动作注册移到ml_processor_register之前，预先设置CPUNumber，删除多余initCPU；次核路径和PAC认证不改。补丁在前两份现有适配补丁之后应用，实际运行修复仍待新CI内核验证。
+
+
+CI 40080070590构建成功，原生内核UUID 57B67A30-0E1E-3738-83EC-B3A3D5BF148D。附加配套pthread后的候选SHA256 fafec23152fe648a8944b9858bcb2244f8b205ed8abfe8d8e0c5c0c421b1e237。QEMU实际处理12次定时器中断，启动CPUdata+0xd8保持非空已签名回调，pthread函数表注册有效；越过原空IRQ回调错误，停在BSD的dtrace_postinit路径所触发的_unsafe_kernel_text_initialized断言。尚未到根设备查找，未部署实机。
+
+该断言的原始ml_unsafe_kernel_text_init只有在/chosen存在4字节kernel-ctrr-to-be-enabled时才完成。两个生成器未提供此属性。新增native_devtree.py在本项目生成树上发布0，准确表示当前EL1未启用Apple CTRR，不声称具备Apple锁定硬件；XNU页表权限和原断言不改。QEMU观察器与未来硬件封装共用此输入修正。实际生成DT的插入、幂等、截断、尾部数据及矛盾CTRR声明检查通过，实际运行结果待下一轮观察。
+
+
+同一40080070590内核补齐真实CTRR启动状态后，QEMU命中IOFindBSDRoot且当前指令字节匹配，16K/47位页表生效；已处理16次定时器中断。BSD的dlil/ifnet创建线程已实际调度，Skywalk自检通过，越过线程提供者与文本状态初始化阻断。原版Image4/AMFI/corecrypto/pthread均保持真实注册。此处是根设备查找入口，尚不代表找到磁盘、挂载APFS或执行launchd；未部署sheng。完整日志、寄存器与可读屏幕已保存image4-relink/macos26-security-native-text-live-40080070590。

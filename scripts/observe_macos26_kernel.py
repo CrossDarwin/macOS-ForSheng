@@ -12,6 +12,7 @@ import sys
 import uuid
 
 from native_macho import macho, symbols
+from native_devtree import configure_native_text_state
 
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_BOOT_ARGS = '-v debug=0x14e keepsyms=1 cpus=1 -enable_kprintf_spam'
@@ -136,6 +137,8 @@ def main() -> None:
                     '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                     '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
                     '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)], check=True)
+    configure_native_text_state(payload / 'kernel.macho.adt')
+    record['kernel_ctrr_to_be_enabled'] = 0
     command = [sys.executable, ROOT / 'UniXNU/scripts/qemu-entry/gdb-stop.py', hex(checkpoint),
                '--fixture', args.output, '--esp', esp, '--kernel', kernel,
                '--firmware', args.firmware.resolve(), '--gic-version', '3',

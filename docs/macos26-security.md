@@ -129,3 +129,6 @@ CI 40077286611（UUID 5428C76C-296B-3243-BE7B-E95BCE5257E9）的QEMU运行已通
 首次继续运行在sleh_irq的BLRAA x8发生PAC异常，x8为0。后续观察确认ml_install_interrupt_handler安装了非空已签名回调；监视该槽写入的另一次运行没有复现IRQ异常，实际停止于pthread_shims.c:319的函数表为空。IRQ问题仍未解决，不能把观察到更远处panic当成稳定通过。
 
 匹配BootKC包含com.apple.kec.pthread，UUID 89A0C193-9EB4-31CC-9153-31B9685406A7。匹配源码kern_init.c的pthread_start通过pthread_kext_register注册原始函数表；内核pthread_init必须在此之后运行。当前沿用UniXNU的真实模块依赖闭包和启动流程，给实验生成器增加--include-module，允许接入配套线程组件。新增组件保留认证链与模块启动语义，不填充空表、不跳过pthread_init。组件集合参与KCID计算，避免不同模块集复用同一标识；硬件验收状态保持false。
+
+
+40080070590完成启动CPU中断时序修正后，QEMU实际处理16次定时器中断，BSD线程调度与网络初始化继续执行，已到IOFindBSDRoot入口。配套pthread真实函数表已注册。新的文本状态断言通过在设备树发布实际未启用CTRR的状态解决，没有删除内核断言。尚未挂载根卷、执行launchd或验收sheng；下一段是原版IOStorageFamily/APFS与实际块设备路径。
