@@ -64,7 +64,6 @@
  #include <mach/kmod.h>
  #include <mach-o/loader.h>
 +#include <libkern/kernel_mach_header.h>
-+#include <libkern/libkern.h>
  #include "sheng_crypto_image.h"
  
  extern struct mach_header_64 _mh_execute_header;
@@ -72,6 +71,7 @@
  SECURITY_READ_ONLY_LATE(kern_return_t) sheng_corecrypto_status = KERN_FAILURE;
 +SECURITY_READ_ONLY_LATE(kmod_info_t *) sheng_native_crypto_kmod;
 +extern vm_offset_t vm_kernel_slide;
++kern_return_t sheng_native_crypto_started(kmod_info_t *module);
 +
 +kern_return_t
 +sheng_native_crypto_started(kmod_info_t *module)
@@ -104,7 +104,7 @@
 +			panic("SHENG: original corecrypto descriptor outside prelink data");
 +		}
 +		sheng_native_crypto_kmod = (kmod_info_t *)address;
-+		if (strncmp(sheng_native_crypto_kmod->name, "com.apple.kec.corecrypto", KMOD_MAX_NAME) != 0) {
++		if (__builtin_memcmp(sheng_native_crypto_kmod->name, "com.apple.kec.corecrypto", sizeof("com.apple.kec.corecrypto")) != 0) {
 +			panic("SHENG: original corecrypto descriptor identity mismatch");
 +		}
 +		printf("SHENG: original corecrypto bootstrap enter\n");
@@ -132,7 +132,7 @@
  #include <libkern/c++/OSLib.h>
  
  #include <IOKit/IOLib.h>
-@@ -8475,9 +8481,44 @@
+@@ -8475,9 +8481,46 @@
  	OSKextLogKextInfo(this, kmod_info->address, kmod_info->size, firehose_tracepoint_code_load);
  	result = OSRuntimeInitializeCPP(this);
  	if (result == KERN_SUCCESS) {
@@ -146,6 +146,7 @@
  	}
  
 +#if SHENG && CONFIG_MACF
++	{
 +	OSObject *earlyProperty = getPropertyForHostArch("_NativePrelinkEarlySecurityInit");
 +	if (result == KERN_SUCCESS && earlyProperty != NULL) {
 +		OSNumber *entry = OSDynamicCast(OSNumber, earlyProperty);
@@ -172,6 +173,7 @@
 +		initializer_t initializer = ptrauth_sign_unauthenticated((initializer_t)target,
 +		    ptrauth_key_function_pointer, 0);
 +		initializer();
++	}
 +	}
 +#endif
  	flags.starting = 0;
