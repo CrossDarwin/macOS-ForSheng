@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；尚未启动 |
-| 原生 25F71 ARM64E QEMU | CI 40080070590；原版安全组件与pthread注册，16次定时器中断，BSD线程调度通过，已到IOFindBSDRoot入口；根卷及launchd未启动 |
+| 原生 25F71 ARM64E QEMU | CI40084664897；原版安全组件、pthread、IOStorageFamily与NativeVirtioBlock已启动；恢复盘首扇区实际读取及SHA256比对通过；根卷及launchd未启动 |
 | 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -745,5 +745,18 @@ FAR=0xfffffe0009cb4b88，新驱动代码、数据的GDB读取均返回E14。
 补丁0047为独立段增加严格按段权限的VM映射：代码RX、数据RWNX、
 DATA_CONST在初始化时可写并在最终保护时改为RNX，同时映射IOStorageFamily的只读LINKINFO。
 采集器现将E14等不可读结果保留为unavailable_globals，不再将其误当十六进制数解析；
-已有快照可以离线重新解码，不重复启动QEMU。修正内核CI40084664897正在构建。
+已有快照可以离线重新解码，不重复启动QEMU。修正内核CI40084664897构建通过。
 证据保存在private/experiments/20261024-native-arm64e/virtio-storage/unmapped-40083871388。
+
+### QEMU实际块设备读取已通过
+
+CI40084664897内核UUID01273EEF-6B10-3279-86C6-748ABB6C39A8。
+封装SHA256 ba3d16fc4dad26ceea697ad54000fb971984015acb49bcdaf88f8483503f472b。
+正常OSKext加载并启动原版IOStorageFamily，注册IOBlockStorageDevice、IOBlockStorageDriver、
+IOGUIDPartitionScheme、IOMedia等实际类，然后启动独立NativeVirtioBlock。
+其真实start路径经VirtIO队列完成512字节读取，ready=1、read_requests=1、
+read_failures=0、capacity=3080259扇区、实际MMIO=0xa003e00。
+内核对读回内容计算的SHA256为432967e802fe148ef1cb478821b47388fc8721bb38cb4a04f57067cc676039c7，
+与配套只读磁盘首扇区一致。断点处指令字节、16K/47位页表及安全组件指针检查通过。
+这确认VM映射修正和实际块设备读取；不等于APFS挂载、launchd或sheng UFS已通过。
+证据保存在private/experiments/20261024-native-arm64e/virtio-storage/firstread-40084664897。
