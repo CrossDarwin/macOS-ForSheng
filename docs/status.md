@@ -1893,3 +1893,23 @@ GOP候选补丁把IOAV颜色元素从Default RGB的16改为sRGB的10，
 说明颜色声明修正不足以解除当前阻断。构建40208410649已通过，仍未取得帧输出。
 下一项显式QEMU实验在原版framebuffer_pixel_format分配决策处选择BGRA，
 保留PACIBSP与AUTIBSP，不修改现有IOSurface的格式字段或查询返回值。
+
+
+### QEMU取得原版WindowServer第一帧，尚无Recovery窗口
+
+显式开发实验已让原版framebuffer_pixel_format在分配之前选择BGRA。
+原版IOSurfaceGetPixelFormat随后实际返回BGRA（0x42475241），
+不再进入RGhA不支持分支。原版软件合成、IOMobileFramebuffer交换队列与GOP复制继续执行。
+实际停止在copySurface完整复制循环之后、帧计数写入之后，计数为1，
+不是控制器预算停止，也没有捕获到WindowServer异常。
+
+800×600 RAMFB截图为黑色背景和鼠标指针，尚未出现Recovery窗口。
+这证明首次像素呈现，不能当作完整图形Recovery或GPU加速验收。
+实验保留PACIBSP及AUTIBSP，只修改QEMU客体中的Metal能力block、分配格式选择及sRGB常量；
+原始磁盘文件未修改，尚未部署实机。
+
+sRGB源码修正的构建40208410649已下载并完成30个原版模块及显示伴随模块重链接，
+新UUID为43E660E5-73B4-30E3-B998-A82D62224439，
+候选SHA-256为5f555e6fa0d5b5975804de138c79430aaafcd18a53c93daf39e518d136442d68。
+配套DWARF各调试section与前一构建逐字节一致，进程布局据此复用并重新绑定新候选身份。
+正在用编译后的sRGB声明验证连续帧输出，再检查Recovery窗口服务。
