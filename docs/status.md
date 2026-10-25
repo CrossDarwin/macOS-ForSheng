@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | 原版launchd及恢复服务已运行；显式软件合成开发实验已完成10帧GOP复制，画面为黑底鼠标；保留钥匙串登录的就绪检查对照已运行原版RecoveryOS Agent；延长运行捕获HIServices应用注册期间SIGABRT，尚无Recovery窗口 |
+| 原生 25F71 ARM64E QEMU | 原版launchd及恢复服务已运行；显式软件合成开发实验已完成10帧GOP复制；省略钥匙串初始化并关闭旧日志镜像的对照已运行到原版RecoveryOS Agent设备所有者查询，截图出现等待光标；尚无LanguageChooser窗口 |
 | 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；WindowServer反复exit(1)，尚无图形Recovery证据 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -1995,3 +1995,21 @@ launchservicesd的工作线程也在同一旧镜像发送路径等待。
 新的组合对照保留真正钥匙串登录和原版应用注册调用，合并已单独验证的就绪检查省略与旧syslog镜像关闭。
 目的是检验关键服务不再被镜像发送拖住后是否能够返回，尚未执行缺少ASN的策略对照。
 后者已准备，但仅允许在捕获到匹配的缺少ASN退出消息后运行，不伪造ASN或WindowServer连接成功。
+
+### 原版RecoveryOS Agent越过注册，停留在设备所有者查询
+
+保留原版钥匙串登录的两组组合对照均已结束。每个关键任务的实际用户页表读取确认，
+旧syslog镜像关闭指令确实出现在securityd、secd、applekeystored、launchservicesd和recoveryosd映射中。
+逐调用返回对照也确认原版PACIBSP与RETAB配对执行，未把认证返回值改为成功。
+最终仍有钥匙串派生熵及服务初始化等待，没有LanguageChooser进程或窗口。
+
+独立UI开发对照省略recoveryosd钥匙串初始化，并关闭旧syslog镜像。
+该轮原版RecoveryOS Agent已越过此前的HIServices注册异常位置，主线程在
+TRMUser::deviceOwners → AuthorizationCopyPreloginUserDatabase → com.apple.authd连接握手中等待。
+画面已出现原版macOS等待光标，但未呈现语言窗口；这不构成图形Recovery验收。
+此轮没有启用缺少ASN策略，也未伪造应用注册成功。
+
+另外，runningboardd和RecoveryOS Agent工作线程在可选的os_activity_stream_reflect转发中等待。
+它与此前旧syslog镜像是不同路径。新的对照关闭该可选转发，保留原始授权请求；
+另一组仅省略设备所有者发现，并使用原版TRMUser已有的空列表失败路径，不伪造认证成功。
+两组仍在QEMU运行，结果尚未确认。所有控制只用于本地开发，未修改只读恢复镜像或部署sheng。
