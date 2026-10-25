@@ -1478,3 +1478,18 @@ AArch64 QEMU实际运行共享头文件，在writer=1、RAM异常头state=3时�
 SHA256 f06428a95fc2294f0f66373a57826f971c12d2b1cd91b6943a4c46bd04d099ff。
 800x600 QEMU屏幕按实际几何绑定17行普通日志与16行panic，sheng 3048x2032仍为24+16。
 封装要求绑定行数等于本次计算值且在6..24内，仍拒绝此前“计算24、实际6”的错误，另要求独立panic面实际绑定16行。
+
+
+### 独立panic面完整内核验证通过，新实测包就绪
+
+40164717613已通过匹配物理放置的启动汇编、IOFindBSDRoot及实际NativeUfs默认关闭返回检查。
+QEMU小屏实际绑定17行普通日志、16行panic。另用完整内核在无UFS控制器的QEMU中触发预期
+controller not ready for takeover，停止在DebuggerTrapWithState，确认独立快照state=2、16行绑定，
+截图实际显示stage/prepared/published/reads/failures；没有把此预期控制器失败当作物理UFS测试。
+AArch64 writer忙回归和6项封装测试通过。
+
+新临时实测镜像out/macos26-ufs-panic-hardware-40164717613，150663168字节，
+SHA256 faa5a27a574f47968f790400aec6fb99ac2be54d9f55ffc9a68315ef78ad27f5。
+菜单版本A2FEEAC1，资格及截图在private/experiments/20261025-native-arm64e/ufs-panic-40164717613。
+尚未部署；实机仍未证明目标根卷挂载。旧6F504502部署镜像和ADT已销毁，内核符号、输入、视频和恢复备份保留。
+下一轮仅需记录独立PANIC DETAIL中的媒体与I/O计数，再决定修复哪一层。
