@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | 原版launchd及恢复服务已运行；显式软件合成开发实验已完成10帧GOP复制，画面为黑底鼠标；保留钥匙串登录的就绪检查对照已运行原版RecoveryOS Agent的AppKit入口，尚无Recovery窗口 |
+| 原生 25F71 ARM64E QEMU | 原版launchd及恢复服务已运行；显式软件合成开发实验已完成10帧GOP复制，画面为黑底鼠标；保留钥匙串登录的就绪检查对照已运行原版RecoveryOS Agent；延长运行捕获HIServices应用注册期间SIGABRT，尚无Recovery窗口 |
 | 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；WindowServer反复exit(1)，尚无图形Recovery证据 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -1966,3 +1966,19 @@ systemkeychain等待PID91的bash子任务，syslogd还有写入中的线程。
 已启动更长的QEMU观察，沿用曾到达RecoveryOS Agent的就绪检查对照，保留真正钥匙串登录。
 这次扩大最终只读线程快照至最多96个进程，包含子shell，避免只记录父服务而遗漏实际子任务。
 运行结果尚待确认，未封装或部署到sheng。
+
+
+### 延长运行捕获RecoveryOS Agent应用注册异常
+
+延长运行已结束，停止在真实_exception_triage，实际进程为RecoveryOS Agent / PID130。
+异常为EXC_CRASH，代码包含SIGABRT；并非传输预算耗尽。
+按该进程实际共享缓存slide 0x6E8000符号化，调用链为
+NSApplicationMain → NSApplication::init → 菜单栏上下文初始化 → GetCurrentProcess →
+_RegisterApplication → HIServices的RegisterApplication block → abort → pthread_kill。
+因此原版恢复应用已进入AppKit，但本轮在应用注册期间退出，仍未呈现恢复窗口。
+
+失败点是多个致命分支共用的abort入口，不能仅凭附近的版本错误字符串断言原因。
+配对HIServices代码在该路径使用__crashreporter_info__槽保存具体消息；
+下一次观察已增加对该槽指向字符串及有界用户栈的只读捕获。
+完成原因确认后再处理注册所依赖的会话/服务条件，不把跳过abort作为注册成功。
+原始日志、线程与寄存器保留本地，未部署sheng。
