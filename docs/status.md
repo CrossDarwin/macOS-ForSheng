@@ -1561,3 +1561,30 @@ macOS Base System的mount-complete；内核尝试加载/sbin/launchd，随后输
 旧QEMU专用参数继续要求实际VMM。观察器新增实际commpage读回。
 硬件封装另要求同一UUID/内核哈希、开发开关实际启用、commpage bit3及原版launchd主函数执行证据。
 CI40169005156正在编译；此时尚未取得修正版运行结果。
+
+
+### 原生UFS发布路径的离线对照已执行原版launchd主函数
+
+CI40169005156成功，候选UUID D86D84A7-140B-31C0-9747-4BB27D57E3F7，
+SHA256 bed5f1231b8572527d11fe9933edf676bae4ae2624a299aad611b3240abcdcff。
+0053的显式开发开关读回1，旧QEMU专用开关为0，dyld实际commpage为0x9。
+同一生产NativeUfsBlock、原版存储栈及APFS发布路径继续到PID1用户态，
+实际启动栈取得原版launchd的LC_MAIN 0x104bf3480，首条PACIBSP完成后PC为0x104bf3484。
+16字节指令与25F71配套launchd相符。日志出现hello, launchd及BaseSystem environment starting，
+随后执行mount/apfs_boot_util，采集507次主函数之后的选定系统调用，未耗尽预算。
+
+该对照仍以离线输入替换hostBringUp、RootLayout及底层块读取，不是物理UFS仿真。
+10851次替身读取共151805952字节；后续mount-phase-1因缺少iSC/xART角色卷而失败，
+不能据此宣称恢复系统已完整启动。现场、截图、实际commpage及主函数执行记录保存在
+private/experiments/20261025-native-arm64e/development-dyld-40169005156。
+
+匹配sheng物理放置的启动汇编、根发现入口、独立panic显示及真实NativeUfs::start默认拒绝均通过。
+默认拒绝观察首次误选NativeUfsBlock::start，等待超时且未获得返回证据，不用于准入；
+改用实际NativeUfs::start后完成真实返回，x0=0且四个硬件/媒体计数均为0。
+开发版封装准入的7项测试已通过，本次实际封装也通过原版launchd主函数与commpage检查。
+
+临时镜像out/macos26-development-dyld-hardware-40169005156，菜单D86D84A7，
+SHA256 e33422851df8ed81379452e1549b3de03c912d7d9b9ed7a438f9fc0156d61b08。
+用户确认可录像后已发送一次，a槽可启动，Booting OKAY；未写分区或变更槽位。
+实机执行结果仍待录像，不能把boot确认当作launchd已在sheng运行。
+旧40AD15FD部署镜像和ADT及本轮一次性ESP副本已删除，配套内核、符号、输入、日志及恢复备份保留。
