@@ -1825,3 +1825,24 @@ GOP属性改为内建屏，避免原版框架将其仅列为外接屏而不选�
 最终由QEMU控制器替身的时间预算停止，不能把该停止PC当作内核panic或显示函数故障点。
 屏幕仍为文字控制台。当前阻断已移至显示打开及开屏之后、首次帧提交之前，
 异常原因仍需实际用户态异常寄存器及调用栈确认，不能据此认定PAC或GPU为原因。
+
+
+### 首帧前阻断已定位到原版Metal设备检查
+
+真实exception_triage入口取得WindowServer的EXC_CRASH，code[0]=6<<24、code[1]=0，
+对应SIGABRT，原始异常类型及code位均为0。EL0 PC位于__pthread_kill，
+指令字节与25F71缓存一致。按该进程实际共享区域slide符号化的调用链为
+pthread_kill、abort、WSSystemCanCompositeWithMetal的once block，
+再到WSCompositorActivateDefault与WSInitialize。
+原始PAC值保留，移除元数据仅用于47位地址查找，不宣称对栈记录作了指针认证。
+
+原版block等待30秒后构造“No suitable Metal devices present after %llu seconds.”，
+随后调用abort，与实际调用栈和SIGABRT相符。本次退出不是PAC认证故障，
+但不代表所有ARM64E路径已经验收。
+GOP显示发现、客户端打开和开屏请求已通过，尚无可用Metal设备及第一帧。
+
+DroidVM的NativeAdrenoMetalPlugin经IOGPUMetalDevice加载，创建的设备向Metal注册，
+底层仍依赖NativeBridge、Turnip和GPU用户客户端。单独复制显示驱动不能补齐该链路。
+25F71 SkyLight内保留CompositorSW及默认合成器选择路径。
+下一项先验证原版软件合成入口和实际输出，再评估配套Metal前端及原生GPU后端。
+软件合成路径目前只有静态入口证据，不能宣称可用或已有图形Recovery。

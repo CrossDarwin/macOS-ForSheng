@@ -18,7 +18,7 @@ sheng已在QEMU和实机执行25F71原版launchd，挂载ISC三个角色卷并�
 | P0 | [启动与退出诊断](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/droidvm/README.md) | 提供exec/exit、致命异常回溯及受参数控制的stackshot | 已取得实机WindowServer退出码及重启记录，QEMU已用调用返回值确认并解除HID服务缺失。下一步取得显示发现和提交结果。继续使用保留日志、已实测的macoslog快照与独立屏幕区；VM的PL011串口不作为实机日志通道 |
 | P2 | [kqworkloop限制修正](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/patches/xnu-12377/0005-no-kqworkloop-limits-launchd-sets-3-10-daemons-need-.patch) | 将动态workloop软硬上限设为无限制，针对其opendirectoryd失败 | 先记录sheng实际服务退出及限制值。只有出现同因失败才做局部开发开关；现在不取消全局限制 |
 | P1 | [DroidVMDisplay](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp) | 接IOMobileFramebuffer交换队列，CPU复制IOSurface到启动帧缓冲，并处理交换完成；代码另有27与26.5的交换记录适配 | 用户态已持续运行，接下来参考服务发现、用户客户端打开、提交、VBL和完成通知契约。使用25F71对应接口，单独验证sheng物理帧缓冲映射、步长和缓存属性 |
-| P3 | [Metal前端](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/metal/NativeAdrenoMetalPlugin.mm)与[GPU服务](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/kext/DroidVMGpuKext.cpp) | 连接IOGPU服务发现、Metal插件、NativeBridge和Turnip；部分未提供方法动态返回零 | 可参考插件发现与用户客户端接口。源码不能证明完整渲染正确或sheng物理Adreno可用；GPU后端、内存、提交、同步与显示各自验收 |
+| P0 | [Metal前端](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/metal/NativeAdrenoMetalPlugin.mm)与[GPU服务](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/kext/DroidVMGpuKext.cpp) | 连接IOGPU服务发现、Metal插件、NativeBridge和Turnip；部分未提供方法动态返回零 | 可参考插件发现与用户客户端接口。源码不能证明完整渲染正确或sheng物理Adreno可用；GPU后端、内存、提交、同步与显示各自验收 |
 
 ## 已确认不直接适用的补丁
 
@@ -62,3 +62,17 @@ NativeGOPDisplay实际启动800×600，用户态服务发现已通过。
 
 同一候选的原版显示打开函数返回0、输出连接非空，输入记录为primary显示。
 原版用户客户端路径已通过；仍需验证IOSurface复制、交换完成和画面内容。
+
+
+## 当前首帧阻断：原版Metal设备等待超时
+
+真实WindowServer异常栈已定位到WSSystemCanCompositeWithMetal的once block调用abort，
+EXC_CRASH/SIGABRT与原版“No suitable Metal devices present after %llu seconds.”分支一致。
+显示枚举、打开及开屏均已通过，尚无可用Metal设备及第一帧。
+因此Metal前端提升为当前渲染依赖；复制GOP scanout本身无法满足设备发现。
+
+重新核对固定版本NativeAdrenoMetalPlugin：IOGPUMetalDevice负责插件加载，
+实际设备由native_bridge_metal_open创建，并依赖Turnip及AGXAccelerator用户客户端。
+其动态缺失方法返回零用于接口调查，不能作为sheng完整渲染实现。
+原版25F71保留CompositorSW路径，下一项先验证原版软件合成入口及像素输出；
+该路径尚未运行通过，不能据此声称软件桌面可用。
