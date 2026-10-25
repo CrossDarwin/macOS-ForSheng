@@ -17,6 +17,7 @@ from observe_macos26_kernel import identify, ROOT, NATIVE_BOOT_ARGS
 from package_reference_xnu import vendor_dtbs
 from native_devtree import configure_native_text_state
 from build_macos26_storage import PROTOCOL_CHARACTERISTICS
+from native_log_file import CONTRACT as LOG_CONTRACT, BLOCK as LOG_BLOCK, decode as decode_log_file
 
 
 def qualify(build, observation, bootstrap, default_off, installed, plan, root_build, *, with_isc=False):
@@ -143,6 +144,55 @@ def qualify_isc_overlay(build, observation, identity, root_uuid):
     return observed
 
 
+def qualify_macoslog(build, observation, readonly, deployment, identity):
+    installed = json.loads(deployment.read_text())
+    compiled = json.loads((build/'security-relink.json').read_text())['storage_driver']['build'].get('macoslog', {})
+    sources = compiled.get('source_sha256', {})
+    if (compiled.get('contract') != LOG_CONTRACT or compiled.get('default_off') is not True
+            or compiled.get('writes_confined_to_preallocated_file') is not True
+            or compiled.get('filesystem_metadata_writes') is not False
+            or any(sources.get(name) != hashlib.sha256((ROOT/'platform/sheng/macos26/storage'/name).read_bytes()).hexdigest()
+                   for name in ('macoslog_layout.h', 'macoslog_worker.h'))):
+        raise ValueError('requires the current compiled default-off owned log file worker')
+    first = installed.get('file_first_lba', 0)
+    if (installed.get('status') != 'verified' or installed.get('partition') != '/dev/block/sde78'
+            or installed.get('gpt_writes') is not False or installed.get('gpt_unchanged') is not True
+            or installed.get('existing_allocations_preserved') is not True
+            or not installed.get('image_sha256') or installed['image_sha256'] != installed.get('readback_sha256')
+            or not LOG_CONTRACT['partition_first'] < first <= 464896-512):
+        raise ValueError('requires the verified preallocated macoslog file deployment')
+    for folder, state in ((readonly, 2), (observation, 3)):
+        observed = json.loads((folder/'result.json').read_text())
+        backend = json.loads((folder/'macoslog-backend.json').read_text())
+        values = observed.get('observed_globals', {})
+        if (observed.get('kernel_sha256') != identity['kernel_sha256'] or observed.get('uuid') != identity['uuid']
+                or backend.get('kernel_sha256') != identity['kernel_sha256'] or backend.get('uuid') != identity['uuid']
+                or backend.get('schema') != 'sheng-macoslog-qemu-v1' or backend.get('transport_mocked') is not True
+                or backend.get('production_worker_used') is not True or backend.get('outside_file_unchanged') is not True
+                or backend.get('guard_unchanged') is not True or backend.get('writes_confined_to_owned_file') is not True
+                or backend.get('image_before_sha256') != installed['image_sha256']
+                or backend.get('file_first_lba') != first
+                or values.get('_native_macoslog_state') != hex(state)
+                or values.get('_native_macoslog_error') != '0x0'
+                or values.get('_native_macoslog_first_lba') != hex(first)):
+            raise ValueError('requires exact-candidate readonly and committed log observations')
+        if state == 2:
+            if (backend.get('write_calls') != 0 or backend.get('sync_calls') != 0
+                    or values.get('_native_macoslog_snapshots') != '0x0'):
+                raise ValueError('readonly log validation issued writes')
+        else:
+            if (int(values.get('_native_macoslog_snapshots', '0x0'), 16) < 2
+                    or backend.get('write_calls', 0) < 4 or backend.get('sync_calls', 0) < 4):
+                raise ValueError('requires two committed log banks and ordered synchronization')
+            data = (folder/'macoslog.bin').read_bytes()
+            _, decoded = decode_log_file(data, identity['uuid'])
+            if (struct.unpack_from('<Q', data, len(data)-LOG_BLOCK+48)[0] != first
+                    or decoded['generation'] != int(values.get('_native_macoslog_generation', '0x0'), 16)):
+                raise ValueError('file readback generation differs from the stopped worker')
+    return dict(file_first_lba=first, generation=decoded['generation'],
+                hardware_write_qualified=False, full_history=False, final_panic_guaranteed=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kernel-build', type=Path, required=True)
@@ -162,11 +212,18 @@ def main():
                         help='expose the paired ISC seed through a bounded volatile RAM overlay')
     parser.add_argument('--dyld-observation', type=Path,
                         help='matching original launchd main execution with the explicit development flag')
+    parser.add_argument('--macoslog-observation', type=Path,
+                        help='matching native worker snapshot commits through an owned-file QEMU backend')
+    parser.add_argument('--macoslog-readonly-observation', type=Path)
+    parser.add_argument('--macoslog-deployment', type=Path)
     args = parser.parse_args()
     if args.development_no_ignition != bool(args.dyld_observation):
         parser.error('--development-no-ignition and --dyld-observation must be used together')
     if args.isc_overlay and not args.development_no_ignition:
         parser.error('--isc-overlay requires the qualified explicit development root')
+    log_options = (args.macoslog_observation, args.macoslog_readonly_observation, args.macoslog_deployment)
+    if any(log_options) and not all(log_options):
+        parser.error('macoslog requires write, readonly and deployment evidence together')
     kernel, symbols, identity, media, partition = qualify(args.kernel_build,
         args.qemu_observation, args.bootstrap_observation, args.default_off_observation,
         args.root_deployment, args.partition_plan, args.root_build, with_isc=args.isc_overlay)
@@ -213,6 +270,11 @@ def main():
     if args.isc_overlay:
         qualify_isc_overlay(args.kernel_build, args.dyld_observation, identity, args.root_volume_uuid)
         boot_args += ' native-ufs-isc-overlay=1'
+    log_qualification = None
+    if args.macoslog_observation:
+        log_qualification = qualify_macoslog(args.kernel_build, args.macoslog_observation,
+            args.macoslog_readonly_observation, args.macoslog_deployment, identity)
+        boot_args += ' native-ufs-macoslog=2'
     args.output.mkdir(parents=True, exist_ok=False)
     try:
         with tempfile.TemporaryDirectory(dir=args.output) as temporary:
@@ -277,6 +339,7 @@ def main():
                 development_no_ignition=args.development_no_ignition,
                 isc_overlay=args.isc_overlay, isc_disk_writes=False,
                 isc_overlay_persistent=False, isc_overlay_limit_bytes=(64 << 20) if args.isc_overlay else 0,
+                macoslog=log_qualification,
                 dyld_observation=str(args.dyld_observation.resolve()) if args.dyld_observation else None,
                 root_variant='recoveryos', recovery_transport_is_not_authentication=True,
                 deployment_scope='fastboot boot only; no boot/recovery/UEFI partition flashing')

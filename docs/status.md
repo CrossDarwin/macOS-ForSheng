@@ -1692,3 +1692,11 @@ mode 1仅验证，默认关闭。文件由Recovery在既有FAT16中预分配，�
 实际生产UFS命令通过LUN4边界与SYNCHRONIZE CACHE目标LUN测试；
 QEMU还验证RAM快照不夺取忙碌writer，且原有panic文字区保持独立。
 当前这些结果不包含新候选完整XNU启动或物理UFS日志写入，尚未宣称实机修复完成。
+
+
+既有macoslog的64MiB FAT16完整备份已保存。原有空闲簇洞会让普通mcopy生成碎片文件，
+离线预分配已改为只从原始空闲簇中选择连续2MiB，并逐簇核对原有FAT链、目录项和数据未变。
+SHENGLOG.BIN已在实机创建，首LBA448535，文件末块为只读归属标记。
+整分区回读SHA256为1efe6fe6550711cb327213553adeb7f9ec162b00bd3c805980b678fb6956007d，
+与准备镜像一致；主备GPT保持原样，设备再次恢复Android槽a、boot_completed=1。
+此时文件尚无内核运行时快照，不能把预分配成功写成内核日志写盘成功。

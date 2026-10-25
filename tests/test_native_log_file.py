@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Exercise production FAT ownership checks and interrupted snapshot commits."""
 import ctypes
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -229,6 +230,59 @@ class NativeLogFile(unittest.TestCase):
         self.assertEqual(decode(bytes(volume[self.offset:self.offset+FILE_BYTES]), identity)[1]['generation'], 2)
         volume[self.offset+FILE_BYTES-1] ^= 1
         self.assertEqual(run(volume, 2), [5, 0, 3, 0, 0, 0, 0])
+
+    def test_package_requires_both_modes_current_sources_and_matching_readback(self):
+        from package_macos26_ufs import qualify_macoslog
+        base = self.path/'qualification'
+        build, readonly, write = (base/name for name in ('build', 'readonly', 'write'))
+        for path in (build, readonly, write):
+            path.mkdir(parents=True)
+        identity = dict(kernel_sha256='kernel', uuid='12345678-1234-5678-9012-345678901234')
+        first = self.record['file_first_lba']
+        metadata = dict(contract=CONTRACT, default_off=True, filesystem_metadata_writes=False,
+            writes_confined_to_preallocated_file=True,
+            source_sha256={name: hashlib.sha256((ROOT/'platform/sheng/macos26/storage'/name).read_bytes()).hexdigest()
+                           for name in ('macoslog_layout.h', 'macoslog_worker.h')})
+        (build/'security-relink.json').write_text(json.dumps(dict(storage_driver=dict(build=dict(macoslog=metadata)))))
+        deployed = dict(status='verified', partition='/dev/block/sde78', file_first_lba=first,
+            gpt_writes=False, gpt_unchanged=True, existing_allocations_preserved=True,
+            image_sha256='seed', readback_sha256='seed')
+        deployment = base/'deployment.json'
+        deployment.write_text(json.dumps(deployed))
+        payload = bytearray(21*BLOCK)
+        struct.pack_into('<8s4I2Q2I8Q16s', payload, 0, b'SHNLOG01', 1, 128, 16384, 65536,
+                         0, 0, 0, 0, *([0]*8), uuid.UUID(identity['uuid']).bytes)
+        file = bytearray(FILE_BYTES)
+        file[-BLOCK:] = guard(first)
+        for generation in (1, 2):
+            self.assertTrue(self.lib.commit((ctypes.c_ubyte*FILE_BYTES).from_buffer(file), generation,
+                                            bytes(payload), self.fid, 0, (ctypes.c_uint*4)()))
+        (write/'macoslog.bin').write_bytes(file)
+        for folder, state, count in ((readonly, 2, 0), (write, 3, 2)):
+            backend = dict(identity, schema='sheng-macoslog-qemu-v1', transport_mocked=True,
+                production_worker_used=True, outside_file_unchanged=True, guard_unchanged=True,
+                writes_confined_to_owned_file=True, image_before_sha256='seed', file_first_lba=first,
+                write_calls=count*2, sync_calls=count*2)
+            values = dict(_native_macoslog_state=hex(state), _native_macoslog_error='0x0',
+                _native_macoslog_first_lba=hex(first), _native_macoslog_snapshots=hex(count),
+                _native_macoslog_generation=hex(count))
+            (folder/'result.json').write_text(json.dumps(dict(identity, observed_globals=values)))
+            (folder/'macoslog-backend.json').write_text(json.dumps(backend))
+        result = qualify_macoslog(build, write, readonly, deployment, identity)
+        self.assertEqual(result['generation'], 2)
+        self.assertFalse(result['hardware_write_qualified'])
+        stale = dict(identity, kernel_sha256='other')
+        with self.assertRaisesRegex(ValueError, 'exact-candidate'):
+            qualify_macoslog(build, write, readonly, deployment, stale)
+        file[-1] ^= 1
+        (write/'macoslog.bin').write_bytes(file)
+        with self.assertRaisesRegex(ValueError, 'guard'):
+            qualify_macoslog(build, write, readonly, deployment, identity)
+        observed = json.loads((readonly/'macoslog-backend.json').read_text())
+        observed['write_calls'] = 1
+        (readonly/'macoslog-backend.json').write_text(json.dumps(observed))
+        with self.assertRaisesRegex(ValueError, 'readonly'):
+            qualify_macoslog(build, write, readonly, deployment, identity)
 
     def test_installer_stale_source_single_transfer_and_uncertain_outcome(self):
         import install_native_log_file as installer

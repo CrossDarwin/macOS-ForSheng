@@ -35,6 +35,7 @@ static IOReturn hostWrite4k(uint8_t lun, uint64_t lba, unsigned blocks, const vo
     memcpy(image+(lba-448512)*4096, data, blocks*4096); return 0;
 }
 static IOReturn hostMacosLogSync() { assert(gMacosLogOpen); syncCalls++; return 0; }
+static IOReturn hostMacosLogReady() { return 0; }
 struct IOLock {};
 static IOLock *IOLockAlloc() { allocated++; return new IOLock; }
 static void IOLockFree(IOLock *p) { freed++; delete p; }

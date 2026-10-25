@@ -59,12 +59,28 @@
    IOLockUnlock (gHost.lock);
    return status;
  }
-@@ -318,3 +332,14 @@
+@@ -318,3 +332,30 @@
    return status;
  }
  
 +
 +#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++// Clear initial LUN readiness conditions before any GPT read; writes are never retried.
++static IOReturn hostMacosLogReady(void) {
++  if (!gHost.ready) return kIOReturnNotReady;
++  IOReturn status = kIOReturnNotReady;
++  for (unsigned attempt = 0; attempt < 4; attempt++) {
++    IOLockLock(gHost.lock);
++    uint8_t cdb[6] = {}; uint32_t scsi = 0;
++    status = hostScsi(4, cdb, 6, false, 0, 200000, &scsi);
++    uint32_t sense = (gRootDiagnostic.sense >> 16) & 15;
++    IOLockUnlock(gHost.lock);
++    if (status == kIOReturnSuccess) return status;
++    if (gHost.poisoned || status != kIOReturnNotReady || (sense != 2 && sense != 6)) break;
++    IODelay(1000);
++  }
++  return status;
++}
 +static IOReturn hostMacosLogSync(void) {
 +  if (!gHost.ready || !gMacosLogOpen) return kIOReturnNotReady;
 +  IOLockLock(gHost.lock);

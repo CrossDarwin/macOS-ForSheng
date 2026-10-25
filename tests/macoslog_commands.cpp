@@ -10,6 +10,8 @@
 int main() {
     reset();
     gMacosLogOpen = false;
+    assert(hostMacosLogReady() == kIOReturnSuccess);
+    assert(device[kUcdOffset+2] == 4 && device[kUcdOffset+16] == 0);
     std::array<uint8_t, 21*4096> data{};
     assert(hostWrite4k(4, 448600, 1, data.data()) == kIOReturnBadArgument);
     assert(!hostMacosLogOpen(448512, 511));
@@ -34,6 +36,8 @@ int main() {
     assert(hostStoreOpen(100, 2));
     assert(hostWrite4k(0, 100, 1, data.data()) == kIOReturnSuccess);
     assert(cmd[2] == 0);
+    reset(Fault::CheckCondition);
+    assert(hostMacosLogReady() == kIOReturnNotReady && now == 4000 && !gHost.poisoned);
     reset(Fault::Timeout);
     assert(hostWrite4k(4, 448600, 1, data.data()) != kIOReturnSuccess);
     assertQuarantined();

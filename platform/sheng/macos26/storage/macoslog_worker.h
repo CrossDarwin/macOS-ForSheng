@@ -58,6 +58,10 @@ static void mlThread(void *argument, wait_result_t) {
     uint64_t first = 0, generation = 0, lastTotal = UINT64_MAX, lastDropped = UINT64_MAX;
     bool failed = !scratch || !payload || !sheng_log_snapshot_copy;
     native_macoslog_state = 1;
+    if (!failed) {
+        IOReturn status = hostMacosLogReady();
+        if (status != kIOReturnSuccess) { native_macoslog_error = static_cast<uint32_t>(status); failed = true; }
+    }
     if (!failed) failed = !mlOpen(scratch, first, generation);
     if (!failed) {
         native_macoslog_state = 2;
