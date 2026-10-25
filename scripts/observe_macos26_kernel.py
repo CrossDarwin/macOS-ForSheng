@@ -89,6 +89,8 @@ def main() -> None:
     parser.add_argument('--capture-screen', action='store_true', help='save the actual QEMU framebuffer')
     parser.add_argument('--handoff-pause', action='store_true', help='exercise the ten-second hardware handoff capture window')
     parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
+    parser.add_argument('--native-gop-display', action='store_true',
+                        help='enable the paired CPU GOP companion and its native display descriptor')
     parser.add_argument('--checkpoint', choices=('arm_init', 'arm_vm_init',
                         'PE_create_console', 'bsd_init', 'IOFindBSDRoot',
                         'native_virtio_read_checkpoint', 'bsdinit_task', 'load_init_program',
@@ -162,6 +164,13 @@ def main() -> None:
             if name in addresses and addresses[name] != value:
                 raise ValueError('transport symbol collides with the native kernel')
             addresses[name] = value
+    if args.native_gop_display:
+        display = component_map.get('storage_driver', {})
+        contract = display.get('build', {}).get('native_gop_display', {})
+        if (contract.get('default_off') is not True or contract.get('required_cpus') != 1
+                or display.get('display_vtable_abi', {}).get('slots') != 473
+                or not display.get('display_vtable_abi', {}).get('pac_metadata_matches')):
+            parser.error('GOP observation requires the actual paired, ABI-audited display companion')
     if args.follow_init_entry and args.checkpoint != 'thread_setentrypoint':
         parser.error('following init requires the thread_setentrypoint checkpoint')
     if args.follow_init_entry and args.root_hash_payload:
@@ -283,6 +292,12 @@ def main() -> None:
         record['loader_sha256'] = loader['sha256']
         shutil.copy2(kernel, payload / 'kernel.macho')
         boot_args = NATIVE_BOOT_ARGS
+        if args.native_gop_display:
+            if boot_args.split().count('cpus=1') != 1 or any(
+                    item.startswith('cpus=') and item != 'cpus=1' for item in boot_args.split()):
+                raise ValueError('GOP display handoff requires exactly one configured CPU')
+            boot_args += ' native-gop-display=1'
+        record['native_gop_display'] = args.native_gop_display
         if args.qemu_no_ignition:
             if '_sheng_qemu_no_ignition_enabled' not in addresses:
                 raise ValueError('kernel lacks the guarded QEMU skipIgnition path')
@@ -344,7 +359,8 @@ def main() -> None:
         configure_native_text_state(payload / 'kernel.macho.adt',
                                     development_root=args.qemu_development_root, root_hash=root_hash,
                                     boot_volume_uuid=args.root_volume_uuid if root_hash is not None else None,
-                                    platform_uuid=args.qemu_platform_uuid)
+                                    platform_uuid=args.qemu_platform_uuid,
+                                    native_gop_display=args.native_gop_display)
         record['qemu_development_root'] = args.qemu_development_root
         record['qemu_platform_uuid'] = str(args.qemu_platform_uuid) if args.qemu_platform_uuid else None
         record['qemu_memory_mib'] = args.qemu_memory_mib

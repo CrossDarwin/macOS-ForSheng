@@ -31,9 +31,11 @@ def seed_vm_nvram_uuid(image: bytes, identity: uuid.UUID) -> bytes:
 def configure_native_text_state(path: Path, *, development_root: bool = False,
                                 root_hash: bytes | None = None,
                                 boot_volume_uuid: uuid.UUID | None = None,
-                                platform_uuid: uuid.UUID | None = None) -> None:
+                                platform_uuid: uuid.UUID | None = None,
+                                native_gop_display: bool = False) -> None:
     data = path.read_bytes()
     chosen = asmb = auth = options = proxies = 0
+    arm_io = gop_nodes = 0
     if root_hash is not None and not 16 <= len(root_hash) <= 16384:
         raise ValueError('invalid raw root-hash payload size')
 
@@ -46,7 +48,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
         raise ValueError('synthetic platform UUID is restricted to the development fixture')
 
     def node(at: int, parents: tuple[str, ...] = ()) -> tuple[bytes, int]:
-        nonlocal chosen, asmb, auth, options, proxies
+        nonlocal chosen, asmb, auth, options, proxies, arm_io, gop_nodes
         if len(parents) > 32 or at + 8 > len(data):
             raise ValueError('invalid generated device-tree node')
         count, children = struct.unpack_from('<II', data, at)
@@ -87,6 +89,12 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
             options += 1
             ensure('platform-uuid', platform_uuid.bytes)
         is_chosen = location == ('device-tree', 'chosen')
+        if native_gop_display and location == ('device-tree', 'arm-io'):
+            arm_io += 1
+        if native_gop_display and location == ('device-tree', 'arm-io', 'native-gop'):
+            gop_nodes += 1
+            ensure('device_type', b'display-subsystem\0')
+            ensure('compatible', b'sheng,gop-framebuffer\0')
         if root_hash is not None and location == ('device-tree', 'chosen', 'secure-boot-hashes'):
             auth += 1
             ensure('system-volume-auth-blob', root_hash)
@@ -107,6 +115,16 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
         for _ in range(children):
             child, at = node(at, location)
             descendants.extend(child)
+        if native_gop_display and location == ('device-tree', 'arm-io') and not gop_nodes:
+            # The original framework counts display-subsystem descriptors before matching services.
+            entries = (('name', b'native-gop\0'), ('device_type', b'display-subsystem\0'),
+                       ('compatible', b'sheng,gop-framebuffer\0'))
+            descendants.extend(struct.pack('<II', len(entries), 0))
+            for key, value in entries:
+                descendants.extend(struct.pack('<32sI', key.encode(), len(value)) +
+                                   value + bytes(-len(value) % 4))
+            children += 1
+            gop_nodes += 1
         if development_root and is_chosen and asmb == 0:
             entries = (('name', b'asmb\0'), ('lp-sip0', struct.pack('<Q', 0)),
                        ('lp-sip1', struct.pack('<I', 1)))
@@ -129,6 +147,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
     result, end = node(0)
     if (end != len(data) or chosen != 1 or development_root and asmb != 1
             or root_hash is not None and auth != 1
-            or platform_uuid is not None and (options != 1 or proxies != 1)):
+            or platform_uuid is not None and (options != 1 or proxies != 1)
+            or native_gop_display and (arm_io != 1 or gop_nodes != 1)):
         raise ValueError('requires one complete generated /chosen node')
     path.write_bytes(result)

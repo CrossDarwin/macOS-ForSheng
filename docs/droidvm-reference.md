@@ -38,3 +38,19 @@ sheng已在QEMU和实机执行25F71原版launchd，挂载ISC三个角色卷并�
 3. QEMU已通过配套IOHIDSystem查找、用户客户端打开和共享内存创建。接下来记录显示发现和提交，保持原版SkyLight错误判断。
    实机exit(1)不单独证明HID或显示的具体失败调用；没有同因证据时不跳过服务检查。
 4. 显示服务和用户客户端建立后，再验证实际帧缓冲映射、交换完成及输入，最后验证GPU后端。
+
+## 已实现的GOP接入与尚未通过的部分
+
+显示源和ABI header按固定提交、完整哈希获取。增量补丁位于
+platform/sheng/macos26/display/0001-native-gop-display.patch。
+新类NativeGOPDisplay与UFS放在同一个board companion bundle，匹配类别和生命周期各自独立。
+不发布AppleParavirtGPU服务，不转换27版swap记录；26.5内核、kext及用户空间保持配套。
+物理GOP缓存属性、服务发现和交换完成均需运行证据，现阶段没有GPU加速资格。
+
+原版25F71 IOMobileFramebuffer.framework在查询服务前，先枚举IODeviceTree:/arm-io的子节点，
+按device_type为display-subsystem或ext-display-subsystem统计显示管线。
+只有参考数量大于已枚举服务数量时才进入IOMobileFramebuffer匹配与等待路径。
+因此可选--native-gop-display同时描述一个sheng,gop-framebuffer显示子系统，并开启默认关闭的驱动。
+这描述启动帧缓冲的一个显示管线，不表示存在Apple DCP或虚拟GPU。
+缺少arm-io、描述冲突或重复节点时拒绝生成；未开启选项时不新增显示节点。
+实际框架是否完成服务匹配和主显示连接仍待QEMU验证。

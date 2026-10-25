@@ -109,6 +109,28 @@ class NativeTree(unittest.TestCase):
             configure_native_text_state(self.path, development_root=True, platform_uuid=self.vm)
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_gop_descriptor_is_explicit_native_and_idempotent(self):
+        self.path.write_bytes(node('device-tree', children=(node('chosen'), node('arm-io'))))
+        configure_native_text_state(self.path)
+        self.assertNotIn(('device-tree', 'arm-io', 'native-gop'), read_tree(self.path.read_bytes()))
+        configure_native_text_state(self.path, native_gop_display=True)
+        before = self.path.read_bytes()
+        display = read_tree(before)[('device-tree', 'arm-io', 'native-gop')]
+        self.assertEqual(display['device_type'], b'display-subsystem\0')
+        self.assertEqual(display['compatible'], b'sheng,gop-framebuffer\0')
+        self.assertNotIn(b'paravirtualizedgraphics', before)
+        configure_native_text_state(self.path, native_gop_display=True)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_missing_or_conflicting_gop_descriptor_is_refused(self):
+        for children in ((node('chosen'),), (node('chosen'), node('arm-io', children=(
+                node('native-gop', (('compatible', b'other-display\0'),)),)))):
+            self.path.write_bytes(node('device-tree', children=children))
+            before = self.path.read_bytes()
+            with self.assertRaises(ValueError):
+                configure_native_text_state(self.path, native_gop_display=True)
+            self.assertEqual(self.path.read_bytes(), before)
+
     def test_actual_sheng_recovery_tree_preserves_hardware_identity(self):
         generator = Path(__file__).resolve().parents[1] / 'UniXNU-sheng/scripts/make-sheng-adt.py'
         if not generator.exists():
