@@ -1649,3 +1649,22 @@ configd、fskitd、securityd及WindowServer已有执行日志。尚无可用图�
 未见最终panic，但这是人为结束的有限观察，不能据此宣称长期稳定。
 控制台记录82字节busy-writer丢失，不能称为完整无损日志。
 现场保存在private/experiments/20261025-native-arm64e/ufs-isc-40177580007/recovery-services-4g。
+
+### ISC已追加到实机macosroot并完整回读，新版待录像
+
+仅向原macosroot的1579155456字节处追加2149580800字节ISC种子，再提交4096字节双窗口清单。
+没有重写原有BaseSystem，没有GPT、槽位或Android userdata变更。
+全根3728736256字节回读SHA256为3246bc6e88aea6d20c0f1296b24d8510274ae3526d8ecd5a6f3200a9182c7b44，
+与准备好的镜像完全一致，Android已恢复boot_completed=1、a槽。
+
+Recovery Toybox不支持iflag=fullblock，首轮在写入前的读取校验退出，没有写分区；
+改用实际支持的count_bytes，以字节限制ADB管道短读，设备RAM临时文件已验证限制有效。
+实际写入后，分区节点读到新清单，父sda节点仍读到旧清单；显式flushbufs两条路径后结果一致。
+保留初次失败记录，随后只读复核并完成全镜像SHA，不重试写入。
+更新工具已加入别名缓存刷新，定向测试模拟独立父节点缓存。
+
+新版菜单SHENG macOS 26 - UFS+ISC 4423A7AA，容器150663168字节，
+SHA256 27fadeccda9f171d77eecdc94c63c0b752b131085452c6958b780c4df96a3460。
+封装实际通过同UUID启动汇编、根发现、默认拒绝、三个ISC角色卷及真实写入/同步的检查。
+当前仅已具备实机临时启动条件，尚未发送这版；用户录像准备待确认。
+旧D86D84A7部署镜像和ADT已移除，配套原始内核、符号及视频证据保留。
