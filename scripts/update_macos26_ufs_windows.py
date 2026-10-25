@@ -105,6 +105,10 @@ def update(device, plan_dir, previous_root, previous_deployment, candidate_dir, 
             or device.shell(f'ls -A /sys/class/block/sda{plan["root_index"]}/holders')):
         raise ValueError('kernel macosroot node is not the admitted unmounted extent')
     old_manifest = (previous_root / 'manifest.bin').read_bytes()
+    # Partition and parent block nodes have distinct caches in Recovery.
+    def flush_aliases():
+        device.shell(f'blockdev --flushbufs {PARTITION} && blockdev --flushbufs /dev/block/sda', timeout=120)
+    flush_aliases()
     if device.read(plan['root_first_lba'], 1) != old_manifest:
         raise ValueError('current manifest differs; no automatic rewrite')
     def remote_digest(offset, size):
@@ -143,6 +147,7 @@ def update(device, plan_dir, previous_root, previous_deployment, candidate_dir, 
                            input=manifest, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
         record['manifest_committed'] = True
         save()
+        flush_aliases()
         if device.read(plan['root_first_lba'], 1) != manifest:
             raise ValueError('manifest readback differs; no automatic retry')
         record['status'] = 'verifying-complete-root'

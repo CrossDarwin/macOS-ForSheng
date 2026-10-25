@@ -59,6 +59,7 @@ class UpdateWindows(unittest.TestCase):
         (self.candidate / 'manifest.bin').write_bytes(header)
         (self.candidate / 'build.json').write_text(json.dumps(self.new))
         self.current = bytearray((self.previous / 'macosroot.img').read_bytes())+bytearray(MIB)
+        self.parent_manifest = bytes(self.current[:BLOCK])
         old_digest = hashlib.sha256(self.current[:2*MIB]).hexdigest()
         self.plan['root_image_sha256'] = old_digest
         (self.plan_dir / 'plan.json').write_text(json.dumps(self.plan))
@@ -76,10 +77,13 @@ class UpdateWindows(unittest.TestCase):
             def read(self, start, count):
                 if start == owner.plan['root_first_lba']:
                     assert count == 1
-                    return bytes(owner.current[:BLOCK])
+                    return owner.parent_manifest
                 return copies['primary' if start == 0 else 'secondary']
             def shell(self, command, **kwargs):
                 self.commands.append(command)
+                if '--flushbufs' in command:
+                    owner.parent_manifest = bytes(owner.current[:BLOCK])
+                    return ''
                 if command.startswith('readlink'):
                     return '/dev/block/sda'+str(owner.plan['root_index'])
                 if command.startswith('blockdev --getsize64'):
@@ -122,6 +126,7 @@ class UpdateWindows(unittest.TestCase):
         self.assertTrue(record['readback_verified'])
         self.assertTrue(record['manifest_committed'])
         self.assertFalse(record['base_system_written'])
+        self.assertEqual(sum('--flushbufs' in command for command in self.device.commands), 2)
 
     def test_bad_isc_readback_keeps_original_manifest_without_retry(self):
         header = bytes(self.current[:BLOCK])
