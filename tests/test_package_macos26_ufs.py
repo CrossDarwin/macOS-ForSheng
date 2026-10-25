@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import json
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
@@ -24,7 +25,7 @@ class UfsPackage(unittest.TestCase):
         self.identity = dict(kernel_sha256='kernel', uuid='uuid')
         self.observed = dict(self.identity, reached=True, checkpoint='IOFindBSDRoot',
             source_crypto_initialized=True, bootstrap_diagnostic_disarmed=True,
-            observed_globals=dict(_sheng_panel_ready='0x1', _sheng_panel_witness='0x1', _sheng_console_rows='0x18'),
+            observed_globals=dict(_sheng_panel_ready='0x1', _sheng_panel_witness='0x1', _sheng_console_rows='0x18', _sheng_panel_bound_rows='0x18'),
             original_component_interfaces={n: dict(registered=True, within_original_module=True)
                 for n in ('_g_crypto_funcs', '_img4if', '_amfi', '_libCoreEntitlements', '_pthread_functions')})
         self.bootstrap = dict(self.identity, reached_c_entry=True, instruction_and_args_match=True,
@@ -55,6 +56,9 @@ class UfsPackage(unittest.TestCase):
                              (self.folder / 'plan.json', self.plan),
                              (self.folder / 'root.json', self.root)):
             path.write_text(json.dumps(record))
+        panel = ROOT / 'platform/sheng/macos26/patches/0051-native-multiline-panic-panel.patch'
+        (self.paths[0] / 'build.json').write_text(json.dumps(dict(patches={
+            str(panel.relative_to(ROOT)): hashlib.sha256(panel.read_bytes()).hexdigest()})))
         with patch('package_macos26_ufs.identify', return_value=(Path('kernel'), {}, self.identity)):
             return qualify(*self.paths, *(self.folder / name for name in ('installed.json', 'plan.json', 'root.json')))
 
@@ -71,6 +75,11 @@ class UfsPackage(unittest.TestCase):
         self.observed['kernel_sha256'] = 'kernel'
         self.off['memory']['1:4'] = '01000000'
         with self.assertRaisesRegex(ValueError, 'touched hardware'):
+            self.run_qualification()
+
+    def test_computed_rows_do_not_qualify_a_six_row_binding(self):
+        self.observed['observed_globals']['_sheng_panel_bound_rows'] = '0x6'
+        with self.assertRaisesRegex(ValueError, 'exact native kernel'):
             self.run_qualification()
 
     def test_wrong_partition_or_root_content_is_refused(self):

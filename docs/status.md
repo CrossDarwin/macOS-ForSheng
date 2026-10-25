@@ -1386,3 +1386,16 @@ private/experiments/20261025-native-arm64e/ufs-logfix。
 上一份40120646478部署镜像和配套ADT已销毁，诊断、符号和恢复输入保留。
 下一轮验证NEXTLOG请求建立、实机首次panic详情及重启后的捕获文件。
 尚未部署本候选，跨重启RAM捕获仍未验收，Android仍处于可启动状态。
+
+
+### 本轮恢复包与面板资格纠正
+
+40124513764实机照片仍显示根卷等待，未显示新增计数。
+查构建记录确认0051未加入build_macos26_xnu.py的显式PATCHES，原24行资格只检查
+sheng_console_rows的计算值，没有核对arm_init实际传给绑定函数的行数。此前“大面板已在此内核通过”的结论撤回。
+独立渲染器的24行/防覆盖结果保留。现加入0051、记录实际sheng_panel_bound_rows，封装同时要求
+编译补丁SHA与真实绑定24行；6行绑定即使计算值为24也拒绝。定向4项封装测试通过，Linux准备阶段实际应用0051通过。
+
+首次恢复包显示no boot entry found。Config.c表明这是配置卷未读取，而非ParseKernel拒绝标记。
+20 MiB强制FAT32仅40298簇，EnhancedFatDxe明确拒绝低于FAT16上限的FAT32；已改FAT16，实际40609簇。
+失败部署镜像已销毁，FAT16包已临时启动等待读取结果。尚无自动RAM捕获成功证据。

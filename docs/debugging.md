@@ -3,7 +3,7 @@
 当前25F71 ARM64E实机已进入UFS根卷发布等待，照片记录UFS ROOT FAILURE及期望APFS卷UUID。
 按唯一诊断路径，UFS接管、GPT/清单读取和块服务发布已经走过，APFS卷匹配尚未通过。
 本轮macoslog只读导出没有新增RAM捕获文件，完整实机日志仍未恢复。
-下一版面板按屏幕高度显示6..24行并固定首次panic前部；24行字体和后续日志防覆盖已通过QEMU，尚待实机验证。
+独立渲染器已验证24行字体和防覆盖，但40124513764内核遗漏0051，实际仍绑定6行；原大面板资格结论撤回，构建入口及实际绑定行数检查已补正。
 KDP和UART仍没有实机传输能力。
 
 内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
@@ -36,6 +36,7 @@ python3 scripts/package_native_log_recovery.py \
 
 该包复用已核对的固件载荷，菜单读取不可执行标记。NativeLogSave执行后，ParseKernel拒绝标记并返回菜单；
 它不申请新内核窗口、不重新建立NEXTLOG。返回菜单本身不证明日志保存成功，应从Recovery读回CAP目录和状态文件。
+20 MiB恢复卷使用FAT16并校验簇数；此前强制FAT32只有40298簇，低于EnhancedFatDxe门槛，卷被拒绝，界面显示no boot entry found，保存器没有执行。
 
 root Recovery只读导出：
 

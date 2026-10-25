@@ -78,6 +78,8 @@ void sheng_log_putc(char byte)
     sheng_log_clean(r, 64);
 }
 
+volatile uint64_t sheng_panel_bound_rows;
+
 void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     unsigned rows, unsigned scale)
 {
@@ -90,6 +92,7 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     sheng_panel.stride = stride;
     sheng_panel.columns = columns;
     sheng_panel.rows = rows;
+    sheng_panel_bound_rows = rows;
     sheng_panel.scale = scale;
     sheng_panel_ready = 1;
     sheng_panel_reset();

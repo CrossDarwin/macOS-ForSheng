@@ -449,7 +449,7 @@ def main() -> None:
                             ('_sheng_bootstrap_c_stage', 8),
                             ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
                             ('_sheng_bootstrap_vm_witness', 8),
-                            ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
+                            ('_sheng_panel_ready', 8), ('_sheng_panel_bound_rows', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
                             ('_sheng_status_witness', 8), ('_sheng_status_message', 45),
                             ('_sheng_status_pixels', 8), ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
                             ('_sheng_console_columns', 8), ('_sheng_console_rows', 8), ('_sheng_first_sync_displayed', 8),
@@ -527,7 +527,7 @@ def main() -> None:
                         ('_sheng_bootstrap_c_stage', 8),
                         ('_sheng_bootstrap_vm_stage', 8), ('_sheng_bootstrap_vm_pixels', 8),
                         ('_sheng_bootstrap_vm_witness', 8),
-                        ('_sheng_panel_ready', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
+                        ('_sheng_panel_ready', 8), ('_sheng_panel_bound_rows', 8), ('_sheng_panel_characters', 8), ('_sheng_panel_witness', 8),
                         ('_sheng_status_witness', 8), ('_sheng_status_pixels', 8),
                         ('_sheng_status_row_pa', 8), ('_sheng_status_scale', 8),
                         ('_sheng_console_columns', 8), ('_sheng_console_rows', 8), ('_sheng_first_sync_displayed', 8)):

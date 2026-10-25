@@ -71,6 +71,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0048-qemu-development-dyld-ignition.patch',
     ROOT / 'platform/sheng/macos26/patches/0049-native-boot-prelink-identity.patch',
     ROOT / 'platform/sheng/macos26/patches/0050-native-platform-uuid.patch',
+    ROOT / 'platform/sheng/macos26/patches/0051-native-multiline-panic-panel.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
