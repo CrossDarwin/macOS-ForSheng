@@ -1715,3 +1715,11 @@ RootLayout解析、UFS命令构造及macoslog worker；测试介质来自本地�
 mode 1已通过，日志文件首LBA448535，8589次读取、写入0、同步0。
 mode 2已生成可解码快照并运行原版launchd任务，完整最终结果及物理写入另行记录。
 该QEMU后端不是物理UFS仿真，不能替代实机写入和Recovery回读。
+
+
+本版完整XNU日志验证已完成：25份快照，50次WRITE(10)、50次SYNCHRONIZE CACHE，
+每轮实际遵循payload-write/sync/header-write/sync，错误0。
+文件回读UUID及generation与停止现场一致，保留48098字节控制台内容，busy-dropped=0。
+只读模式未写入，默认拒绝实际返回0；文件外区域和末尾保护块均保持一致。
+原版launchd主函数执行，ISC三个角色卷挂载，ISC RAM层7写2同步、57344字节驻留、失败0。
+以上使用QEMU控制器传输替身，物理UFS写入尚未通过；需要临时启动后Recovery读回才能确认。
