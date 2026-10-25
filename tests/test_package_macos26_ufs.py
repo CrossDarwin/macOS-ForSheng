@@ -83,6 +83,11 @@ class UfsPackage(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'exact native kernel'):
             self.run_qualification()
 
+    def test_smaller_qemu_screen_uses_the_actual_computed_binding(self):
+        self.observed['observed_globals']['_sheng_console_rows'] = '0x11'
+        self.observed['observed_globals']['_sheng_panel_bound_rows'] = '0x11'
+        self.assertEqual(self.run_qualification()[2], self.identity)
+
     def test_unmapped_panic_surface_is_refused(self):
         del self.observed['observed_globals']['_sheng_panic_panel_bound_rows']
         with self.assertRaisesRegex(ValueError, 'exact native kernel'):

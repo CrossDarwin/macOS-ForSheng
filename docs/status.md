@@ -1461,3 +1461,20 @@ AArch64 QEMU实际运行共享头文件，在writer=1、RAM异常头state=3时�
 本次没有证据把根卷失败归因于UUID、读盘或媒体发布中的某一个；后续依靠可读计数区分。
 
 原手动RAM日志恢复部署镜像已销毁，构建元数据和现场保留，缺失UFS固件后端仍未实现。
+
+
+### 相同NativeUfsBlock上层链路在QEMU找到根卷
+
+对40161755752候选做独立QEMU对照：GDB绕过物理hostBringUp和GPT解析，从已部署镜像的离线清单
+提供RootLayout，替换底层hostRead4k为同一离线镜像读取。实际优化后二进制已核对该私有函数的
+参数寄存器，不能按未优化C++声明猜调用约定。ADT禁用VirtIO节点，未让另一个块设备代替UFS子盘。
+真正执行NativeUfsBlock、原版IOBlockStorageDriver、GPT及APFS媒体发布和UUID祖先检查。
+观察到NativeUfs: OS volume ... ready，BSD root: disk1s1，设备路径明确经过NativeUfs/NativeUfsBlock。
+8519次模拟传输读取69771264字节后，到达真实load_init_program入口。
+这说明该候选的上层发布及BaseSystem根路径能够工作；不证明物理UFS传输、GPT读取或sheng挂载成功，
+也没有观察launchd main。现场及明确的模拟边界位于private/experiments/20261025-native-arm64e/ufs-publication-qemu。
+
+独立panic面的CI40164717613成功，原组件重链接UUID A2FEEAC1-01D7-3D5B-A289-58989E5126A2，
+SHA256 f06428a95fc2294f0f66373a57826f971c12d2b1cd91b6943a4c46bd04d099ff。
+800x600 QEMU屏幕按实际几何绑定17行普通日志与16行panic，sheng 3048x2032仍为24+16。
+封装要求绑定行数等于本次计算值且在6..24内，仍拒绝此前“计算24、实际6”的错误，另要求独立panic面实际绑定16行。
