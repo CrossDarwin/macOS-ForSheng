@@ -1768,5 +1768,24 @@ IOHIDCreateSharedMemory(version=4)也返回0。两组均由实际EL0断点、原
 所有原始控制台、调用参数及退出栈均留在本地private/。
 
 下一阶段是显示服务发现、帧缓冲模式和画面提交。现有UniXNU显示ABI明确针对iOS17，不能直接套用26.5。
-配套IOMobileGraphicsFamily依赖审计目前只在Libm中出现115处线性指令解码候选，
-需要区分数学常量表与真实重定位指令；它们尚未作为可执行显示候选放行。
+Libm中的115处线性解码阻断已定位到六段数学常量池，按固定UUID、完整哈希及前后RETAB/PACIBSP边界识别。
+19项内容、边界及UUID变异均被拒绝；真实函数前导指令不在排除范围内。
+包含IOMobileGraphicsFamily、IOSurface及依赖的30组件候选已在QEMU运行到原版WindowServer的HID共享内存返回，
+服务端口0x1703、打开和共享内存返回值均为0。候选SHA256为
+c4d8c5259ad9bcb82cdc4ecaff9aba10ef19d78e17fa63ceb0a3bc8730eeebdd。
+本次在HID返回处结束观察，不能证明WindowServer持续运行或图形Recovery已显示。
+
+### 默认关闭的GOP显示驱动已接入构建，运行资格待验证
+
+新增可选--build-gop-display，要求ARM64E内核及UFS companion。
+源自DroidVM固定提交1dfb172的CPU scanout实现，移除VM GPU身份及macOS27到26.5的swap转换，
+保留原版26.5显示家族的队列、用户客户端及通知。
+source/ABI header单独获取并验证固定哈希，仓库只保存增量补丁和构建工具。
+驱动仅在native-gop-display=1且cpus=1时尝试启动；默认关闭，不表示GPU加速。
+新画面提交时停止普通启动文字覆盖，RAM及持久日志保留，panic面板独立。
+
+本地已核对M1和vma2的473槽名称及PAC判别值、144/6904字节的基类实例尺寸，
+并对旧版参考与M1的legacy函数指令形状和字段位移作比对；PC相对地址归一化不证明外部调用目标等价。
+实际预链接还要求固定M1显示家族UUID及代码段哈希，并核对编译后的473槽和PAC元数据。
+源文件/ABI输入变更与补丁上下文漂移均有拒绝测试。
+尚未通过驱动编译、原生服务发现、实际交换帧和WindowServer持续运行验证，暂无新实机测试镜像。

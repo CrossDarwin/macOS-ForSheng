@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: MIT
+import hashlib
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+from prepare_macos26_gop import prepare
+
+
+class PinnedDisplayInputs(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        (self.root / 'config').mkdir()
+        (self.root / 'patches/DroidVM').mkdir(parents=True)
+        self.output = self.root / 'output'
+        inputs = self.output / 'inputs'
+        inputs.mkdir(parents=True)
+        files = {}
+        for name, data in (('DroidVMDisplay.cpp', b'// upstream\n'),
+                           ('IOMobileFramebufferABI.h', b'// ABI\n')):
+            (inputs / name).write_bytes(data)
+            files[name] = dict(path='overlay/kext/DroidVMDisplay/' + name,
+                              canonical_sha256=hashlib.sha256(data).hexdigest())
+        self.manifest = dict(repository='Droid-VM/macOS-DroidVM', revision='1' * 40,
+                             files=files, abi={'test': True})
+        (self.root / 'config/macos26-gop-reference.json').write_text(json.dumps(self.manifest))
+        (self.root / 'patches/DroidVM/0001-native-gop-display.patch').write_text(
+            '--- a/DroidVMDisplay.cpp\n+++ b/DroidVMDisplay.cpp\n'
+            '@@ -1 +1 @@\n-// upstream\n+// adapted\n')
+
+    def test_cached_build_reapplies_to_pristine_input(self):
+        with patch('urllib.request.urlopen', side_effect=AssertionError('unexpected download')):
+            first = prepare(self.root, self.output)
+            second = prepare(self.root, self.output)
+        self.assertEqual(first, second)
+        self.assertEqual((self.output / 'NativeGOPDisplay.cpp').read_text(), '// adapted\n')
+
+    def test_changed_source_or_header_is_rejected(self):
+        for name in self.manifest['files']:
+            with self.subTest(name=name):
+                path = self.output / 'inputs' / name
+                original = path.read_bytes()
+                path.write_bytes(original + b'// changed\n')
+                with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                    prepare(self.root, self.output)
+                path.write_bytes(original)
+
+    def test_patch_context_drift_is_not_accepted(self):
+        path = self.root / 'patches/DroidVM/0001-native-gop-display.patch'
+        path.write_text(path.read_text().replace('-// upstream', '-// other revision'))
+        import subprocess
+        with self.assertRaises(subprocess.CalledProcessError):
+            prepare(self.root, self.output)

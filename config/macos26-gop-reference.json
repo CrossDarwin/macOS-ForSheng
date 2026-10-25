@@ -1,0 +1,22 @@
+{
+  "revision": "1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9",
+  "repository": "Droid-VM/macOS-DroidVM",
+  "files": {
+    "DroidVMDisplay.cpp": {
+      "path": "overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp",
+      "canonical_sha256": "b88f0bd0b05187bbd6ecd68195c1587f5c64de77c9e0649f54fe2b041e14643e"
+    },
+    "IOMobileFramebufferABI.h": {
+      "path": "overlay/kext/DroidVMDisplay/IOMobileFramebufferABI.h",
+      "canonical_sha256": "842d3c100e799cd96d4334ca58bea6065de2d0c87a4f6e872ae2f4ed8b47bc8f"
+    }
+  },
+  "abi": {
+    "build": "25F71",
+    "family_uuid": "EA3273B7-AF0F-3E06-B0F5-072DFCDD5395",
+    "family_text_sha256": "c86604109bc78eaede626badff4f8f341fb9e93944f9c2b94810233f950c2936",
+    "base_class_bytes": 144,
+    "legacy_class_bytes": 6904,
+    "legacy_slots": 473
+  }
+}

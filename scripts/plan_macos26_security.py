@@ -24,6 +24,29 @@ COMPRESSION_LITERALS = (
      'Adler32 vector weights and reduction constants'),
 )
 
+# These pools follow RETAB and end before the next PACIBSP prologue.
+# LC_FUNCTION_STARTS also labels the sine reduction data, so it is not a code/data boundary.
+LIBM_UUID = '420C6DBE-F8F0-39EA-86BE-E58E80005156'
+LIBM_LITERALS = (
+    (0x454, 2156, '1187961410797e1dca751f916026de525922e55ef569770be507eaa817823a6d', 'exp lookup and coefficients'),
+    (0x10a4, 1260, '5396a940a73ec06075fe8d9fb0e36b79745424d60d2968bf6d9f2a4889b47b05', 'sinf/cosf reduction data'),
+    (0x1980, 2184, '747d8fd1b75aaa671ce2a5b32576235f4ac560f9497aa1b6dc8d7a5f8a736632', 'log10 lookup and coefficients'),
+    (0x22e4, 1092, '08b778c55cf3169dbc5cd4729430069adfbe5a75a422fd5233ab9f2f60174fda', 'log10f lookup and coefficients'),
+    (0x290c, 212, 'd4148c89e0b73c0461d1178c5754b2e2b972f9dda20ee485dfeffb8aa61eaf5e', 'logf and sin/cos reduction data'),
+    (0x3128, 56, 'e874aeba59eebdebdf68d18b1196d1ca6aeee12b110985a856f8fe404e0c76ee', 'cos core polynomial coefficients'),
+)
+
+
+def libm_literal_regions(identity: str, blob: bytes):
+    if identity != LIBM_UUID:
+        raise ValueError('unreviewed Libm inline table UUID')
+    for offset, size, digest, _ in LIBM_LITERALS:
+        if (hashlib.sha256(blob[offset:offset + size]).hexdigest() != digest
+                or blob[offset - 4:offset] != bytes.fromhex('ff0f5fd6')
+                or blob[offset + size:offset + size + 4] != bytes.fromhex('7f2303d5')):
+            raise ValueError('paired Libm inline table or code boundary changed')
+    return LIBM_LITERALS
+
 
 
 def relative(word: int, pc: int):
@@ -101,6 +124,11 @@ def plan(data: bytes, native: dict, identity: dict, slide: int, roots=ROOTS) -> 
                 continue
             blob = data[seg['fileoff']:seg['fileoff'] + seg['filesize']]
             excluded = set()
+            if name == 'com.apple.kec.Libm' and seg['name'] == '__TEXT_EXEC':
+                for offset, size, digest, purpose in libm_literal_regions(modules[name]['uuid'], blob):
+                    excluded.update(range(offset, offset + size, 4))
+                    literals.append(dict(module=name, va=seg['va'] + offset,
+                                         bytes=size, sha256=digest, purpose=purpose))
             if (name == 'com.apple.AppleFSCompression.AppleFSCompressionTypeZlib'
                     and modules[name]['uuid'] == COMPRESSION_UUID and seg['name'] == '__TEXT_EXEC'):
                 for offset, size, digest, purpose in COMPRESSION_LITERALS:

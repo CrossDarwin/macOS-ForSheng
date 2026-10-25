@@ -438,6 +438,8 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS, stor
             pointer_count=len(driver['relocations']),
             authenticated_pointers=sum(p['authenticated'] for p in driver['relocations']),
             build=driver['evidence'], runtime_qualified=False)
+        if 'display_vtable_abi' in driver:
+            report['storage_driver']['display_vtable_abi'] = driver['display_vtable_abi']
     return final_data, report
 
 

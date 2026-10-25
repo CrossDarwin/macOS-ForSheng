@@ -445,7 +445,8 @@ def compile_sources(args, record: dict) -> None:
             from build_macos26_storage import build as build_storage
             build_storage(ROOT, OUT, compile_record, source, run, record, env)
             if args.build_ufs_driver:
-                build_storage(ROOT, OUT, compile_record, source, run, record, env, transport='ufs')
+                build_storage(ROOT, OUT, compile_record, source, run, record, env,
+                              transport='ufs', gop_display=args.build_gop_display)
             save(record)
 
 
@@ -530,12 +531,16 @@ def main() -> None:
     parser.add_argument('--link-kernel', action='store_true', help='build runtime and attempt the native executable link')
     parser.add_argument('--build-ufs-driver', action='store_true',
                         help='compile the default-off sheng UFS transport with the paired ARM64E ABI')
+    parser.add_argument('--build-gop-display', action='store_true',
+                        help='include the default-off paired CPU GOP display in the UFS companion')
     parser.add_argument('--arch', choices=('arm64', 'arm64e'), default='arm64')
     parser.add_argument('--kdk-root', type=Path)
     parser.add_argument('-j', '--jobs', type=int, default=4, choices=range(1, 33))
     args = parser.parse_args()
     if args.build_ufs_driver and (not args.link_kernel or args.arch != 'arm64e'):
         parser.error('--build-ufs-driver requires --link-kernel --arch arm64e')
+    if args.build_gop_display and not args.build_ufs_driver:
+        parser.error('--build-gop-display requires --build-ufs-driver')
     ARCH = args.arch
     if ARCH == 'arm64e':
         OUT = ROOT / 'out/macos26-xnu-arm64e'

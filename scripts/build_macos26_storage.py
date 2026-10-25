@@ -18,14 +18,20 @@ PROTOCOL_CHARACTERISTICS = {
 }
 
 
-def build(root, out, compile_record, source, run, record, env, *, transport='virtio'):
+def build(root, out, compile_record, source, run, record, env, *, transport='virtio', gop_display=False):
     if transport not in ('virtio', 'ufs'):
         raise ValueError('unsupported native storage transport')
+    if gop_display and transport != 'ufs':
+        raise ValueError('the board GOP companion requires the UFS bundle')
     component = 'NativeVirtioBlock' if transport == 'virtio' else 'NativeUfs'
     bundle = BUNDLE if transport == 'virtio' else 'org.blu-sharky.NativeUfs'
     directory = 'storage-driver' if transport == 'virtio' else 'ufs-driver'
     destination = out / directory
     destination.mkdir(exist_ok=True)
+    display = None
+    if gop_display:
+        from prepare_macos26_gop import prepare
+        display = prepare(root, destination / 'gop-display')
     upstream = root / 'UniXNU/drivers' / component / (component + '.cpp')
     include = destination / 'include/IOKit/storage'
     include.mkdir(parents=True, exist_ok=True)
@@ -71,7 +77,8 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
         '#include <TargetConditionals.h>\n'
         'static_assert(TARGET_OS_OSX == 1, "requires macOS storage ABI");\n'
         + recovery_prefix +
-        f'#include "{upstream}"\n'
+        f'#include "{upstream}"\n' +
+        (f'#include "{display["source"]}"\n' if display else '') +
         '#include <mach/kmod.h>\n'
         f'extern "C" kern_return_t {entry_prefix}_start(kmod_info_t *, void *) {{ return KERN_SUCCESS; }}\n'
         f'extern "C" kern_return_t {entry_prefix}_stop(kmod_info_t *, void *) {{ return KERN_FAILURE; }}\n'
@@ -133,6 +140,14 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                                   IOProviderClass='IOPlatformExpertDevice',
                                   IOMatchCategory='NativeUfsRoot', IOProbeScore=500),
         }
+    if display:
+        info['IOKitPersonalities']['NativeGOPDisplay'] = dict(
+            CFBundleIdentifier=bundle, IOClass='NativeGOPDisplay',
+            IOProviderClass='IOPlatformExpertDevice', IOMatchCategory='NativeGOPDisplay',
+            IOProbeScore=500)
+        info['OSBundleLibraries'].update({
+            'com.apple.iokit.IOMobileGraphicsFamily': '1.0.0',
+            'com.apple.iokit.IOSurface': '1.0.0', 'com.apple.iokit.IOAVFamily': '1.0.0'})
     (destination / 'Info.plist').write_bytes(plistlib.dumps(info))
     evidence = dict(bundle=bundle, upstream_source_sha256=hashlib.sha256(upstream.read_bytes()).hexdigest(),
                     binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
@@ -140,6 +155,8 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                     explicit_qemu_scratch_writes=transport == 'virtio',
                     hardware_enable_required=transport == 'ufs', root_transport_read_only=True,
                     original_storage_runtime_qualified=False, hardware_admitted=False)
+    if display:
+        evidence['native_gop_display'] = display
     if transport == 'ufs':
         evidence['macoslog'] = dict(contract=log, default_off=True,
             boot_argument='native-ufs-macoslog', read_only_mode=1, write_mode=2,

@@ -14,6 +14,12 @@ retain their own licenses and authorship; they are not vendored into this reposi
   consult their own license files.
 - UEFITool / UEFIExtract: BSD-2-Clause with bundled third-party notices;
   source is fetched separately and used to audit firmware volumes.
+- Droid-VM/macOS-DroidVM: the optional GOP companion adapts DroidVMDisplay.cpp
+  at revision 1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9, which declares
+  BSD-2-Clause-Patent. Its source attribution and SPDX header are preserved by
+  patches/DroidVM/0001-native-gop-display.patch. Source and generated ABI inputs
+  are fetched separately with the hashes in config/macos26-gop-reference.json;
+  reconstructed private ABI headers are not vendored here.
 
 Apple restore images, KDKs, reconstructed private ABI headers, firmware and
 device backups are not included in this repository.

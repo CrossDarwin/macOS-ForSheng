@@ -65,9 +65,35 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
                 or evidence.get('read_only_transport') is not True
                 or evidence.get('hardware_enable_required') is not True):
             raise ValueError('UFS transport must restrict its read-only root to macosroot on LUN0')
+        display = evidence.get('native_gop_display')
+        allowed = {component, 'NativeGOPDisplay'} if display else {component}
         if info['CFBundleExecutable'] != component or any(
-                item['IOClass'] != component for item in info['IOKitPersonalities'].values()):
+                item['IOClass'] not in allowed for item in info['IOKitPersonalities'].values()):
             raise ValueError('UFS personality differs from the qualified component')
+        if display:
+            required = {'com.apple.iokit.IOMobileGraphicsFamily', 'com.apple.iokit.IOSurface',
+                        'com.apple.iokit.IOAVFamily'}
+            if (not required <= selected.keys() or display.get('build') != '25F71'
+                    or display.get('default_off') is not True or display.get('required_cpus') != 1
+                    or display.get('gpu_acceleration') is not False
+                    or display.get('publishes_vm_identity') is not False):
+                raise ValueError('GOP display requires the paired default-off single-CPU contract')
+            expected = dict(CFBundleIdentifier=evidence['bundle'], IOClass='NativeGOPDisplay',
+                IOProviderClass='IOPlatformExpertDevice', IOMatchCategory='NativeGOPDisplay', IOProbeScore=500)
+            if info['IOKitPersonalities'].get('NativeGOPDisplay') != expected:
+                raise ValueError('unexpected GOP display provider or identity')
+            for name, key in (('NativeGOPDisplay.cpp', 'source_sha256'),
+                              ('IOMobileFramebufferABI.h', 'header_sha256')):
+                if hashlib.sha256((directory / 'gop-display' / name).read_bytes()).hexdigest() != display.get(key):
+                    raise ValueError('GOP display source differs from the compiled record')
+            contract = json.loads((Path(__file__).resolve().parents[1] /
+                                  'config/macos26-gop-reference.json').read_text())['abi']
+            family = kc_macho(original, kc['entries']['com.apple.iokit.IOMobileGraphicsFamily'][1])
+            text = next(s for s in family['segments'] if s['name'] == '__TEXT_EXEC')
+            text_hash = hashlib.sha256(original[text['fileoff']:text['fileoff'] + text['filesize']]).hexdigest()
+            if (display.get('abi') != contract or family['uuid'] != contract['family_uuid']
+                    or text_hash != contract['family_text_sha256']):
+                raise ValueError('GOP private field layout requires the reviewed paired framebuffer family')
 
     if 'com.apple.iokit.IOStorageFamily' not in selected:
         raise ValueError('transport needs the original IOStorageFamily dependency')
@@ -190,18 +216,27 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
                 relocations=relocations, imports=dict(imports), pointer_formats=sorted(formats),
                 evidence=evidence, compatibility=compatibility, component=component, block_class=block_class)
     driver['vtable_abi'] = audit_storage_vtable(driver, original, kc, native, slide)
+    if evidence.get('native_gop_display'):
+        audit = audit_storage_vtable(driver, original, kc, native, slide,
+            family_bundle='com.apple.iokit.IOMobileGraphicsFamily',
+            base_class='IOMobileFramebufferLegacy', own_class='NativeGOPDisplay')
+        if audit['slots'] != 473:
+            raise ValueError('GOP display requires the paired 473-slot legacy ABI')
+        driver['display_vtable_abi'] = audit
     return driver
 
 
-def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, slide: int) -> dict:
-    family = kc_macho(original, kc['entries']['com.apple.iokit.IOStorageFamily'][1])
+def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, slide: int, *,
+                         family_bundle='com.apple.iokit.IOStorageFamily',
+                         base_class='IOBlockStorageDevice', own_class=None) -> dict:
+    family = kc_macho(original, kc['entries'][family_bundle][1])
     kernel = kc_macho(original, kc['entries']['com.apple.kernel'][1])
     old_names = exports(original, kernel)
     old_names.update(exports(original, family))
     table = next(a for a, names in exports(original, family).items()
-                 if '__ZTV20IOBlockStorageDevice' in names)
+                 if f'__ZTV{len(base_class)}{base_class}' in names)
     original_slots = {p['site']: p for p in chains(original, kc)}
-    block_class = driver['block_class']
+    block_class = own_class or driver['block_class']
     own_table = driver['symbols'][f'__ZTV{len(block_class)}{block_class}']
     own_slots = {p['new_site']: p for p in driver['relocations']}
     own_names = {}
@@ -249,7 +284,8 @@ def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, 
                           target=hex(own['new_target']), override=override))
     else:
         raise ValueError('unbounded transport vtable')
-    return dict(block_class=block_class, slots=len(slots), overrides=overrides, pac_metadata_matches=True, methods=slots)
+    return dict(block_class=block_class, base_class=base_class, family_bundle=family_bundle,
+                slots=len(slots), overrides=overrides, pac_metadata_matches=True, methods=slots)
 
 
 def rewrite_header(driver, output, at):

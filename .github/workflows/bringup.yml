@@ -11,6 +11,10 @@ on:
         description: Compile the default-off UFS companion; no hardware deployment
         type: boolean
         default: false
+      native_gop:
+        description: Compile the default-off CPU GOP display; requires native_ufs and arm64e
+        type: boolean
+        default: false
       native_arch:
         description: Native kernel ABI; ARM64E is EL1 bringup only
         type: choice
@@ -273,7 +277,7 @@ jobs:
         id: native-cache
         with:
           path: ${{ env.NATIVE_OUT }}/
-          key: macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'platform/sheng/macos26/pac/**', 'platform/sheng/macos26/log/**', 'platform/sheng/macos26/crypto/**', 'platform/sheng/macos26/storage/**', 'config/macos26-recovery-root.json', 'patches/UniXNU/0030-*', 'patches/UniXNU/0031-*', 'patches/UniXNU/0032-*', 'patches/UniXNU/0034-*', 'patches/UniXNU/0035-*', 'patches/UniXNU/0036-*', 'patches/UniXNU/0037-*', 'config/macoslog.json', 'scripts/native_log_file.py', 'scripts/build_macos26_xnu.py', 'scripts/build_macos26_storage.py', 'scripts/build_macos26_crypto.py', 'scripts/seal_macos26_crypto.py', 'scripts/native_macho.py') }}
+          key: macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('config/macos26-sources.json', 'config/macos26.json', 'platform/sheng/macos26/patches/**', 'platform/sheng/macos26/pac/**', 'platform/sheng/macos26/log/**', 'platform/sheng/macos26/crypto/**', 'platform/sheng/macos26/storage/**', 'config/macos26-recovery-root.json', 'patches/UniXNU/0030-*', 'patches/UniXNU/0031-*', 'patches/UniXNU/0032-*', 'patches/UniXNU/0034-*', 'patches/UniXNU/0035-*', 'patches/UniXNU/0036-*', 'patches/UniXNU/0037-*', 'config/macoslog.json', 'scripts/native_log_file.py', 'scripts/build_macos26_xnu.py', 'scripts/build_macos26_storage.py', 'scripts/prepare_macos26_gop.py', 'config/macos26-gop-reference.json', 'patches/DroidVM/**', 'scripts/build_macos26_crypto.py', 'scripts/seal_macos26_crypto.py', 'scripts/native_macho.py') }}
           restore-keys: |
             macos26-native-${{ env.NATIVE_ARCH }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-
       - name: Compile native macOS 26 SHENG sources
@@ -281,7 +285,7 @@ jobs:
         run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
       - name: Link native macOS 26 SHENG kernel
         if: inputs.target == 'macos26-kernel'
-        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel ${{ inputs.native_ufs && '--build-ufs-driver' || '' }} --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
+        run: python3 scripts/build_macos26_xnu.py --arch "$NATIVE_ARCH" --link-kernel ${{ inputs.native_ufs && '--build-ufs-driver' || '' }} ${{ inputs.native_gop && '--build-gop-display' || '' }} --kdk-root "$SHENG_KDK_EXPANDED/KDK.pkg/Payload" -j 4
       - uses: actions/cache/save@v4
         if: always() && steps.native-cache.outputs.cache-hit != 'true'
         with:
