@@ -27,6 +27,50 @@ def signed(value, bits):
     return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
 
+def framebuffer_private_slots(original, kc, own, base, slide):
+    """Bind inherited private methods only through their reviewed original vtable slots."""
+    family = kc_macho(original, kc['entries']['com.apple.iokit.IOMobileGraphicsFamily'][1])
+    command = next(p for c, p, size in family['commands'] if c == 2 and size == 24)
+    off, count, strings, size = struct.unpack_from('<4I', original, command + 8)
+    if off + count * 16 > len(original) or strings + size > len(original):
+        raise ValueError('framebuffer private symbols exceed the paired collection')
+    names = {}
+    for index in range(count):
+        name, kind, section, _, address = struct.unpack_from('<IBBHQ', original, off + index * 16)
+        if kind != 0x0e or not section:
+            continue
+        end = original.find(b'\0', strings + name, strings + size)
+        if name >= size or end < 0:
+            raise ValueError('invalid framebuffer private method name')
+        symbol = original[strings + name:end].decode()
+        if not symbol.startswith(('__ZN19IOMobileFramebuffer', '__ZNK19IOMobileFramebuffer',
+                                  '__ZN25IOMobileFramebufferLegacy', '__ZNK25IOMobileFramebufferLegacy')):
+            continue
+        if not any(s['initprot'] & 4 and s['va'] <= address < s['va'] + s['filesize']
+                   for s in family['segments']):
+            continue
+        names.setdefault(address, []).append(symbol)
+    table = next(a for a, ns in exports(original, family).items() if '__ZTV25IOMobileFramebufferLegacy' in ns)
+    slots = {p['site']: p for p in chains(original, kc)}
+    own_table = base + own['__ZTV16NativeGOPDisplay']
+    bindings = {}
+    for index in range(473):
+        pointer = slots[table + 16 + index * 8]
+        for name in names.get(pointer['target'], []):
+            bindings.setdefault(name, []).append(dict(slot=index, original=pointer,
+                new_site=own_table + 16 + index * 8, new_target=pointer['target'] + slide))
+    return bindings, names
+
+
+def validate_private_slot(item, allowed):
+    matches = [slot for slot in allowed if all(item[key] == slot[key] for key in ('new_site', 'new_target'))
+               and all(item[key] == slot['original'][key]
+                       for key in ('authenticated', 'key', 'diversity', 'address_diversity'))]
+    if len(matches) != 1:
+        raise ValueError('private framebuffer method may only bind its exact inherited vtable slot and PAC contract')
+    return matches[0]
+
+
 def prepare(directory: Path, base: int, native: dict, original: bytes,
             kc: dict, selected: dict, slide: int) -> dict:
     evidence = json.loads((directory / 'build.json').read_text())
@@ -100,6 +144,9 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
     own = symbols(binary)
     if '_kmod_info' not in own:
         raise ValueError('transport has no real kmod descriptor')
+    private_slots, private_names = ({}, {})
+    if evidence.get('native_gop_display'):
+        private_slots, private_names = framebuffer_private_slots(original, kc, own, base, slide)
     imported = {}
     for name in selected:
         module = kc_macho(original, kc['entries'][name][1])
@@ -109,6 +156,8 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
 
     def resolve(name):
         targets = {native[name]} if name in native else imported.get(name, set())
+        if not targets and name in private_slots:
+            targets = {slot['new_target'] for slot in private_slots[name]}
         if len(targets) != 1:
             raise ValueError(f'ambiguous or unavailable transport import: {name}')
         return next(iter(targets))
@@ -199,6 +248,12 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
                 if not following:
                     break
                 site += following * (4 if pointer_format == 7 else 8)
+    private_bindings = []
+    for item in relocations:
+        if item['import_name'] in private_slots:
+            slot = validate_private_slot(item, private_slots[item['import_name']])
+            private_bindings.append(dict(name=item['import_name'], slot=slot['slot'],
+                site=hex(item['new_site']), target=hex(item['new_target']), pac_metadata_matches=True))
     reserved = '__ZN15OSMetaClassBase25_RESERVEDOSMetaClassBase3Ev'
     dispatch = '__ZN15OSMetaClassBase8DispatchE5IORPC'
     slots = {base + address + 16 + 16 * 8 for name, address in own.items() if name.startswith('__ZTV')}
@@ -219,23 +274,36 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
     if evidence.get('native_gop_display'):
         audit = audit_storage_vtable(driver, original, kc, native, slide,
             family_bundle='com.apple.iokit.IOMobileGraphicsFamily',
-            base_class='IOMobileFramebufferLegacy', own_class='NativeGOPDisplay')
+            base_class='IOMobileFramebufferLegacy', own_class='NativeGOPDisplay', additional_names=private_names,
+            pure_declaration_class='IOMobileFramebuffer')
         if audit['slots'] != 473:
             raise ValueError('GOP display requires the paired 473-slot legacy ABI')
         driver['display_vtable_abi'] = audit
+        driver['display_private_vtable_bindings'] = private_bindings
     return driver
 
 
 def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, slide: int, *,
                          family_bundle='com.apple.iokit.IOStorageFamily',
-                         base_class='IOBlockStorageDevice', own_class=None) -> dict:
+                         base_class='IOBlockStorageDevice', own_class=None, additional_names=None,
+                         pure_declaration_class=None) -> dict:
     family = kc_macho(original, kc['entries'][family_bundle][1])
     kernel = kc_macho(original, kc['entries']['com.apple.kernel'][1])
     old_names = exports(original, kernel)
     old_names.update(exports(original, family))
+    for address, names in (additional_names or {}).items():
+        old_names.setdefault(address, []).extend(n for n in names if n not in old_names.get(address, []))
     table = next(a for a, names in exports(original, family).items()
                  if f'__ZTV{len(base_class)}{base_class}' in names)
     original_slots = {p['site']: p for p in chains(original, kc)}
+    declarations = {}
+    if pure_declaration_class:
+        declaration_table = next(a for a, names in exports(original, family).items()
+                                 if f'__ZTV{len(pure_declaration_class)}{pure_declaration_class}' in names)
+        for index in range(371):
+            declarations[index] = original_slots[declaration_table + 16 + index * 8]
+        if declaration_table + 16 + 371 * 8 in original_slots:
+            raise ValueError('unreviewed framebuffer introducing declaration slot count')
     block_class = own_class or driver['block_class']
     own_table = driver['symbols'][f'__ZTV{len(block_class)}{block_class}']
     own_slots = {p['new_site']: p for p in driver['relocations']}
@@ -277,11 +345,19 @@ def audit_storage_vtable(driver: dict, original: bytes, kc: dict, native: dict, 
             overrides += 1
         elif own['new_target'] not in expected:
             raise ValueError(f'transport inherited vtable ABI mismatch at slot {index}: {names}')
+        pac = old
+        declaration = base_class
+        if override and '___cxa_pure_virtual' in names and index in declarations:
+            # Abstract redeclarations sign their pure stub differently; concrete overrides use the introducing declaration.
+            pac = declarations[index]
+            if pac['target'] != old['target']:
+                raise ValueError('framebuffer pure override does not share the original introducing pure stub')
+            declaration = pure_declaration_class
         for key in ('authenticated', 'key', 'diversity', 'address_diversity'):
-            if own[key] != old[key]:
+            if own[key] != pac[key]:
                 raise ValueError(f'transport vtable PAC contract differs at slot {index}: {key}')
         slots.append(dict(slot=index, original_names=names, own_names=own_names.get(own['new_target']),
-                          target=hex(own['new_target']), override=override))
+                          target=hex(own['new_target']), override=override, pac_declaration=declaration))
     else:
         raise ValueError('unbounded transport vtable')
     return dict(block_class=block_class, base_class=base_class, family_bundle=family_bundle,
