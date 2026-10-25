@@ -117,6 +117,8 @@ def main() -> None:
     parser.add_argument('--capture-threads', action='store_true',
                         help='read owned kernel thread frames using the matching process layout')
     parser.add_argument('--root-volume-uuid', type=uuid.UUID, help='match the actual APFS volume UUID')
+    parser.add_argument('--development-no-ignition', action='store_true',
+                        help='explicit development root: publish dyld skipIgnition to commpage')
     parser.add_argument('--qemu-no-ignition', action='store_true',
                         help='explicit development-only use of original dyld skipIgnition bit')
     parser.add_argument('--pac-layout', type=Path,
@@ -193,7 +195,7 @@ def main() -> None:
             if hashlib.file_digest(stream, 'sha256').hexdigest() != isc['sha256']:
                 raise ValueError('ISC disk differs from its formatting evidence')
         record['isc_format_input'] = isc
-    if args.qemu_no_ignition and (not args.qemu_development_root or not args.root_hash_payload):
+    if (args.qemu_no_ignition or args.development_no_ignition) and (not args.qemu_development_root or not args.root_hash_payload):
         parser.error('no ignition requires the paired root hash and explicit QEMU development root')
     launchd_main = None
     if args.continue_after_launchd_main and not args.follow_launchd_main:
@@ -286,6 +288,11 @@ def main() -> None:
                 raise ValueError('kernel lacks the guarded QEMU skipIgnition path')
             boot_args += ' -sheng-qemu-no-ignition'
         record['qemu_no_ignition'] = args.qemu_no_ignition
+        if args.development_no_ignition:
+            if '_sheng_development_no_ignition_enabled' not in addresses:
+                raise ValueError('kernel lacks the explicit development commpage path')
+            boot_args += ' -sheng-development-no-ignition'
+        record['development_no_ignition'] = args.development_no_ignition
         if args.kext_log is not None:
             boot_args += f' kextlog={args.kext_log:#x}'
         if args.early_console:
@@ -426,7 +433,7 @@ def main() -> None:
                             ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                             ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
                             ('_pthread_functions', 8), ('_csr_config', 4), ('_dyld_flags', 8),
-                        ('_sheng_qemu_no_ignition_enabled', 4),
+                        ('_sheng_qemu_no_ignition_enabled', 4), ('_sheng_development_no_ignition_enabled', 4),
                             ('_native_ufs_probe_calls', 4), ('_native_ufs_matched', 4),
                             ('_native_ufs_probe_requested', 4), ('_native_ufs_mapped', 4),
                             ('_native_ufs_status', 4), ('_native_ufs_root_step', 4),
@@ -469,7 +476,6 @@ def main() -> None:
                 request = f'{base + offset:x}:{min(4096, SIZE - offset):x}'
                 log_requests.append(request)
                 command += ['--read-memory', request]
-            (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
         panic_requests = []
         if args.capture_panic_buffer:
             if loader.get('native_panic_region_bytes') != 524288 or '_gPanicBase' not in addresses:
@@ -478,11 +484,19 @@ def main() -> None:
                 request = f'{addresses["_gPanicBase"]:x}:{offset:x}:1000'
                 panic_requests.append(request)
                 command += ['--read-indirect', request]
+        if '_commpage_rw_addr' in addresses:
+            command += ['--read-indirect', f'{addresses["_commpage_rw_addr"]:x}:160:8']
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
         with (args.output / 'observer.log').open('w') as log:
             subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
     record['stopped_at_halt'] = int(snapshot['pc'], 16) == addresses.get('_halt_all_cpus')
+    if '_commpage_rw_addr' in addresses:
+        request = f'{addresses["_commpage_rw_addr"]:x}:160:8'
+        value = snapshot.get('indirect_memory', {}).get(request, {})
+        raw = value.get('bytes', '')
+        if len(raw) == 16:
+            record['actual_commpage_dyld_flags'] = hex(int.from_bytes(bytes.fromhex(raw), 'little'))
     if log_requests:
         from decode_native_log import decode
         raw = b''.join(bytes.fromhex(snapshot['memory'][key]) for key in log_requests)
@@ -511,7 +525,7 @@ def main() -> None:
     for name, width in (('_gIOPlatformUUIDAndSerialDone', 1), ('_sheng_corecrypto_status', 4), ('_g_crypto_funcs', 8), ('_prng_ready', 4),
                         ('_img4if', 8), ('_amfi', 8), ('_libCoreEntitlements', 8),
                         ('_pthread_functions', 8), ('_csr_config', 4), ('_dyld_flags', 8),
-                        ('_sheng_qemu_no_ignition_enabled', 4),
+                        ('_sheng_qemu_no_ignition_enabled', 4), ('_sheng_development_no_ignition_enabled', 4),
                         ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                         ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
                         ('_native_virtio_write_requests', 4), ('_native_virtio_write_failures', 4),

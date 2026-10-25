@@ -73,6 +73,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0050-native-platform-uuid.patch',
     ROOT / 'platform/sheng/macos26/patches/0051-native-multiline-panic-panel.patch',
     ROOT / 'platform/sheng/macos26/patches/0052-native-independent-panic-surface.patch',
+    ROOT / 'platform/sheng/macos26/patches/0053-development-dyld-commpage.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
