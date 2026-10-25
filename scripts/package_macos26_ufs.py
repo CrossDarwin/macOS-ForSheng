@@ -91,6 +91,27 @@ def qualify(build, observation, bootstrap, default_off, installed, plan, root_bu
     return kernel, symbols, identity, media, partition
 
 
+def qualify_development_dyld(build, observation, identity, root_uuid):
+    patch = ROOT / 'platform/sheng/macos26/patches/0053-development-dyld-commpage.patch'
+    compiled = json.loads((build / 'build.json').read_text())
+    if compiled.get('patches', {}).get(str(patch.relative_to(ROOT))) != hashlib.sha256(patch.read_bytes()).hexdigest():
+        raise ValueError('requires the compiled explicit development dyld path')
+    observed = json.loads((observation / 'result.json').read_text())
+    globals_ = observed.get('observed_globals', {})
+    if (observed.get('uuid') != identity['uuid']
+            or observed.get('kernel_sha256') != identity['kernel_sha256']
+            or observed.get('development_no_ignition') is not True
+            or observed.get('qemu_no_ignition') is not False
+            or globals_.get('_sheng_development_no_ignition_enabled') != '0x1'
+            or globals_.get('_sheng_qemu_no_ignition_enabled') != '0x0'
+            or not int(observed.get('actual_commpage_dyld_flags', '0x0'), 16) & 8
+            or observed.get('root_volume_uuid') != str(root_uuid)
+            or observed.get('userland_started') is not True
+            or observed.get('launchd_main_started') is not True):
+        raise ValueError('requires matching development commpage and original launchd main execution')
+    return observed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kernel-build', type=Path, required=True)
@@ -105,7 +126,12 @@ def main():
     parser.add_argument('--firmware-build', type=Path, required=True)
     parser.add_argument('--backup-dir', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--development-no-ignition', action='store_true')
+    parser.add_argument('--dyld-observation', type=Path,
+                        help='matching original launchd main execution with the explicit development flag')
     args = parser.parse_args()
+    if args.development_no_ignition != bool(args.dyld_observation):
+        parser.error('--development-no-ignition and --dyld-observation must be used together')
     kernel, symbols, identity, media, partition = qualify(args.kernel_build,
         args.qemu_observation, args.bootstrap_observation, args.default_off_observation,
         args.root_deployment, args.partition_plan, args.root_build)
@@ -146,6 +172,9 @@ def main():
     if not os_version or geometry['header_version'] != 0:
         raise ValueError('requires the qualified v0 transport and stock version field')
     boot_args = NATIVE_BOOT_ARGS + ' -sheng-early-console -sheng-capture-handoff native-ufs-root=1 native-ufs-diagnostics=1'
+    if args.development_no_ignition:
+        qualify_development_dyld(args.kernel_build, args.dyld_observation, identity, args.root_volume_uuid)
+        boot_args += ' -sheng-development-no-ignition'
     args.output.mkdir(parents=True, exist_ok=False)
     try:
         with tempfile.TemporaryDirectory(dir=args.output) as temporary:
@@ -206,6 +235,8 @@ def main():
                     patch_sha256=firmware['patches_sha256']['patches/UniXNU/0033-retained-log-high-bank-and-filesystem.patch'],
                     warm_reboot_capture_qualified=False),
                 development_root=True, synthetic_vm_identity=False, qemu_only_boot_args=False,
+                development_no_ignition=args.development_no_ignition,
+                dyld_observation=str(args.dyld_observation.resolve()) if args.dyld_observation else None,
                 root_variant='recoveryos', recovery_transport_is_not_authentication=True,
                 deployment_scope='fastboot boot only; no boot/recovery/UEFI partition flashing')
             (args.output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')

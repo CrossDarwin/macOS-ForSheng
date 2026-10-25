@@ -1545,3 +1545,19 @@ macOS Base System的mount-complete；内核尝试加载/sbin/launchd，随后输
 当前等待用户确认视频之后画面是否继续变化，尚未要求重启设备。
 下一步核对Ignition等待。配套XNU已有dyld_flags启动tunable，原版dyld的bit3为skipIgnition，
 先用同一候选及离线读取后端验证dyld_flags=0x8，不伪装VMM或Image4返回值。
+
+
+### Ignition后的停留已确认，启动tunable对照未越过等待
+
+用户确认40AD15FD实机仍停在libignition参数，随后正常恢复Android，a槽及boot_completed=1已确认。
+同一内核的NativeUfsBlock离线读取对照只增加dyld_flags=0x8，实际内核变量读回8，
+用户态dyld已执行，但180秒内原版launchd的LC_MAIN没有命中；QEMU专用开关仍为0。
+该对照不代表物理UFS仿真，hostBringUp、RootLayout及底层读取使用已记录的离线替身。
+现场保存在private/experiments/20261025-native-arm64e/ufs-dyld-flags-40166730488。
+
+配套dyld通过commpage读取skipIgnition，XNU的启动tunable只更新变量；sysctl写路径才同步commpage。
+0053为显式开发根增加-sheng-development-no-ignition，保留CSR_ALLOW_UNAUTHENTICATED_ROOT要求，
+仅在SHENG的DEVELOPMENT/DEBUG配置执行，不改变Image4验证结果，不设置VMM身份。
+旧QEMU专用参数继续要求实际VMM。观察器新增实际commpage读回。
+硬件封装另要求同一UUID/内核哈希、开发开关实际启用、commpage bit3及原版launchd主函数执行证据。
+CI40169005156正在编译；此时尚未取得修正版运行结果。

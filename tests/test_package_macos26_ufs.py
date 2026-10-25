@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from package_macos26_ufs import qualify
+from package_macos26_ufs import qualify, qualify_development_dyld
 from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 
 
@@ -101,6 +101,30 @@ class UfsPackage(unittest.TestCase):
         self.root['windows'][0]['sha256'] = 'other'
         with self.assertRaisesRegex(ValueError, 'dedicated root'):
             self.run_qualification()
+
+
+class DevelopmentDyldPackage(unittest.TestCase):
+    def test_stale_identity_missing_commpage_and_unreached_main_are_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            patch_path = ROOT / 'platform/sheng/macos26/patches/0053-development-dyld-commpage.patch'
+            (folder / 'build.json').write_text(json.dumps(dict(patches={
+                str(patch_path.relative_to(ROOT)): hashlib.sha256(patch_path.read_bytes()).hexdigest()})))
+            identity = dict(uuid='matching', kernel_sha256='matching')
+            observed = dict(identity, development_no_ignition=True, qemu_no_ignition=False,
+                actual_commpage_dyld_flags='0x8', root_volume_uuid='volume',
+                userland_started=True, launchd_main_started=True,
+                observed_globals=dict(_sheng_development_no_ignition_enabled='0x1',
+                                      _sheng_qemu_no_ignition_enabled='0x0'))
+            result = folder / 'result.json'
+            result.write_text(json.dumps(observed))
+            self.assertEqual(qualify_development_dyld(folder, folder, identity, 'volume'), observed)
+            for field, value in (('uuid', 'stale'), ('actual_commpage_dyld_flags', '0x0'),
+                                 ('launchd_main_started', False), ('qemu_no_ignition', True),
+                                 ('root_volume_uuid', 'wrong-volume')):
+                result.write_text(json.dumps(dict(observed, **{field: value})))
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'original launchd main'):
+                    qualify_development_dyld(folder, folder, identity, 'volume')
 
 
 if __name__ == '__main__':
