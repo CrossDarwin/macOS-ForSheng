@@ -421,15 +421,17 @@
                appendNumber(attributes, "NativeFormatHorizontalPixels", width) && appendNumber(attributes, "NativeFormatVerticalPixels", height) &&
                appendNumber(attributes, "PreciseAspectRatio", (static_cast<uint64_t>(width) << 16) / height)))
              break;
-@@ -539,7 +523,7 @@
+@@ -539,8 +523,8 @@
              break;
          if (!(appendNumber(scalingLimits, "RGBLayer_MinScaleFraction", 4) && appendNumber(scalingLimits, "RGBLayer_MaxScale", 4)))
              break;
 -        setProperty("IOMFBUUID", "44726F69-6456-4D00-0000-000000000001");
+-        setProperty("external", true);
 +        setProperty("IOMFBUUID", "5348454E-472D-474F-5000-000000000001");
-         setProperty("external", true);
++        setProperty("external", false);
          setProperty("primary", 0ULL, 32);   // AppleParavirtDisplay's display index
          done = setProperty("DisplayAttributes", attributes) && setProperty("Transport", transport) &&
+             setProperty("ColorElements", colors) && setProperty("TimingElements", timings) &&
 @@ -559,14 +543,14 @@
      OSSafeReleaseNULL(color);
      OSSafeReleaseNULL(timing);
