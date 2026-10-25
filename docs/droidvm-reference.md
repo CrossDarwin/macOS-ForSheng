@@ -54,3 +54,8 @@ platform/sheng/macos26/display/0001-native-gop-display.patch。
 这描述启动帧缓冲的一个显示管线，不表示存在Apple DCP或虚拟GPU。
 缺少arm-io、描述冲突或重复节点时拒绝生成；未开启选项时不新增显示节点。
 实际框架是否完成服务匹配和主显示连接仍待QEMU验证。
+
+
+QEMU中原版WindowServer已在枚举完成路径读到参考管线1、已枚举1、显示记录1。
+NativeGOPDisplay实际启动800×600，用户态服务发现已通过。
+下一项是原始显示客户端打开返回值及实际帧提交；尚未确认GUI或sheng物理显示。

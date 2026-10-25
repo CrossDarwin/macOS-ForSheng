@@ -1,0 +1,32 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -984,7 +984,28 @@
+                                     raise RuntimeError('Cannot observe actual shared-region syscall return')
+                                 stop, values, interrupted = continue_observing()
+                                 connection.settimeout(3)
+-                                if interrupted or values[32] != activation_return or values[31] != activation_stack or process_identity()['thread'] != identity['thread']:
++                                event['unrelated_returns'] = []
++                                while not interrupted and values[32] == activation_return:
++                                    returned_identity = process_identity()
++                                    if values[31] == activation_stack and returned_identity['thread'] == identity['thread']:
++                                        break
++                                    event['unrelated_returns'].append(dict(process=returned_identity, stack=hex(values[31])))
++                                    if len(event['unrelated_returns']) > 64:
++                                        raise RuntimeError('Shared-region return exceeded unrelated-thread observation budget')
++                                    if packet(f'z1,{activation_return:x},4') != 'OK':
++                                        raise RuntimeError('Cannot step past an unrelated shared syscall return')
++                                    packet('s')
++                                    if packet(f'Z1,{activation_return:x},4') != 'OK':
++                                        raise RuntimeError('Cannot restore the selected shared syscall return observation')
++                                    stop, values, interrupted = continue_observing()
++                                    connection.settimeout(3)
++                                if interrupted:
++                                    event['return_observation_timeout'] = True
++                                    if packet(f'z1,{activation_return:x},4') != 'OK':
++                                        raise RuntimeError('Cannot retire timed-out shared syscall return observation')
++                                    break
++                                if values[32] != activation_return or values[31] != activation_stack or process_identity()['thread'] != identity['thread']:
++                                    event['unexpected_return'] = dict(pc=hex(values[32]), stack=hex(values[31]), process=process_identity())
+                                     raise RuntimeError('Shared-region startup must return on the selected actual thread/stack')
+                                 if packet(f'z1,{activation_return:x},4') != 'OK':
+                                     raise RuntimeError('Cannot retire shared-region syscall return observation')
