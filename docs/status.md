@@ -1861,3 +1861,10 @@ DroidVM的NativeAdrenoMetalPlugin经IOGPUMetalDevice加载，创建的设备向M
 后续按实际异常和调用栈定位新退出点，不能把之前的Metal等待原因套到本次退出。
 一次前置运行尚未启用实验时触发中断屏蔽超时，已保留现场；
 QEMU后续使用原版interrupt-masked-debug-mode=1记录该超时，实机配置保持不变。
+
+
+软件合成后的首次退出已捕获：EXC_CRASH/SIGABRT调用栈仍经过原版Metal等待block，
+但调用方变为set_ca_window_shadows_enabled的once初始化，再返回activate_compositor_sw。
+因此只改变默认合成器选择不足以绕过共享能力检查。
+后续QEMU实验改为在原版Metal检查once block内返回“无设备”，让dispatch_once自然完成，
+保留PACIBSP/AUTIBSP及原版软件合成、阴影禁用判断；此方案仍需帧输出验证。
