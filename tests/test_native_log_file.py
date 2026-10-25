@@ -29,7 +29,7 @@ class NativeLogFile(unittest.TestCase):
         if not compiler or not all(shutil.which(tool) for tool in ('mkfs.fat', 'mcopy', 'mdir')):
             raise unittest.SkipTest('requires a host C++ compiler, dosfstools and mtools')
         library = cls.path/'bridge.so'
-        subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
+        subprocess.run([compiler, '-std=c++23', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
                         str(ROOT/'tests/macoslog_bridge.cpp'), '-o', str(library)], check=True)
         cls.lib = ctypes.CDLL(str(library))
         cls.lib.check_fat.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint64)]
@@ -45,7 +45,7 @@ class NativeLogFile(unittest.TestCase):
         worker = cls.path/'worker.so'
         defines = ['-DNATIVE_MACOSLOG_'+key+'_ID={'+','.join(map(str, value))+'}'
                    for key, value in (('FILE', cls.fid), ('PARTITION', cls.pid), ('TYPE', cls.tid))]
-        subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-Wno-attributes',
+        subprocess.run([compiler, '-std=c++23', '-Wall', '-Wextra', '-Werror', '-Wno-attributes',
                         '-Wno-address', '-shared', '-fPIC', *defines,
                         str(ROOT/'tests/macoslog_worker_bridge.cpp'), '-o', str(worker)], check=True)
         cls.worker = ctypes.CDLL(str(worker))
@@ -85,7 +85,7 @@ class NativeLogFile(unittest.TestCase):
 
     def test_real_command_write_window(self):
         executable = self.path/'commands'
-        subprocess.run([shutil.which('g++'), '-std=c++17', '-Wall', '-Wextra', '-Werror',
+        subprocess.run([shutil.which('g++'), '-std=c++23', '-Wall', '-Wextra', '-Werror',
             '-Wno-unused-function', '-fsanitize=address,undefined', str(ROOT/'tests/macoslog_commands.cpp'),
             '-o', str(executable)], check=True)
         subprocess.run([str(executable)], check=True, timeout=15)

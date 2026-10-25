@@ -71,7 +71,7 @@ static void mlThread(void *argument, wait_result_t) {
     while (!failed && mode == 2 && !__atomic_load_n(&mlStop, __ATOMIC_ACQUIRE)) {
         if (!gHost.ready || gHost.poisoned) { failed = true; break; }
         if (sheng_log_snapshot_copy(payload, 82048) != 82048) {
-            native_macoslog_busy++;
+            __atomic_fetch_add(&native_macoslog_busy, 1, __ATOMIC_RELAXED);
             IOSleep(20);
             continue;
         }
@@ -91,9 +91,10 @@ static void mlThread(void *argument, wait_result_t) {
                 }
             } ops;
             if (generation >= UINT64_MAX - 1 || !mlCommit(ops, first, generation + 1, payload, scratch, mlFileId)) { failed = true; break; }
-            generation++; native_macoslog_generation = generation; native_macoslog_snapshots++;
+            generation++; native_macoslog_generation = generation;
+            uint64_t snapshots = __atomic_add_fetch(&native_macoslog_snapshots, 1, __ATOMIC_RELAXED);
             native_macoslog_state = 3; lastTotal = total; lastDropped = dropped;
-            if (native_macoslog_snapshots == 1)
+            if (snapshots == 1)
                 IOLog("NativeUfs: macoslog first snapshot committed, generation=%llu\n", generation);
         }
         IOSleep(2000);

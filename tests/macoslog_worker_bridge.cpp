@@ -68,8 +68,8 @@ extern "C" void run_worker(uint8_t *volume, const uint8_t *h1, const uint8_t *h2
     const uint8_t *array, const uint8_t *record, unsigned selectedMode, unsigned failure, uint64_t *result) {
     image=volume; primary=h1; backup=h2; entries=array; snapshot=record;
     mode=selectedMode; failWrite=failure; writeCalls=syncCalls=allocated=freed=0; pending=nullptr;
-    native_macoslog_state=native_macoslog_error=native_macoslog_phase=0;
-    native_macoslog_generation=native_macoslog_snapshots=native_macoslog_busy=native_macoslog_first_lba=0;
+    native_macoslog_state=0; native_macoslog_error=0; native_macoslog_phase=0;
+    native_macoslog_generation=0; native_macoslog_snapshots=0; native_macoslog_busy=0; native_macoslog_first_lba=0;
     mlStart();
     if (pending) pending(pendingArgument,0);
     mlShutdown();
