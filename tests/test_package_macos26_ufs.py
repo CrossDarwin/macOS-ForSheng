@@ -133,13 +133,16 @@ class DevelopmentDyldPackage(unittest.TestCase):
             names = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())['isc']['volumes']
             console = ''.join('mount-complete volume ' + name + '\n' for name in names)
             values = dict(_native_ufs_isc_overlay_enabled='0x1', _native_ufs_isc_failures='0x0',
-                          _native_ufs_isc_resident_bytes='0x4000000', _native_ufs_blocks_published='0x2')
+                          _native_ufs_isc_resident_bytes='0x4000000', _native_ufs_blocks_published='0x2',
+                          _native_ufs_isc_writes='0xe', _native_ufs_isc_syncs='0x4')
             observed = dict(observed_globals=values)
             with patch('package_macos26_ufs.qualify_development_dyld', return_value=observed):
                 (folder / 'console.txt').write_text(console)
                 self.assertEqual(qualify_isc_overlay(folder, folder, {}, 'volume'), observed)
                 for key, value in (('_native_ufs_isc_overlay_enabled', '0x0'),
                                    ('_native_ufs_isc_failures', '0x1'),
+                                   ('_native_ufs_isc_writes', '0x0'),
+                                   ('_native_ufs_isc_syncs', '0x0'),
                                    ('_native_ufs_isc_resident_bytes', '0x4000001'),
                                    ('_native_ufs_blocks_published', '0x1')):
                     original = values[key]

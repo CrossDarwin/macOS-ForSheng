@@ -134,10 +134,12 @@ def qualify_isc_overlay(build, observation, identity, root_uuid):
     recovery = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())
     if (values.get('_native_ufs_isc_overlay_enabled') != '0x1'
             or values.get('_native_ufs_isc_failures') != '0x0'
+            or int(values.get('_native_ufs_isc_writes', '0x0'), 16) < 1
+            or int(values.get('_native_ufs_isc_syncs', '0x0'), 16) < 1
             or int(values.get('_native_ufs_isc_resident_bytes', '0x0'), 16) > 64 << 20
             or int(values.get('_native_ufs_blocks_published', '0x0'), 16) != 2
             or any('mount-complete volume ' + name not in console for name in recovery['isc']['volumes'])):
-        raise ValueError('requires exact-candidate ISC, Preboot and Hardware mounts without overlay failures')
+        raise ValueError('requires exact-candidate ISC, Preboot and Hardware mounts with real writes, syncs and no overlay failures')
     return observed
 
 
