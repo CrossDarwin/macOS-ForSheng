@@ -2,7 +2,8 @@
 
 当前25F71 ARM64E实机已进入UFS根卷发布等待，照片记录UFS ROOT FAILURE及期望APFS卷UUID。
 按唯一诊断路径，UFS接管、GPT/清单读取和块服务发布已经走过，APFS卷匹配尚未通过。
-本轮macoslog只读导出没有新增RAM捕获文件，完整实机日志仍未恢复。
+本轮macoslog只读导出仍只有OBSERVED.JSON，没有NEXTLOG、ARM/RECOVERY状态或CAP目录。
+FAT16恢复容器虽收到Booting OKAY，用户仍看到FASTBOOT，入口执行未确认；命令确认不能替代实际执行。完整实机日志仍未恢复。
 独立渲染器已验证24行字体和防覆盖，但40124513764内核遗漏0051，实际仍绑定6行；原大面板资格结论撤回，构建入口及实际绑定行数检查已补正。
 KDP和UART仍没有实机传输能力。
 

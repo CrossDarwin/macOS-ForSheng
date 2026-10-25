@@ -1399,3 +1399,16 @@ sheng_console_rows的计算值，没有核对arm_init实际传给绑定函数的
 首次恢复包显示no boot entry found。Config.c表明这是配置卷未读取，而非ParseKernel拒绝标记。
 20 MiB强制FAT32仅40298簇，EnhancedFatDxe明确拒绝低于FAT16上限的FAT32；已改FAT16，实际40609簇。
 失败部署镜像已销毁，FAT16包已临时启动等待读取结果。尚无自动RAM捕获成功证据。
+
+
+### FAT16恢复入口未确认执行，设备已恢复Android
+
+FAT16容器发送和boot命令均返回OKAY，但用户报告仍在FASTBOOT，不能判定NativeLogSave已运行。
+原Recovery只读导出macoslog仍只有OBSERVED.JSON；没有NEXTLOG、ARM.BIN、RECOVERY.BIN或CAP目录。
+因此既不能宣称日志修复实机通过，也不能仅凭空目录判定RAM已丢失。
+logfs、xbl_sc_logs和rawdump有界只读快照已保存；日志中对应download/boot及EBS存在，
+没有可以证明自构建UEFI保存器执行的记录。FAT16失败部署镜像已销毁，元数据保留。
+设备已正常恢复Android，确认sheng、_a、sys.boot_completed=1，未改槽或刷写系统/Recovery。
+全部现场保存在private/device/ufs-logfix-40124513764。
+
+0051构建修正的CI40161755752成功，后续重新验证实际绑定行数，不沿用旧面板资格。
