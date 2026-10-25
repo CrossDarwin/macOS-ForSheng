@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Included by the native UFS adapter after its bounded command helpers. */
 #include "macoslog_layout.h"
-extern "C" unsigned sheng_log_snapshot_copy(void *, unsigned) __attribute__((weak_import));
+extern "C" unsigned sheng_log_snapshot_copy(void *, unsigned);
 extern "C" {
 volatile uint32_t native_macoslog_state, native_macoslog_error, native_macoslog_phase;
 volatile uint64_t native_macoslog_generation, native_macoslog_snapshots, native_macoslog_busy;
@@ -56,7 +56,7 @@ static void mlThread(void *argument, wait_result_t) {
     uint8_t *scratch = static_cast<uint8_t *>(IOMallocZero(2*kDataMax));
     uint8_t *payload = static_cast<uint8_t *>(IOMallocZero(21*4096));
     uint64_t first = 0, generation = 0, lastTotal = UINT64_MAX, lastDropped = UINT64_MAX;
-    bool failed = !scratch || !payload || !sheng_log_snapshot_copy;
+    bool failed = !scratch || !payload;
     native_macoslog_state = 1;
     if (!failed) {
         IOReturn status = hostMacosLogReady();
