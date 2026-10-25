@@ -1588,3 +1588,21 @@ SHA256 e33422851df8ed81379452e1549b3de03c912d7d9b9ed7a438f9fc0156d61b08。
 用户确认可录像后已发送一次，a槽可启动，Booting OKAY；未写分区或变更槽位。
 实机执行结果仍待录像，不能把boot确认当作launchd已在sheng运行。
 旧40AD15FD部署镜像和ADT及本轮一次性ESP副本已删除，配套内核、符号、输入、日志及恢复备份保留。
+
+
+### sheng实机已运行原版launchd并执行恢复系统启动任务
+
+D86D84A7本轮300.629333秒视频已保存，画面需旋转180度。
+138秒可读到disk1s1挂载macOS Base System，142秒出现显式开发根skipIgnition启用及/sbin/launchd加载，
+148秒开始打印原版hello, launchd、Darwin Bootstrapper，152秒可读到BaseSystem environment starting及system域创建。
+随后mount[2]和apfs_boot_util[2]实际执行。至此实机已越过Ignition并运行原版launchd；
+证据来自用户态日志及其启动任务，没有把QEMU主函数断点地址说成实机采集地址。
+
+后续重复出现iSC角色节点等待，205秒可读到role 5节点超时、role 256 on iSC: No such file or directory。
+最终FIRST PANIC/PANIC DETAIL保留userspace panic: boot task failure: mount-phase-1 - exited due to SIGABRT。
+该行为与离线单OS窗口输入一致，下一阻断是恢复系统所需iSC/xART角色卷环境。
+目前没有完整恢复启动、WindowServer或桌面成功的证据。
+
+视频及逐时画面保存在private/device/development-dyld-40169005156，
+结构化观察及关键帧同步到private/experiments/20261025-native-arm64e/development-dyld-40169005156。
+本轮没有刷写新分区，实机当前停留于panic现场，待返回FASTBOOT后正常恢复Android。
