@@ -17,7 +17,7 @@ class PinnedDisplayInputs(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         (self.root / 'config').mkdir()
-        (self.root / 'patches/DroidVM').mkdir(parents=True)
+        (self.root / 'platform/sheng/macos26/display').mkdir(parents=True)
         self.output = self.root / 'output'
         inputs = self.output / 'inputs'
         inputs.mkdir(parents=True)
@@ -30,7 +30,7 @@ class PinnedDisplayInputs(unittest.TestCase):
         self.manifest = dict(repository='Droid-VM/macOS-DroidVM', revision='1' * 40,
                              files=files, abi={'test': True})
         (self.root / 'config/macos26-gop-reference.json').write_text(json.dumps(self.manifest))
-        (self.root / 'patches/DroidVM/0001-native-gop-display.patch').write_text(
+        (self.root / 'platform/sheng/macos26/display/0001-native-gop-display.patch').write_text(
             '--- a/DroidVMDisplay.cpp\n+++ b/DroidVMDisplay.cpp\n'
             '@@ -1 +1 @@\n-// upstream\n+// adapted\n')
 
@@ -52,7 +52,7 @@ class PinnedDisplayInputs(unittest.TestCase):
                 path.write_bytes(original)
 
     def test_patch_context_drift_is_not_accepted(self):
-        path = self.root / 'patches/DroidVM/0001-native-gop-display.patch'
+        path = self.root / 'platform/sheng/macos26/display/0001-native-gop-display.patch'
         path.write_text(path.read_text().replace('-// upstream', '-// other revision'))
         import subprocess
         with self.assertRaises(subprocess.CalledProcessError):

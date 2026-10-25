@@ -41,7 +41,7 @@ def prepare(root: Path, destination: Path) -> dict:
         cached.write_bytes(data)
         (destination / name).write_bytes(data)
         hashes[name] = digest(data)
-    patch = root / 'patches/DroidVM/0001-native-gop-display.patch'
+    patch = root / 'platform/sheng/macos26/display/0001-native-gop-display.patch'
     subprocess.run(['patch', '--batch', '--fuzz=0', '-p1', '-i', str(patch.resolve())],
                    cwd=destination, check=True, capture_output=True, text=True)
     source = destination / 'NativeGOPDisplay.cpp'
