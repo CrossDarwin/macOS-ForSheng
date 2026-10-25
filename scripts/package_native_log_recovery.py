@@ -14,6 +14,26 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def validate_recovery_fat(bpb: bytes) -> int:
+    if len(bpb) < 512 or bpb[510:512] != b'\x55\xaa':
+        raise ValueError('recovery configuration volume has no boot sector')
+    sector_bytes, = struct.unpack_from('<H', bpb, 11)
+    cluster_sectors = bpb[13]
+    reserved, = struct.unpack_from('<H', bpb, 14)
+    fat_sectors, = struct.unpack_from('<H', bpb, 22)
+    root_entries, = struct.unpack_from('<H', bpb, 17)
+    sectors = struct.unpack_from('<H', bpb, 19)[0] or struct.unpack_from('<I', bpb, 32)[0]
+    if (sector_bytes != 512 or not cluster_sectors or cluster_sectors & (cluster_sectors - 1)
+            or not reserved or not bpb[16] or not fat_sectors or not root_entries):
+        raise ValueError('recovery configuration volume is not valid FAT16')
+    root_sectors = (root_entries * 32 + sector_bytes - 1) // sector_bytes
+    clusters = (sectors - reserved - bpb[16] * fat_sectors - root_sectors) // cluster_sectors
+    # 固件EnhancedFatDxe拒绝低于FAT16簇数门槛的FAT32卷
+    if not 4085 <= clusters < 65525 or bpb[54:62] != b'FAT16   ':
+        raise ValueError('recovery configuration volume is not valid FAT16')
+    return clusters
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-build', type=Path, required=True)
@@ -50,8 +70,11 @@ def main() -> None:
                 'title = "SHENG - Save previous RAM log"\ntype = "xnu"\n'
                 'path = "Payloads/recover-only.macho"\nargs = ""\n')
             fat = work / 'recovery.fat'
-            subprocess.run(['mformat', '-C', '-F', '-T', str(20 * 2048), '-v', 'SHENGLOG',
+            subprocess.run(['mformat', '-C', '-T', str(20 * 2048), '-v', 'SHENGLOG',
                             '-N', '53484e26', '-i', str(fat), '::'], check=True)
+            with fat.open('rb') as stream:
+                bpb = stream.read(512)
+            clusters = validate_recovery_fat(bpb)
             subprocess.run(['mcopy', '-i', str(fat), '-s', '-Q', str(work / 'EFI'), '::/'], check=True)
             firmware = work / 'Image-dtb'
             firmware.write_bytes(image[pagesize:pagesize + kernel_bytes])
@@ -66,7 +89,7 @@ def main() -> None:
             (args.output / output.name).write_bytes(data)
             record = dict(temporary_ram_boot=True, partition_images_written=False,
                 container_bytes=len(data), container_sha256=hashlib.sha256(data).hexdigest(),
-                kernel_execution=False, kernel_window_allocation=False,
+                kernel_execution=False, kernel_window_allocation=False, config_volume_type='FAT16', config_volume_clusters=clusters,
                 purpose='Recover prior RAM, then reject a non-executable marker; no new kernel or re-arm',
                 source_package=str(args.source_build.parent.resolve()),
                 expected_return='Malformed kernel rejected after the prior RAM log save attempt',
