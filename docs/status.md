@@ -1427,3 +1427,16 @@ QEMU进入IOFindBSDRoot，actual sheng_panel_bound_rows=0x18，原组件接口�
 实际20 MiB FAT16文件在QEMU UEFI下挂载，UniXNU读取unixnu.toml、加载DarwinBoot并显示recover菜单，
 确认停留手动选择。硬件恢复入口及macoslog文件系统访问仍未验收。
 新的手动恢复包位于out/native-log-recovery-manual-40161755752，不运行新内核或重设RAM请求。
+
+
+### 分区日志后端缺失已查明，按用户要求优先屏幕启动
+
+手动恢复菜单在实机出现，用户选择后返回菜单；原Recovery再次只读导出仍无状态或捕获文件。
+进一步核对sheng.dsc的SHENG_VENDOR_HW=0及最终FD，UFSDxe处于条件关闭分支，未包含物理UFS固件驱动。
+FD内DarwinBoot的实际PE含SHNREC01/SHNARM01，Fat驱动也存在，因此不只是补丁元数据未写入固件。
+现有UEFI文件保存器缺少访问内部macoslog的物理存储后端；单独修正RAM范围或FAT绑定不能补齐该后端。
+用户明确要求优先启动macOS、使用拍屏日志，分区日志后端暂缓，不为此启用整条厂商硬件链。
+
+新24行候选40161755752已临时启动，ABL返回Booting OKAY、a槽状态正常。
+菜单标题含6F504502，要求用户先核对版本并记录交接页和stage/prepared/published/reads/failures。
+目前等待屏幕结果，不能把传输确认当作该内核已在实机执行。
