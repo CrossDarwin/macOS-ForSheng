@@ -41,7 +41,7 @@ def main():
     payload = data[4096:4096 + payload_size]
     if len(payload) != payload_size:
         raise ValueError('truncated firmware payload')
-    # 重用已成功启动的固件与当前槽备份，不重新提取或修改厂商固件
+    # Reuse the proven firmware and current-slot backup without extracting or modifying vendor firmware again.
     with (args.backup_dir / 'boot_a.img').open('rb') as stream:
         boot = stream.read(4096)
     if boot[:8] != b'ANDROID!' or struct.unpack_from('<I', boot, 40)[0] != 4:

@@ -16,7 +16,7 @@ diff --git a/drivers/NativeUfs/NativeUfs.cpp b/drivers/NativeUfs/NativeUfs.cpp
    gRootDiagnostic.failures = native_ufs_block_failures;
 -  formatUfsRootDiagnostics (gRootDiagnosticText, sizeof (gRootDiagnosticText), gRootDiagnostic, reason);
 -  strlcat (gRootDiagnosticText, gRootMediaText, sizeof (gRootDiagnosticText));
-+  // 媒体列表和I/O计数先显示，避免完整控制器现场挤掉根卷失败原因
++  // Show media and I/O counters first so controller details cannot displace the root-volume failure.
 +  int used = snprintf (gRootDiagnosticText, sizeof (gRootDiagnosticText),
 +    "UFS ROOT FAILURE: %s\nstage=%s prepared=%u published=%u reads=%llu failures=%llu\n%s",
 +    reason, gRootDiagnostic.stage, gRootDiagnostic.prepared, gRootDiagnostic.published,

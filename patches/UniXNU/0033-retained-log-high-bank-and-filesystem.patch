@@ -14,7 +14,7 @@ diff --git a/drivers/DarwinBoot/DarwinBootPkg/Driver/NativeLogSave.h b/drivers/D
  STATIC BOOLEAN
  NativeLogRange (UINT64 Address, UINT32 Bytes)
  {
-+  // 两个范围均来自sheng实际SMEM/Recovery内存表，避开中间的外部abort区域
++  // Both ranges come from sheng SMEM and Recovery memory maps; exclude the external-abort gap.
    return (Bytes != 0) && ((Address & 0x3fff) == 0) &&
 -         (Address >= NATIVE_LOG_FIRST) && (Address < NATIVE_LOG_END) &&
 -         (Bytes <= NATIVE_LOG_END - Address);
@@ -30,7 +30,7 @@ diff --git a/drivers/DarwinBoot/DarwinBootPkg/Driver/NativeLogSave.h b/drivers/D
      }
      Status = gBS->HandleProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs);
 +    if (Status == EFI_UNSUPPORTED || Status == EFI_NOT_FOUND) {
-+      // 只连接身份和尺寸已核对的日志分区，允许FAT驱动建立文件系统协议
++      // Connect only the log partition with a verified identity and size so FAT can install its filesystem protocol.
 +      Status = gBS->ConnectController (Handles[Index], NULL, NULL, FALSE);
 +      if (!EFI_ERROR (Status) || Status == EFI_ALREADY_STARTED) {
 +        Status = gBS->HandleProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs);
@@ -44,7 +44,7 @@ diff --git a/drivers/DarwinBoot/DarwinBootPkg/Driver/NativeLogSave.h b/drivers/D
    UINT8 Verify[4096];
  
 -  // Callers use a newly created capture directory; never truncate a previous capture.
-+  // 捕获文件使用新目录；根目录状态记录固定为16字节，不留下旧尾部
++  // Use a new capture directory; fixed 16-byte root status records cannot retain stale trailing data.
    Status = Directory->Open (Directory, &File, Name, EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE, 0);
    if (EFI_ERROR (Status)) { return Status; }
    Actual = Bytes;

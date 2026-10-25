@@ -115,10 +115,10 @@
  	if (result == KERN_SUCCESS) {
  #if SHENG
 -		if (kmod_info == sheng_native_crypto_kmod) {
--			/* EARLY_BOOT已执行同一原版模块，避免重复注册PRNG */
+-			/* EARLY_BOOT already ran the same original module; avoid registering the PRNG twice. */
 -			result = sheng_native_crypto_started(kmod_info);
 +		if (sheng_native_crypto_is_original(kmod_info)) {
-+			/* IOKit与EARLY_BOOT共享同一原版模块的实际初始化结果 */
++			/* IOKit and EARLY_BOOT share the actual initialization result of the same original module. */
 +			result = sheng_native_crypto_start_once(kmod_info, kmodStartData);
  		} else
  #endif

@@ -3,9 +3,9 @@
 @@ -263,7 +263,10 @@
  
  #if SHENG
- 	/* 串行路径由uart_putc_options记录，避免重复 */
+ 	/* The serial path is recorded by uart_putc_options; avoid duplicate entries. */
 -	if (idx == VC_CONS_OPS) sheng_log_putc(c);
-+	/* panic将同一个字符同时发往视频与PE串口，只保留串口的那次记录 */
++	/* Panic writes each character to video and the PE UART; retain only the UART record. */
 +	bool mirror_uses_uart = in_debugger && !disable_serial_output &&
 +	    PE_kputc != NULL && PE_kputc != console_write_unbuffered;
 +	if (idx == VC_CONS_OPS && !mirror_uses_uart) sheng_log_putc(c);

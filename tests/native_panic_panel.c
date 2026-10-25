@@ -30,7 +30,7 @@ void run_trace(void)
     while (at < 3900) { reason[at] = at % 79 == 0 ? '\n' : 'x'; at++; }
     const char end[] = "PAYLOAD_END_AFTER_511_BYTES\n";
     for (unsigned n = 0; n < sizeof(end); n++) reason[at++] = end[n];
-    /* 模拟可恢复异常已占用RAM头，普通writer在panic前被打断 */
+    /* Simulate a recoverable fault occupying the RAM header and a normal writer interrupted before panic. */
     sheng_log_buffer.panic_state = 3;
     sheng_log_buffer.writer = 1;
     sheng_log_panic(0x112233, reason);
@@ -42,7 +42,7 @@ void run_trace(void)
         if (n + 1 == at) panic_test_checks |= 2;
     }
     panic_ready();
-    /* 被打断的writer恢复后只能使用普通像素区 */
+    /* A resumed interrupted writer may touch only the normal pixel region. */
     sheng_log_buffer.writer = 0;
     for (unsigned n = 0; n < 80; n++) sheng_log_stage("ordinary log after first panic");
     sheng_log_panic(0x998877, "SECOND PANIC MUST NOT REPLACE FIRST");

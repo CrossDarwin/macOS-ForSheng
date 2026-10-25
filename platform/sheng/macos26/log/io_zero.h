@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* panic区域可能是Device映射，显式访问不能被合并为DC ZVA或SIMD */
+/* The panic region may use a Device mapping; prevent explicit stores from becoming DC ZVA or SIMD. */
 static void sheng_zero_panic_region(volatile void *address, size_t length)
 {
     volatile uint8_t *cursor = address;

@@ -46,7 +46,7 @@
 +            static_cast<unsigned long long> (native_ufs_block_failures), device->getBusyState ());
 +        }
 +      } wait = { uuid, device };
-+      // 根设备发布早于APFS及软件加密线程池初始化，30秒可能中止仍在进行的匹配
++      // Root publication precedes APFS and crypto worker initialization; 30 seconds can interrupt active matching.
 +      bool ready = ufsWaitForRootMedia (wait);
        IOLog ("NativeUfs: %s volume %s %s\n", device->windowLabel (), uuid, ready ? "ready" : "not ready");
        if (!ready) captureMissingMedia (uuid);
@@ -56,7 +56,7 @@
 @@ -0,0 +1,15 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
 +#pragma once
-+// 等待窗口同时覆盖早期APFS初始化；忙状态和读计数只用于报告，不代替卷身份检查
++// Allow early APFS initialization; busy and read counters are diagnostic and never replace volume identity checks.
 +constexpr unsigned kUfsRootMediaWaitMs = 180000;
 +constexpr unsigned kUfsRootMediaPollMs = 100;
 +template <class Ops>

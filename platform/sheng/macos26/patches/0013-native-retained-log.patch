@@ -51,7 +51,7 @@
  	}
  
 +#if SHENG
-+	/* 串行路径由uart_putc_options记录，避免重复 */
++	/* The serial path is recorded by uart_putc_options; avoid duplicate entries. */
 +	if (idx == VC_CONS_OPS) sheng_log_putc(c);
 +#endif
  	cons_ops[idx].putc(c, poll);

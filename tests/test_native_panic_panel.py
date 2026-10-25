@@ -99,7 +99,7 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertEqual(number('sheng_panic_panel_bound_rows'), 16)
                         text = memory(symbols['sheng_first_panic_text'], 4096)
                         self.assertIn(b'PAYLOAD_END_AFTER_511_BYTES', text)
-                        # 标题和正文按真实字体逐像素核对，不能只靠ready变量
+                        # Compare title and body pixels against the actual font instead of relying only on the ready flag.
                         base = 0x44000000 + (608 + 64 + 24 * 32) * 12192 + 896
                         before = memory(base, 16 * 32 * 12192)
                         glyphs = memory(symbols['sheng_panel_font'], 4096)

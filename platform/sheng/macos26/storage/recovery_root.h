@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-// 配套BaseSystem只作为只读块设备发布，原版APFS负责卷认证
+// Publish the paired BaseSystem as a read-only block device; original APFS authenticates the volume.
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 #error Recovery transport cannot replace the legacy owner verification policy
 #endif

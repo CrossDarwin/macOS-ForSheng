@@ -24,7 +24,7 @@
 +	};
 +	uint32_t mode = 0;
 +
-+	/* 启动阶段保留提供者的完整默认POST */
++	/* Keep the provider's full default POST during bootstrap. */
 +	if (PE_parse_boot_argn("fips_mode", &mode, sizeof(mode)) && mode != 0) {
 +		panic("SHENG source corecrypto requires complete default POST");
 +	}

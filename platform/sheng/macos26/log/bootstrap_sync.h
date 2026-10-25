@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
-/* 控制台可用后恢复原异常分发，不截获后续可恢复异常 */
+/* Restore normal exception dispatch once the console is ready; leave later recoverable faults untouched. */
 #ifndef SHENG_EARLY_ADDRESS_DEFINED
 #define SHENG_EARLY_ADDRESS_DEFINED
-/* Darwin汇编把分号视为注释，两条指令必须分别成行 */
+/* Darwin assembly treats semicolons as comments; place each instruction on its own line. */
 .macro SHENG_EARLY_ADDRESS reg, name
 #ifdef __APPLE__
     adrp \reg, \name@page

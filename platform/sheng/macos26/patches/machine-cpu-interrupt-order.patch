@@ -17,7 +17,7 @@
    }
    gController = controller;
 -  initCPU (true);
-+  // 新版注册函数会调用initCPU，先安装回调再开启中断源
++  // Registration calls initCPU; install callbacks before enabling interrupt sources.
 +  perfmon_interrupt_handler_func pmi = nullptr;
 +  kern_return_t status = ml_processor_register (&info, &machProcessor, &ipi_handler, &pmi);
 +  if (status != KERN_SUCCESS) { panic ("ArmCpu: CPU %u registration failed: %d", logicalId, status); }

@@ -138,7 +138,7 @@
  	if (result == KERN_SUCCESS) {
 +#if SHENG
 +		if (kmod_info == sheng_native_crypto_kmod) {
-+			/* EARLY_BOOT已执行同一原版模块，避免重复注册PRNG */
++			/* EARLY_BOOT already ran the same original module; avoid registering the PRNG twice. */
 +			result = sheng_native_crypto_started(kmod_info);
 +		} else
 +#endif

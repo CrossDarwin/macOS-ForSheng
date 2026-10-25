@@ -102,7 +102,7 @@ def prepare(device, directory):
         before = geometry(baseline, device.lbas, start)
         if now[0] != before[0] or now[1][56:72] != before[1][56:72] or now[4:] != before[4:]:
             raise ValueError('current partition geometry or identity differs from baseline')
-        # ABL会更新boot槽属性，只接受这两个条目的属性变化，写回时保留当前值
+        # ABL updates boot-slot attributes; accept attribute changes only for these two entries and preserve their current values.
         for i in range(now[4]):
             a = now[2][i * now[5]:(i + 1) * now[5]]
             b = before[2][i * now[5]:(i + 1) * now[5]]
@@ -161,7 +161,7 @@ def apply(device, directory):
         g = parse_gpt(raw, BLOCK, device.lbas, start)
         if any(max(p['first_lba'],record['first_lba']) <= min(p['last_lba'],record['last_lba']) for p in g['partitions']):
             raise ValueError('planned partition overlaps a current partition')
-    # 当前空闲区也先保存，确保本次操作可恢复
+    # Save the currently unused extent before writing so this operation remains recoverable.
     free = directory / 'before-free-tail.bin'
     if free.exists():
         raise ValueError('previous apply attempt exists; inspect before retrying')

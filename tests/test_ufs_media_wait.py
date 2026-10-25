@@ -27,11 +27,11 @@ struct Wait {
 };
 int main() {
     { Wait w; assert(ufsWaitForRootMedia(w) && w.elapsed==0 && w.queries==1); }
-    // 原30秒窗口后的初始化仍可完成
+    // Initialization may finish after the former 30-second window.
     { Wait w; w.readyAt=45000; assert(ufsWaitForRootMedia(w) && w.elapsed==45000);
       assert((w.reports==std::vector<unsigned>{0,10000,20000,30000,40000})); }
     { Wait w; w.readyAt=180000; assert(ufsWaitForRootMedia(w) && w.elapsed==180000); }
-    // 超时和错误UUID都不能变成挂载成功
+    // Neither timeout nor a wrong UUID may be treated as a successful mount.
     for(bool match: {false,true}) {
       Wait w; w.uuidAndAncestorMatch=match; w.readyAt=match?180100:100;
       assert(!ufsWaitForRootMedia(w) && w.elapsed==180000 && w.queries==1801);

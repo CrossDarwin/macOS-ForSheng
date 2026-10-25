@@ -43,7 +43,7 @@ def layout(primary, secondary, lbas, macos_gib):
     if index != 28 or last != before['last_usable'] or any(
             struct.unpack_from('<Q', e, 40)[0] >= first for i, e in occupied if i != index):
         raise ValueError('requires the verified final sda29 userdata geometry')
-    # 仅从已授权丢弃的userdata尾部划分，保留所有其他GPT条目逐字节不变
+    # Allocate only from the authorized disposable userdata tail; preserve every other GPT entry byte for byte.
     root_end = (last + 1) // (WINDOW // BLOCK) * (WINDOW // BLOCK)
     root_first = root_end - macos_gib * (1 << 30) // BLOCK
     if root_first - first < 16 * (1 << 30) // BLOCK:

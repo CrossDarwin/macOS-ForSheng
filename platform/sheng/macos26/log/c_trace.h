@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* 只在arm_vm_init替换启动页表前使用，不依赖函数指针、锁或控制台 */
+/* Use only before arm_vm_init replaces bootstrap tables; require no function pointers, locks, or console. */
 extern uint64_t sheng_bootstrap_fb_trace_ready;
 extern volatile uint64_t sheng_bootstrap_c_stage;
 
@@ -18,7 +18,7 @@ sheng_bootstrap_c_trace(const boot_args *args, unsigned stage)
         (video->v_depth & 255) != 32 || stride < 2560 || stride > 65536) {
         return;
     }
-    /* 沿用已映射的同一行，青色表示C阶段，灰色表示该阶段尚未完成 */
+    /* Reuse the mapped row; cyan marks completed C stages and gray marks pending stages. */
     for (unsigned cell = 0; cell < 16; cell++) {
         if (stage != 0 && cell != stage) {
             continue;

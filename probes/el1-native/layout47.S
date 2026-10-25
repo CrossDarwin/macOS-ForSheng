@@ -29,7 +29,7 @@ ShengEl1Layout47Probe:
     isb
     mov x9,#1
     str x9,[x19,#104]
-    // 标记只使用x9/x13-x17，临时窗口不覆盖固件显示映射
+    // Markers use only x9 and x13-x17; the temporary window must not overlap the firmware display mapping.
     mov x28,#0
     bl .Lmark47
     mov x28,#1
@@ -180,7 +180,7 @@ ShengLayout47Vectors:
 .global ShengEl1Layout47End
 ShengEl1Layout47End:
 
-// 复制到独占RX页后，从47位高地址调用；不依赖原位置和固件函数
+// Copy to an owned RX page and call through a 47-bit high address without original-location or firmware dependencies.
 .p2align 4
 .global ShengEl1Layout47Code
 ShengEl1Layout47Code:

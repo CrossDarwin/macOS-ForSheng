@@ -5,7 +5,7 @@
  	ss_valid = is_saved_state64(ss);
  	arm_saved_state64_t *state = saved_state64(ss);
 +#if SHENG
-+	/* 可恢复缺页不固定屏幕，只在确定致命时保留寄存器 */
++	/* Do not pin recoverable page faults; preserve registers on screen only for confirmed fatal faults. */
 +	if (ss_valid && !PSR64_IS_USER(state->cpsr)) {
 +		sheng_log_exception(state->pc, state->esr, state->far, state->sp);
 +	}

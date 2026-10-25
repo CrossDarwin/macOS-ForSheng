@@ -17,8 +17,8 @@ linker.write_text('ENTRY(_start)\nSECTIONS { . = 0x40200000; .text : { *(.text*)
 source=ROOT/'probes/native-early-exception/qemu.S'
 subprocess.run([args.clang.resolve(),'--target=aarch64-none-elf','-march=armv8.3-a','-nostdlib','-fuse-ld=lld','-Wl,-T,'+str(linker),source,'-o',p/'test.elf'],check=True,timeout=60)
 subprocess.run([args.clang.resolve(),'--target=arm64e-apple-macos26.5','-c',source,'-o',p/'test-mach.o'],check=True,timeout=60)
-# ELF接受分号分隔指令，Darwin汇编却将后半行作为注释
-# 检查实际Mach-O重定位和指令，不能仅以编译成功作为地址计算通过
+# ELF accepts semicolon-separated instructions, but Darwin assembly treats the remainder as a comment.
+# Check actual Mach-O relocations and instructions; compilation alone does not validate address calculation.
 mach=(p/'test-mach.o').read_bytes();cursor=32;address_pairs=0
 for _ in range(struct.unpack_from('<I',mach,16)[0]):
  cmd,size=struct.unpack_from('<II',mach,cursor)

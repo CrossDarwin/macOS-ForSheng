@@ -6,7 +6,7 @@ diff --git a/drivers/NativeUfs/NativeUfs.cpp b/drivers/NativeUfs/NativeUfs.cpp
    absolute = absoluteOffset;
    bytes = size;
 +#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
-+  // 这里发布的是分区中保存的BaseSystem磁盘映像，不是底层UFS控制器
++  // Publish the BaseSystem disk image stored in the partition rather than the underlying UFS controller.
 +  OSDictionary *protocol = OSDictionary::withCapacity (2);
 +  OSString *interconnect = OSString::withCString (kIOPropertyPhysicalInterconnectTypeVirtual);
 +  OSString *location = OSString::withCString (kIOPropertyExternalKey);

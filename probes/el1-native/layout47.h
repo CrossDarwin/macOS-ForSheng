@@ -11,7 +11,7 @@
 typedef __UINT64_TYPE__ sheng47_u64;
 #define SHENG47_BYTES (8 * 16384)
 
-// 仅使用独占的8页：L1、两套L2、三套L3、代码和数据
+// Use eight owned pages: L1, two L2 tables, three L3 tables, code, and data.
 static inline void
 sheng47_tables(sheng47_u64 *pages, unsigned attribute)
 {
@@ -32,7 +32,7 @@ sheng47_tables(sheng47_u64 *pages, unsigned attribute)
     low_l2[(SHENG47_LOW >> 25) & 2047] = (base + 2 * 16384) | 3;
     high_l2[(SHENG47_CODE >> 25) & 2047] = (base + 4 * 16384) | 3;
     high_l2[(SHENG47_DATA >> 25) & 2047] = (base + 5 * 16384) | 3;
-    // 代码为EL1只读可执行，数据为EL1可写且禁止执行
+    // Code is EL1 read-only and executable; data is EL1 writable and non-executable.
     const sheng47_u64 rx = code | 0x783 | attr | (1ULL << 54);
     low_l3[(SHENG47_LOW >> 14) & 2047] = rx;
     code_l3[(SHENG47_CODE >> 14) & 2047] = rx;

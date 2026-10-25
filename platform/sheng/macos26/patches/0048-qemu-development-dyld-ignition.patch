@@ -23,7 +23,7 @@
 +		if (PE_vmm_present != 1 || csr_check(CSR_ALLOW_UNAUTHENTICATED_ROOT) != 0) {
 +			panic("SHENG: no-ignition requires the explicit QEMU development root");
 +		}
-+		/* dyld既有bit3只跳过ignition，不伪造Image4验证结果 */
++		/* The existing dyld bit 3 skips Ignition without fabricating Image4 verification results. */
 +		dyld_flags |= UINT64_C(8);
 +		commpage_update_dyld_flags(dyld_flags);
 +		sheng_qemu_no_ignition_enabled = 1;

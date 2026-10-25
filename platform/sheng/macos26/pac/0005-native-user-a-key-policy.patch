@@ -4,7 +4,7 @@
   ldr \hi, [\cpu, ((CPU_SHENG_PAC_BANK + 64) + 8)]
   msr APGAKeyLo_EL1, \lo
   msr APGAKeyHi_EL1, \hi
-+ /* EL0可按任务关闭A认证，任何内核认证之前必须恢复 */
++ /* Tasks may disable A-key authentication at EL0; restore it before any kernel authentication. */
 + mrs \lo, SCTLR_EL1
 + orr \lo, \lo, #SCTLR_PACIA_ENABLED
 + orr \lo, \lo, #SCTLR_PACDA_ENABLED
@@ -16,7 +16,7 @@
   str x5, [x1, CPU_SHENG_PAC_RETURNS]
   msr APGAKeyLo_EL1, x3
   msr APGAKeyHi_EL1, x4
-+ /* 遵循原版任务策略，只在最后EL0边界关闭A认证，B认证保持开启 */
++ /* Follow the original task policy: disable A authentication only at the final EL0 boundary and retain B authentication. */
 + mrs x2, TPIDR_EL1
 + ldr w2, [x2, TH_ARM_MACHINE_FLAGS]
 + mrs x3, SCTLR_EL1

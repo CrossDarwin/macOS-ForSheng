@@ -21,7 +21,7 @@
    info.log_id = logicalId;
    info.cluster_id = static_cast<uint32_t> (ml_get_cluster_number (static_cast<uint32_t> (affinity)));
    info.cluster_type = ml_get_boot_cluster_type ();
-+  // 新版ml_processor_register会启动处理器，先准备IOCPU状态
++  // ml_processor_register starts the processor; prepare IOCPU state first.
 +  setCPUNumber (info.log_id);
 +  setCPUState (kIOCPUStateUninitalized);
 +  armcpu_smp_step[logicalId] = 2;

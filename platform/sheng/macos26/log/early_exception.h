@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
-/* 与低位向量一起复制，不依赖栈、C全局变量、固件或MMIO串口 */
+/* Copy with the low vectors; require no stack, C globals, firmware, or MMIO UART. */
 #ifndef SHENG_EARLY_ADDRESS_DEFINED
 #define SHENG_EARLY_ADDRESS_DEFINED
-/* Darwin汇编把分号视为注释，两条指令必须分别成行 */
+/* Darwin assembly treats semicolons as comments; place each instruction on its own line. */
 .macro SHENG_EARLY_ADDRESS reg, name
 #ifdef __APPLE__
     adrp \reg, \name@page
@@ -32,7 +32,7 @@ Lsheng_early_enter:
 
 Lsheng_early_exception:
 	msr DAIFSet, #15
-	/* 首次MMU切换仍使用V=P向量，不依赖高位映射或异常栈 */
+	/* Use V=P vectors for the first MMU transition without high mappings or an exception stack. */
 	mrs x0, SCTLR_EL1
 	tbnz x0, #0, EXT(sheng_mmu_sync_fault)
 	adr x19, EXT(sheng_early_exception_record)
@@ -70,7 +70,7 @@ Lsheng_early_capture:
 	str x0, [x19, #88]
 	dsb sy
 
-	/* 低位向量只用于MMU关闭时，拒绝把物理framebuffer当作已映射VA */
+	/* Low vectors run only with the MMU off; never treat the physical framebuffer as a mapped VA. */
 	ldr x0, [x19, #40]
 	tbnz x0, #0, Lsheng_early_finish
 Lsheng_early_draw:
@@ -100,7 +100,7 @@ Lsheng_early_draw:
 	and x1, x1, #255
 	cmp x1, #32
 	b.ne Lsheng_early_finish
-	/* 整块覆盖文字背景，包括字间距和行间距 */
+	/* Clear the full text background, including character and line spacing. */
 	mov x0, #112
 	madd x0, x0, x22, x21
 	add x0, x0, #64
@@ -121,7 +121,7 @@ Lsheng_early_clear_pixels:
 	adr x24, Lsheng_early_labels
 	mov x26, #0
 Lsheng_early_row:
-	/* 前十行为寄存器，末行为阶段条标签 */
+	/* Reserve the first ten rows for registers and the last row for stage labels. */
 	mov x0, #40
 	madd x0, x26, x0, xzr
 	add x0, x0, #128
@@ -233,7 +233,7 @@ Lsheng_early_finish:
 Lsheng_early_halt:
 	b Lsheng_early_halt
 
-/* 正式向量入口只在控制台建立前使用，保留故障时的系统寄存器 */
+/* Use the normal vector entry only before console setup and preserve system registers from the fault. */
 	.globl EXT(sheng_mmu_sync_fault)
 LEXT(sheng_mmu_sync_fault)
 	msr DAIFSet, #15
@@ -254,7 +254,7 @@ LEXT(sheng_mmu_sync_fault)
 	ldr x1, [x0, #160]
 	ldr x2, [x0, #168]
 	ldr x3, [x0, #176]
-	/* SHENG不使用KTRR，原始bootstrap表保留内核窗口的V=P映射 */
+	/* SHENG does not use KTRR; bootstrap tables retain a V=P mapping for the kernel window. */
 	msr TTBR0_EL1, x1
 	isb
 	mov x4, #0xc0bf
@@ -269,7 +269,7 @@ LEXT(sheng_mmu_sync_fault)
 	br x2
 
 Lsheng_mmu_off_fault:
-	/* 此处已从V=P地址取指，关闭翻译后不再使用原异常栈 */
+	/* Instruction fetch is already V=P; do not use the old exception stack after disabling translation. */
 	adr x0, EXT(LowExceptionVectorBase)
 	msr VBAR_EL1, x0
 	isb
@@ -301,7 +301,7 @@ Lsheng_mmu_off_fault:
 Lsheng_early_labels:
 	.ascii "XNU     ELR     ESR     FAR     SPSR    SCTLR   TCR     TTBR0   TTBR1   MAIR    STAGES  "
 Lsheng_early_font:
-	/* 0-9、A-Z、空格，每字符七行五列 */
+	/* Glyphs cover 0-9, A-Z, and space, with seven rows and five columns each. */
 	.byte 14,17,19,21,25,17,14
 	.byte 4,12,4,4,4,4,14
 	.byte 14,17,1,2,4,8,31

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// PID1只读指定的保留RAM，通过只读USB磁盘导出，不打开UFS块设备
+// PID1 reads only the specified retained RAM and exports a read-only USB disk without opening UFS block devices.
 #define _GNU_SOURCE
 #include <dirent.h>
 #include <errno.h>

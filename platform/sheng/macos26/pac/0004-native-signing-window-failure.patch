@@ -4,7 +4,7 @@
  
  #if HAS_NATIVE_EL1_PAC
  Lsheng_bad_signing_window:
-+	/* 违规调用也先结束临时A密钥窗口，才能进入普通panic代码 */
++	/* Close the temporary A-key window before entering normal panic handling on invalid calls. */
 +	mrs x2, TPIDR_EL1
 +	ldr x2, [x2, ACT_CPUDATAP]
 +	ldr x3, [x2, CPU_SHENG_PAC_SIGNING]

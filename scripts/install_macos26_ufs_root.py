@@ -36,7 +36,7 @@ def install(device, plan_dir, root_dir, output):
     for kind, start in (('primary', 0), ('secondary', device.lbas - WINDOW // BLOCK)):
         current = device.read(start, WINDOW // BLOCK)
         expected = (plan_dir / f'after-{kind}.bin').read_bytes()
-        # 主备GPT所在窗口仍逐字节匹配，不能静默接受其他分区修改
+        # Primary and backup GPT windows must still match byte for byte; reject unrelated partition changes.
         if current != expected:
             raise ValueError('LUN0 layout changed since the applied partition plan')
         _, _, entries, _, _, stride = geometry(current, device.lbas, start)

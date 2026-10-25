@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// EL1下独立执行，临时状态期间不调用C代码或固件服务
+// Run independently at EL1; do not call C or firmware services while temporary state is installed.
 .text
 .arch_extension pan
 .p2align 4
@@ -21,8 +21,8 @@
     ldp x19,x20,[sp],#96
 .endm
 
-// x13为首格像素地址，x14为行跨度；只使用调用者临时寄存器
-// 绿色格子在每次控制寄存器切换后直接写入显示内存
+// x13 holds the first cell's pixel address and x14 the row stride; use only caller-saved registers.
+// Write green cells directly to display memory after each control-register transition.
 .macro mmu_mark number, color=0xff00
     cbz x13,.Lmark_done\@
     add x16,x13,#(\number * 128)
@@ -45,8 +45,8 @@
 .Lmark_done\@:
 .endm
 
-// x0为16KiB对齐的临时页表，x1接收结果，x2为保留固件TTBR0配置的TCR
-// x3/x4为显示标记，x5为使用现有MAIR的叶描述符；仅操作原本禁用的TTBR1
+// x0 is a 16 KiB-aligned temporary table, x1 receives results, and x2 preserves firmware TTBR0 configuration in TCR.
+// x3/x4 describe display markers and x5 a leaf descriptor using the existing MAIR; modify only disabled TTBR1.
 .global ShengEl1GranuleProbe
 ShengEl1GranuleProbe:
     save_frame
@@ -75,7 +75,7 @@ ShengEl1GranuleProbe:
     mov x9,#1
     str x9,[x26,#56]
 
-    // 固件TTBR0和MAIR始终保留，临时表只被高地址AT指令访问
+    // Preserve firmware TTBR0 and MAIR throughout; access temporary tables only through high-address AT instructions.
     stp x29,xzr,[x25]
     dc cvac,x25
     dsb ish
@@ -113,7 +113,7 @@ ShengEl1GranuleProbe:
     mov x9,#3
     str x9,[x26,#56]
 
-    // 高地址低36位为0x2001000，16K索引1，4K索引0
+    // The high address has low 36 bits 0x2001000: index 1 for 16K and index 0 for 4K.
     orr x9,x29,#0x4000000
     str x9,[x25,#8]
     dc cvac,x25
@@ -133,7 +133,7 @@ ShengEl1GranuleProbe:
     .inst 0
 #endif
 
-    // 先禁用并清除临时高地址翻译，再更改TG1，不改动执行区的TG0
+    // Disable and invalidate temporary high translations before changing TG1; preserve the executing region's TG0.
     orr x9,x27,#(1<<23)
     msr tcr_el1,x9
     isb
@@ -267,8 +267,8 @@ ShengEl1GranuleProbeEnd:
     orr x22,x22,x10,lsl #\bit
 .endm
 
-// 结果为五类密钥A/B签名，返回0x7fff表示区分、认证与固件状态恢复均通过
-// 原始密钥只暂存在本核栈内，恢复后清除，不进入输出记录
+// Record A/B signatures for all five key classes; 0x7fff means discrimination, authentication, and firmware restoration passed.
+// Keep original keys only on the current CPU stack; erase them after restoration and never record them.
 .global ShengEl1PauthProbe
 ShengEl1PauthProbe:
     save_frame

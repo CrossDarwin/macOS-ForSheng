@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* 诊断输出不等待锁，不依赖调度器；重入丢失单独计数 */
+/* Diagnostic output never waits for locks or scheduling; count reentrant drops separately. */
 #ifndef SHENG_RETAINED_LOG_H
 #define SHENG_RETAINED_LOG_H
 #include <stddef.h>
@@ -110,7 +110,7 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     sheng_panel.scale = scale;
     sheng_panel_ready = 1;
     sheng_panel_reset();
-    /* 只回放有界尾部；后续panic首行单独固定，不被长回溯覆盖 */
+    /* Replay only a bounded tail; pin the first panic line separately so long backtraces cannot overwrite it. */
     const uint64_t total = r->total;
     uint64_t start = total > 512 ? total - 512 : 0;
     if (start) {
@@ -132,7 +132,7 @@ void sheng_log_repaint_panel(void)
 volatile uint64_t sheng_first_sync_displayed;
 static void sheng_exception_text(const char *message)
 {
-    /* 首异常即使打断日志writer，也先把寄存器写到独立显示通路 */
+    /* Send first-fault registers to the independent display path even if the fault interrupted the log writer. */
     while (*message) sheng_panel_putc((unsigned char)*message++);
 }
 
@@ -150,7 +150,7 @@ void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp)
 {
     if (!sheng_panel_ready) return;
     if (sheng_status_pinned) {
-        /* 原生panic清屏可能覆盖标题，恢复原摘要但不替换首现场 */
+        /* Native panic clearing may erase the title; restore the summary without replacing the first snapshot. */
         sheng_status_render("", sheng_status_message);
         return;
     }
@@ -216,7 +216,7 @@ void sheng_log_panic(uint64_t caller, const char *message)
         __atomic_store_n(&r->panic_state, 2, __ATOMIC_RELEASE);
         sheng_log_clean(r, 128);
     }
-    /* 原始可恢复异常可能已占用RAM头，不影响真正panic的屏幕固定 */
+    /* An earlier recoverable fault may occupy the RAM header; still pin the first actual panic on screen. */
     sheng_status_panic(message);
     uint64_t text_expected = 0;
     if (__atomic_compare_exchange_n(&sheng_panic_text_state, &text_expected, 1, 0,

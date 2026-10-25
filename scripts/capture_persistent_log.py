@@ -16,7 +16,7 @@ from decode_xnu_panic import save as save_panic
 from observe_macos26_kernel import identify
 
 PARTITION = '4cd2ed34-2142-4ea4-abf2-ec6c51d117d7'
-# 与固件恢复器使用相同的sheng实际RAM表，保留两段之间的禁读间隔
+# Use the firmware recovery tool's sheng RAM map and preserve the unreadable gap between its ranges.
 RAM_RANGES = ((0x880000000, 0x8bb300000), (0x8c0000000, 0xa00000000))
 
 

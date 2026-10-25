@@ -15,7 +15,7 @@ from observe_macos26_kernel import identify
 PAGE = 16384
 MASK64 = (1 << 64) - 1
 SHA256_WORDS = '74ef7306e7452d6859b6463ce496b8df30925f69e1b2969e1f3f34bbc9c6af04'
-# 原版汇编把查表数据放在__text中，必须按实际UUID与完整字节区分
+# Original assembly stores lookup data in __text; distinguish it using the actual UUID and complete bytes.
 COMPRESSION_UUID = 'EE081FA4-270B-3359-9DFD-61B9D6DBFAB1'
 COMPRESSION_LITERALS = (
     (0xec0, 528, 'f7bb30778915b574b63a17573babfdeb97251ae92fb57e7302e69783f454f92a',

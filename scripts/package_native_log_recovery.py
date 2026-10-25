@@ -28,14 +28,14 @@ def validate_recovery_fat(bpb: bytes) -> int:
         raise ValueError('recovery configuration volume is not valid FAT16')
     root_sectors = (root_entries * 32 + sector_bytes - 1) // sector_bytes
     clusters = (sectors - reserved - bpb[16] * fat_sectors - root_sectors) // cluster_sectors
-    # 固件EnhancedFatDxe拒绝低于FAT16簇数门槛的FAT32卷
+    # Firmware EnhancedFatDxe rejects FAT32 volumes below the FAT16 cluster-count threshold.
     if not 4085 <= clusters < 65525 or bpb[54:62] != b'FAT16   ':
         raise ValueError('recovery configuration volume is not valid FAT16')
     return clusters
 
 
 def recovery_configuration() -> str:
-    # 按键可用时等待人工选择，避免保存器异常在观察前被倒计时自动触发
+    # Wait for manual selection when keys work so a countdown cannot trigger the saver before observation.
     return ('version = 1\n[boot]\ntimeout = -1\nfallback_timeout = 30\n'
             'default = "recover"\n[kits]\nautoload = false\n[[entry]]\nid = "recover"\n'
             'title = "SHENG - Save previous RAM log"\ntype = "xnu"\n'
@@ -71,7 +71,7 @@ def main() -> None:
             stage = work / 'EFI/UniXNU'
             payloads = stage / 'Payloads'
             payloads.mkdir(parents=True)
-            # NativeLogSave先执行，随后ParseKernel拒绝标记，不分配新内核窗口或重设请求
+            # Run NativeLogSave first, then let ParseKernel reject the marker without allocating a new kernel window or resetting the request.
             (payloads / 'recover-only.macho').write_bytes(b'SHENG - retained log recovery only\n')
             (stage / 'unixnu.toml').write_text(recovery_configuration())
             fat = work / 'recovery.fat'

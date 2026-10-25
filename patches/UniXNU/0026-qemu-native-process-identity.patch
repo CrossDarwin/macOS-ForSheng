@@ -69,7 +69,7 @@
 +            raise RuntimeError('native process/task owner mismatch')
 +        offsets = self.plan['offsets']
 +        user_state_raw = pointer(thread + t['upcb'])
-+        # 只为只读地址查找移除PAC元数据，不声称完成认证
++        # Strip PAC metadata only for read-only address lookup; this does not authenticate the pointer.
 +        user_state = ((user_state_raw & ((1 << 47) - 1)) | 0xffff800000000000) if user_state_raw else 0
 +        region = pointer(task + t['task_shared_region'])
 +        slide = int.from_bytes(memory(region + t['region_slide'], 4), 'little') if region else None

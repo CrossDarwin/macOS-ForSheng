@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// 执行真实EL1探针，保留4K负对照，不能替代sheng实机结果
+// Execute the real EL1 probe with a 4K negative control; this does not replace sheng hardware evidence.
 typedef unsigned long u64;
 extern u64 ShengEl1GranuleProbe(u64 *, u64 *, u64, u64, u64, u64);
 extern u64 ShengEl1PauthProbe(u64 *);

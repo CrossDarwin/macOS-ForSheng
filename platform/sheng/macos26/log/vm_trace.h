@@ -90,7 +90,7 @@ static __attribute__((always_inline)) inline void
 sheng_vm_trace_drop_identity(void)
 {
     sheng_vm_trace(7);
-    /* 先停用物理写屏，再让原生VM撤销TTBR0，不延长identity映射寿命 */
+    /* Stop physical framebuffer writes before native VM removes TTBR0; do not extend identity mapping lifetime. */
     sheng_bootstrap_vm_pixels = 0;
     sheng_status_pixels = 0;
     __asm__ volatile ("dsb sy" ::: "memory");

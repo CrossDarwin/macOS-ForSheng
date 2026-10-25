@@ -6,7 +6,7 @@
  /* BEGIN IGNORE CODESTYLE */
 +
 +#if HAS_NATIVE_EL1_PAC
-+/* 四个不同域的PACGA结果组成128位密钥，GA始终最后切换 */
++/* Derive 128-bit keys from four domain-separated PACGA results; always switch GA last. */
 +.macro SHENG_DERIVE_USER_KEY seed, lo, hi, tag, part, domain
 + MOV32 \tag, (0x53480000 | (\domain << 8))
 + pacga \lo, \seed, \tag
@@ -69,7 +69,7 @@
 + isb
 +.endmacro
 +
-+/* 仅在GPR尚未恢复且内核GA密钥仍有效时使用，保留x0/x16/x17/LR */
++/* Use before GPR restoration while the kernel GA key is active; preserve x0, x16, x17, and LR. */
 +.macro SHENG_INSTALL_USER_KEYS
 + mrs x2, TPIDR_EL1
 + ldr x1, [x2, ACT_CPUDATAP]
@@ -113,7 +113,7 @@
  	uint64_t                        rop_key;
  	uint64_t                        jop_key;
 +#if HAS_NATIVE_EL1_PAC
-+	/* 密钥只归当前CPU持有，异常入口在任何PAC认证之前恢复 */
++	/* Keys belong to the current CPU; restore them at exception entry before any PAC authentication. */
 +	uint64_t                        sheng_kernel_pac_bank[10];
 +	uint64_t                        sheng_pac_signing;
 +	uint64_t                        sheng_pac_entries;
@@ -146,7 +146,7 @@
  
  .macro EL0_64_VECTOR guest_label
 +#if HAS_NATIVE_EL1_PAC
-+	/* CpuDatap是原始内核指针，此处不能先认证UPCB或调用C */
++	/* CpuDatap is a raw kernel pointer; do not authenticate UPCB or call C before restoring keys. */
 +	stp x0, x1, [sp, #-16]!
 +	stp x2, x3, [sp, #-16]!
 +	mrs x0, TPIDR_EL1
@@ -166,7 +166,7 @@
  #endif /* ERET_NEEDS_ISB */
  
 +#if HAS_NATIVE_EL1_PAC
-+	/* 任务切换始终保持内核密钥，直到返回所选线程的最后边界 */
++	/* Keep kernel keys throughout task switching until the final return boundary of the selected thread. */
 +	mrs x2, SPSR_EL1
 +	tst x2, #PSR64_MODE_MASK
 +	b.ne Lsheng_keep_kernel_keys
@@ -186,7 +186,7 @@
 -	adrp	x0, Lsheng_el0_pac_pending@page
 -	add		x0, x0, Lsheng_el0_pac_pending@pageoff
 -	b		EXT(panic)
-+	/* pmap调用者已屏蔽中断，只临时替换A密钥，保留C返回使用的IB */
++	/* The pmap caller masks interrupts; replace only A keys temporarily and preserve IB for the C return. */
 +	cbz x0, Lsheng_bad_signing_window
 +	mrs x2, TPIDR_EL1
 +	ldr x2, [x2, ACT_CPUDATAP]
@@ -269,7 +269,7 @@
  	vmapple_pac_get_default_keys();
  	return vmapple_default_jop_pid;
 +#elif HAS_NATIVE_EL1_PAC
-+	/* 非零表示需要签名，实际128位密钥由内核GA及域标识推导 */
++	/* A nonzero value requests signing; derive the actual 128-bit key from kernel GA and the domain identifier. */
 +	return 1;
  #else
  	return 0;

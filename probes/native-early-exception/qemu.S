@@ -34,7 +34,7 @@ after_entry:
  brk #0x123
  b .
 
-// 关闭TTBR0后在高位地址触发异常，检查诊断路径能否恢复物理取指
+// Trigger a high-address exception after disabling TTBR0 to test recovery of physical instruction fetch.
 .global qemu_mmu_test
 qemu_mmu_test:
  mov x27, #0
@@ -82,7 +82,7 @@ qemu_trace_mapped:
  add x0, x0, x1
  br x0
 qemu_transition_setup:
- // 破坏高位翻译，保留物理向量；异常栈刻意不可用
+ // Break high-address translation but retain physical vectors; deliberately leave the exception stack unusable.
  msr ttbr1_el1, xzr
  isb
  tlbi vmalle1

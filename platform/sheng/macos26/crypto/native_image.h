@@ -7,7 +7,7 @@
 extern char sheng_cc26_text_start[] __SECTION_START_SYM("__TEXT_EXEC", "__cc26_text");
 extern char sheng_cc26_text_end[] __SECTION_END_SYM("__TEXT_EXEC", "__cc26_text");
 
-/* 提供者独占代码区的Mach-O视图，POST不覆盖会被static_if修改的XNU代码 */
+/* Expose the provider-owned Mach-O code view so POST excludes XNU code modified by static_if. */
 struct sheng_crypto_image {
     struct mach_header_64 header;
     struct segment_command_64 text;

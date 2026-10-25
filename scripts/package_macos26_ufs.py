@@ -242,7 +242,7 @@ def main():
             (args.output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
             print(args.output / image.name)
     except BaseException:
-        # 只删除本次新建目录中的失败封装，符号和既有镜像保持独立
+        # Remove only the failed package in the newly created directory; preserve symbols and existing images.
         shutil.rmtree(args.output)
         raise
 

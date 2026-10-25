@@ -392,7 +392,7 @@ def main() -> None:
         if not args.let_vector_log:
             command += ['--also-stop', hex(addresses['_panic'])]
         elif args.continue_after_launchd_main:
-            # 完整保留panic输出，在最终停机入口结束观察，避免继续等满期限
+            # Retain complete panic output and stop at the final halt entry instead of waiting for the deadline.
             command += ['--also-stop', hex(addresses['_halt_all_cpus'])]
         if args.capture_screen:
             command += ['--capture-screen']

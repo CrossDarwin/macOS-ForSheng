@@ -98,7 +98,7 @@ diff --git a/drivers/NativeUfs/NativeUfs.cpp b/drivers/NativeUfs/NativeUfs.cpp
        }
        return true;
 +#elif defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
-+      // 预期UUID用于等待原版APFS发布，不代表传输层完成认证
++      // Wait for the expected UUID from APFS; transport publication does not authenticate the volume.
 +      return gPending == 1 && gPendingDevice[0]->recoveryVolumeUuid (gPendingUuid[0]);
  #else
 -      return false; // Root publication requires owner verification in every build.

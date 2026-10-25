@@ -39,7 +39,7 @@
 +		} else if (seg->initprot & VM_PROT_EXECUTE) {
 +			arm_vm_page_granular_ROX(seg->vmaddr, seg->vmsize, 0, ARM64_PAGE_GUARDED);
 +		} else if (seg->initprot & VM_PROT_WRITE) {
-+			/* kalloc元数据和认证指针在启动期仍需写入 */
++			/* kalloc metadata and authenticated pointers must remain writable during bootstrap. */
 +			arm_vm_page_granular_RWNX(seg->vmaddr, seg->vmsize, 0);
 +		} else {
 +			arm_vm_page_granular_RNX(seg->vmaddr, seg->vmsize, 0);

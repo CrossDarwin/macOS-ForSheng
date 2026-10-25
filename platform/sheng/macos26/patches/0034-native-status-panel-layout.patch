@@ -69,7 +69,7 @@
 @@ -1232,7 +1232,7 @@
  {
  #if SHENG
- 	/* 字符已进入保留日志，由原生面板显示，避免两个渲染器覆盖 */
+ 	/* Characters are already retained; let the native panel render them without competing renderers. */
 -	if (sheng_panel_ready) return;
 +	if (sheng_panel_ready || sheng_status_pixels) return;
  #endif

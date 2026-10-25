@@ -103,7 +103,7 @@ ShengProbeIdentityMapped (UINTN Start, UINTN Bytes)
   return TRUE;
 }
 
-// 标签在固件映射下绘制，汇编只填对应的绿色格子，不调用固件服务
+// Draw labels using firmware mappings; assembly only fills green stage cells without firmware calls.
 EFI_STATUS
 ShengProbePrepareProgress (UINTN *Progress, UINTN *Stride)
 {
@@ -242,7 +242,7 @@ ShengGranuleMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     Table[Index] = 0;
   }
   WriteBackDataCacheRange (Table, 16384);
-  // 只调整原本禁用的高地址窗口，TTBR0、TG0和IPS保留固件值
+  // Change only the disabled high-address window; preserve firmware TTBR0, TG0, and IPS.
   Tcr = BeforeTcr & ~((3ULL << 30) | (3ULL << 28) | (3ULL << 26) |
                       (3ULL << 24) | (1ULL << 23) | (63ULL << 16));
   Tcr |= (2ULL << 30) | (3ULL << 28) | (1ULL << 26) | (1ULL << 24) | (28ULL << 16);

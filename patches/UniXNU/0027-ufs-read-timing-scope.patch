@@ -4,7 +4,7 @@
  #endif
  }
  
-+// 传输读计时独立于可选的VerifiedBlock策略
++// Transport read timing is independent of the optional VerifiedBlock policy.
 +volatile uint64_t native_ufs_read_ticks = 0;
 +static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\n\tmrs %0, cntpct_el0" : "=r" (v)); return v;}
 +

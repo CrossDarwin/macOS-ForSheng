@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
-/* 冷启动使用，MMU开启后的标记要求临时Device映射，x16-x18和NZCV为临时状态 */
+/* Cold boot only: post-MMU markers require a temporary Device mapping and clobber x16-x18 and NZCV. */
 #ifndef SHENG_EARLY_ADDRESS_DEFINED
 #define SHENG_EARLY_ADDRESS_DEFINED
-/* Darwin汇编把分号视为注释，两条指令必须分别成行 */
+/* Darwin assembly treats semicolons as comments; place each instruction on its own line. */
 .macro SHENG_EARLY_ADDRESS reg, name
 #ifdef __APPLE__
     adrp \reg, \name@page
@@ -61,7 +61,7 @@
 #endif
 .endmacro
 
-/* 页表已建立但MMU仍关闭，只映射阶段条所在的至多两个32 MiB块 */
+/* With tables ready and the MMU off, map at most two 32 MiB blocks containing the stage strip. */
 .macro SHENG_BOOTSTRAP_MAP_TRACE
 #if SHENG
 	cbnz x21, 9f
@@ -90,7 +90,7 @@
 	mov x2, #11
 	madd x1, x1, x2, x0
 	add x1, x1, #2415
-	// 防止错误输入回绕或超出当前47位TTBR0窗口
+	// Reject wraparound and addresses outside the current 47-bit TTBR0 window.
 	cmp x1, x0
 	b.lo 9f
 	lsr x2, x1, #47
@@ -119,7 +119,7 @@
 	cmp x4, #3
 	b.ne 9f
 	and x4, x3, #0x0000ffffffffc000
-	// 已有L2必须属于原生启动页表池，不能沿任意指针写入
+	// Existing L2 tables must belong to the native bootstrap pool; never follow arbitrary writable pointers.
 	cmp x4, x25
 	b.lo 9f
 	add x5, x25, #(BOOTSTRAP_TABLE_BYTES >> 12), lsl #12
@@ -130,12 +130,12 @@
 	add x5, x4, x5, lsl #3
 	ubfx x6, x1, #25, #11
 	add x6, x4, x6, lsl #3
-	// 先检查整个范围，不覆盖内核或已有映射
+	// Validate the entire range before writing; preserve the kernel and existing mappings.
 	ldr x7, [x5]
 	cbnz x7, 9f
 	ldr x7, [x6]
 	cbnz x7, 9f
-	// MAIR slot3为Device-nGnRnE，两级执行禁止，EL1可读写
+	// MAIR slot 3 is Device-nGnRnE; disable execution at both levels and allow EL1 reads and writes.
 	mov x7, #0x60d
 	orr x7, x7, #0x0060000000000000
 	orr x2, x0, x7
@@ -149,7 +149,7 @@
 	SHENG_EARLY_ADDRESS x17, EXT(sheng_bootstrap_fb_trace_ready)
 	ldr x16, [x17]
 	cbz x16, 10f
-	// 蓝色表示映射已准备，不能作为该阶段已执行的证据
+	// Blue marks a prepared mapping, not evidence that the stage executed.
 	SHENG_BOOTSTRAP_TRACE 13, 0xff0080ff, 0
 	SHENG_BOOTSTRAP_TRACE 14, 0xff0080ff, 0
 	SHENG_BOOTSTRAP_TRACE 15, 0xff0080ff, 0

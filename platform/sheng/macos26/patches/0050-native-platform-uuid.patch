@@ -5,7 +5,7 @@
  #endif /* defined(__x86_64__) */
  
 +#if SHENG && !defined(__x86_64__)
-+	/* 非Apple平台可提供自己的UUID，不把芯片标识伪装成Apple硬件 */
++	/* Non-Apple platforms may supply their own UUID without impersonating Apple chip identities. */
 +	if (!string) {
 +		entry = IORegistryEntry::fromPath("/options", gIODTPlane);
 +		if (entry) {

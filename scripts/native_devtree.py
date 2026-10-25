@@ -8,7 +8,7 @@ import zlib
 
 
 def seed_vm_nvram_uuid(image: bytes, identity: uuid.UUID) -> bytes:
-    # 只修改本工具创建的空CHRP代理，不接受已有固件变量
+    # Modify only an empty CHRP proxy created by this tool; reject existing firmware variables.
     if (len(image) != 8192 or image[4:16] != b'nvram' + bytes(7)
             or image[36:48] != b'common' + bytes(6)
             or struct.unpack_from('<H', image, 34)[0] * 16 != 2064

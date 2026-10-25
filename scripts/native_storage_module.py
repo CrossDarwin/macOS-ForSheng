@@ -57,7 +57,7 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
         existing = personality.get('Protocol Characteristics')
         if existing is not None and existing != PROTOCOL_CHARACTERISTICS:
             raise ValueError('transport describes a different physical interconnect')
-        # VirtIO实际是虚拟块设备，APFS据此选择BaseSystem根卷路径
+        # VirtIO exposes a virtual block device; APFS uses this identity to select the BaseSystem root path.
         personality['Protocol Characteristics'] = dict(PROTOCOL_CHARACTERISTICS)
     else:
         if (evidence.get('root_partition') != 'macosroot' or evidence.get('root_lun') != 0

@@ -143,7 +143,7 @@
  vcputc_options(char c, __unused bool poll)
  {
 +#if SHENG
-+	/* 字符已进入保留日志，由原生面板显示，避免两个渲染器覆盖 */
++	/* Characters are already retained; let the native panel render them without competing renderers. */
 +	if (sheng_panel_ready) return;
 +#endif
  	if (gc_initialized && gc_enabled) {

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* 复用XNU原字体，启动摘要独立于保留日志writer */
+/* Reuse the XNU font; keep the boot summary independent of the retained-log writer. */
 #define iso_font sheng_panel_font
 #include "pe_sheng_font.h"
 #undef iso_font
@@ -19,7 +19,7 @@ static struct {
     unsigned stride, columns, rows, scale;
 } sheng_panic_panel;
 
-/* 独占像素区和游标，不等待可能被panic打断的普通日志writer */
+/* Own a separate pixel region and cursor; never wait for a normal writer interrupted by panic. */
 static void sheng_panic_panel_render(void)
 {
     if (!sheng_panic_panel.base ||
@@ -52,7 +52,7 @@ static void sheng_panic_panel_render(void)
     __asm__ volatile ("dsb sy" ::: "memory");
 }
 
-/* 同一次原生映射覆盖独立文字区，旧阶段条不再与文字共用像素 */
+/* Map the separate text region in the same native mapping; do not share pixels with the old stage strip. */
 static void sheng_status_render(const char *prefix, const char *message)
 {
     const uintptr_t base = sheng_status_pixels;
@@ -132,7 +132,7 @@ static void sheng_panel_newline(void)
 {
     sheng_panel.x = 0;
     if (++sheng_panel.y == sheng_panel.rows) {
-        /* I/O映射逐字访问，不调用可能使用SIMD或DC ZVA的内存例程 */
+        /* Access the I/O mapping word by word; avoid memory routines that may use SIMD or DC ZVA. */
         const unsigned pixels = sheng_panel.columns * 8 * sheng_panel.scale;
         for (unsigned row = sheng_panel.pinned; row + 1 < sheng_panel.rows; row++) {
             for (unsigned y = 0; y < 16 * sheng_panel.scale; y++) {
