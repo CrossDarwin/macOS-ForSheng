@@ -18,6 +18,8 @@ class RecoveryPublication(unittest.TestCase):
         contract = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())
         header = ROOT / 'platform/sheng/macos26/storage/recovery_root.h'
         digest = ','.join(str(b) for b in bytes.fromhex(contract['sha256']))
+        isc = contract['isc']
+        isc_digest = ','.join(str(b) for b in bytes.fromhex(isc['sha256']))
         recovery = f'''#include <cstdint>
 #include <cstring>
 #include <cassert>
@@ -25,6 +27,9 @@ class RecoveryPublication(unittest.TestCase):
 #define NATIVE_UFS_RECOVERY_BYTES {contract['bytes']}ULL
 #define NATIVE_UFS_RECOVERY_DIGEST {{{digest}}}
 #define NATIVE_UFS_RECOVERY_UUID "{contract['volume_uuid'].upper()}"
+#define NATIVE_UFS_ISC_BYTES {isc['bytes']}ULL
+#define NATIVE_UFS_ISC_DIGEST {{{isc_digest}}}
+#define NATIVE_UFS_ISC_UUID "{isc['volume_uuid'].upper()}"
 #include "{header}"
 #include "{coordinator}"
 struct Ops {{
@@ -55,6 +60,17 @@ int main() {{
   char id[37]; assert(ufsRecoveryRootUuid("OS",NATIVE_UFS_RECOVERY_BYTES,id));
   assert(!strcmp(id,NATIVE_UFS_RECOVERY_UUID));
   assert(!ufsRecoveryRootUuid("OS",512,id));
+  const char *paired[]={{"OS","ISC"}}, *reversed[]={{"ISC","OS"}}, *duplicate[]={{"OS","OS"}};
+  UfsRootPlan both;
+  assert(ufsBuildRootPlan(paired,2,both) && both.order[0]==1 && both.order[1]==0);
+  assert(ufsBuildRootPlan(reversed,2,both) && both.order[0]==0 && both.order[1]==1);
+  assert(!ufsBuildRootPlan(duplicate,2,bad));
+  uint8_t iscDigest[32]=NATIVE_UFS_ISC_DIGEST;
+  assert(ufsRecoveryRootIdentity("ISC",NATIVE_UFS_ISC_BYTES,iscDigest));
+  assert(!ufsRecoveryRootIdentity("OS",NATIVE_UFS_ISC_BYTES,iscDigest));
+  iscDigest[0]^=1; assert(!ufsRecoveryRootIdentity("ISC",NATIVE_UFS_ISC_BYTES,iscDigest));
+  assert(ufsRecoveryRootUuid("ISC",NATIVE_UFS_ISC_BYTES,id) && !strcmp(id,NATIVE_UFS_ISC_UUID));
+
   {{ Ops o; o.valid=false; auto r=ufsPrepareRootWindows(o,1);
      assert(r.phase==UfsRootPhase::Identity && !o.live && !o.scheduled && o.discards==1); }}
   {{ Ops o; o.scheduleOk=false; auto r=ufsPrepareRootWindows(o,1);

@@ -1,0 +1,236 @@
+--- a/drivers/NativeUfs/NativeUfs.cpp
++++ b/drivers/NativeUfs/NativeUfs.cpp
+@@ -990,6 +990,7 @@
+ 
+ #include "RootLayout.h"
+ #include "RootWindowRead.h"
++#include "RootWindowOverlay.h"
+ #include "RootPublication.h"
+ #include "RootMediaWait.h"
+ 
+@@ -1204,6 +1205,11 @@
+ // One read-only window of the root image as a block device: 512-byte sectors on top of 4096-byte
+ // UFS blocks, so the unchanged dmg disk images (GPT with 512-byte sectors) parse as they do on
+ // the virtio path.
++extern "C" {
++volatile uint64_t native_ufs_isc_writes = 0, native_ufs_isc_syncs = 0;
++volatile uint64_t native_ufs_isc_resident_bytes = 0, native_ufs_isc_failures = 0;
++volatile uint32_t native_ufs_isc_overlay_enabled = 0;
++}
+ class NativeUfsBlock : public IOBlockStorageDevice {
+   OSDeclareDefaultStructors (NativeUfsBlock)
+   uint64_t absolute = 0;      // byte offset of the window on LUN 0
+@@ -1211,6 +1217,8 @@
+   char label[32] = {};
+   uint8_t *bounce = nullptr;
+   IOLock *windowLock = nullptr;
++  RamSparseDisk overlay = {};
++  static constexpr uint64_t kOverlayLimit = 64ULL << 20;
+   bool online = false;
+ #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
+   struct vr_view verified = {};
+@@ -1236,7 +1244,7 @@
+   char *getVendorString () override { return const_cast<char *> ("Native"); }
+   char *getProductString () override { return label; }
+   char *getRevisionString () override { return const_cast<char *> ("1.0"); }
+-  char *getAdditionalDeviceInfoString () override { return const_cast<char *> ("UFS LUN 0 userdata window, read-only"); }
++  char *getAdditionalDeviceInfoString () override { return const_cast<char *> (overlay.pages ? "UFS ISC seed with volatile RAM overlay" : "UFS root window, read-only"); }
+   IOReturn reportBlockSize (UInt64 *value) override { *value = 512; return kIOReturnSuccess; }
+   IOReturn reportEjectability (bool *value) override { *value = false; return kIOReturnSuccess; }
+   IOReturn reportMaxValidBlock (UInt64 *value) override { *value = bytes / 512 - 1; return kIOReturnSuccess; }
+@@ -1244,8 +1252,14 @@
+     *present = online; if (changed) *changed = false; return kIOReturnSuccess;
+   }
+   IOReturn reportRemovability (bool *value) override { *value = false; return kIOReturnSuccess; }
+-  IOReturn reportWriteProtection (bool *value) override { *value = true; return kIOReturnSuccess; }
+-  IOReturn doSynchronizeCache () override { return online ? kIOReturnSuccess : kIOReturnNotReady; }
++  IOReturn reportWriteProtection (bool *value) override { *value = !overlay.pages; return kIOReturnSuccess; }
++  IOReturn doSynchronizeCache () override {
++    if (!online) return kIOReturnNotReady;
++    IOLockLock (windowLock);
++    if (overlay.pages) __atomic_fetch_add (&native_ufs_isc_syncs, 1, __ATOMIC_RELAXED);
++    IOLockUnlock (windowLock);
++    return kIOReturnSuccess;
++  }
+   IOReturn doSynchronize (UInt64, UInt64, IOOptionBits) override { return doSynchronizeCache (); }
+   IOReturn getWriteCacheState (bool *value) override { *value = false; return kIOReturnSuccess; }
+   IOReturn setWriteCacheState (bool) override { return kIOReturnUnsupported; }
+@@ -1303,6 +1317,17 @@
+   strlcpy (label, name, sizeof (label));
+   absolute = absoluteOffset;
+   bytes = size;
++#if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
++  uint32_t requested = 0;
++  if (!strcmp (label, "ISC") && PE_parse_boot_argn ("native-ufs-isc-overlay", &requested, sizeof (requested)) && requested == 1) {
++    if ((bytes & 4095) || bytes > (4ULL << 30)) return false;
++    overlay.bytes = bytes;
++    overlay.pages = static_cast<uint8_t **> (IOMallocZero ((bytes / 4096) * sizeof (uint8_t *)));
++    if (!overlay.pages) return false;
++    native_ufs_isc_overlay_enabled = 1;
++    IOLog ("NativeUfs: ISC volatile RAM overlay limit=%llu bytes; seed remains read-only\n", kOverlayLimit);
++  }
++#endif
+ #if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
+   // Publish the BaseSystem disk image stored in the partition rather than the underlying UFS controller.
+   OSDictionary *protocol = OSDictionary::withCapacity (2);
+@@ -1482,9 +1507,9 @@
+       count > bytes / 512 - block || buffer->getLength () < count * 512) {
+     return kIOReturnBadArgument;
+   }
+-  if (buffer->getDirection () != kIODirectionIn) {
+-    return kIOReturnNotWritable;
+-  }
++  bool write = buffer->getDirection () == kIODirectionOut;
++  if (buffer->getDirection () != kIODirectionIn && !write) return kIOReturnBadArgument;
++  if (write && !overlay.pages) return kIOReturnNotWritable;
+   if (!online) {
+     return kIOReturnNotReady;
+   }
+@@ -1530,13 +1555,33 @@
+     , &verified
+ #endif
+   };
+-  UfsWindowResult outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
++  UfsWindowResult outcome;
++  if (overlay.pages) {
++    struct OverlayOperations {
++      IOLock *mutex;
++      IOMemoryDescriptor *buffer;
++      void lock () { IOLockLock (mutex); }
++      void unlock () { IOLockUnlock (mutex); }
++      uint8_t *allocate () { return static_cast<uint8_t *> (IOMalloc (4096)); }
++      void release (uint8_t *page) { IOFree (page, 4096); }
++      IOReturn read (uint64_t lba, uint32_t blocks, void *out) { return hostRead4k (0, lba, blocks, out); }
++      uint64_t load (uint64_t offset, void *out, uint64_t length) { return buffer->readBytes (offset, out, length); }
++      uint64_t copy (uint64_t offset, const void *data, uint64_t length) { return buffer->writeBytes (offset, data, length); }
++    } overlayOps = { windowLock, buffer };
++    outcome = ufsOverlayIO (overlayOps, overlay, absolute, write, block, count, kOverlayLimit, bounce);
++    native_ufs_isc_resident_bytes = overlay.resident;
++    if (outcome.status != kIOReturnSuccess) __atomic_fetch_add (&native_ufs_isc_failures, 1, __ATOMIC_RELAXED);
++    else if (write) __atomic_fetch_add (&native_ufs_isc_writes, 1, __ATOMIC_RELAXED);
++    else __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
++  } else {
++    outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
++  }
+   IOReturn result = outcome.status;
+   uint64_t done = outcome.done;
+   if (result != kIOReturnSuccess) {
+     __atomic_fetch_add (&native_ufs_block_failures, 1, __ATOMIC_RELAXED);
+     gRootDiagnostic.result = static_cast<uint32_t> (result);
+-    rootDiagnosticFailure ("root window read failed");
++    rootDiagnosticFailure (write ? "ISC volatile overlay write failed" : "root window read failed");
+   }
+   completion->action (completion->target, completion->parameter, result, done);
+   return kIOReturnSuccess;
+@@ -1544,6 +1589,12 @@
+ 
+ void NativeUfsBlock::free ()
+ {
++  if (overlay.pages) {
++    for (uint64_t i = 0; i < overlay.bytes / 4096; ++i)
++      if (overlay.pages[i]) IOFree (overlay.pages[i], 4096);
++    IOFree (overlay.pages, (overlay.bytes / 4096) * sizeof (uint8_t *));
++    overlay = {};
++  }
+ #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
+   if (verifiedStorage) {
+     kmem_free (kernel_map, verifiedStorage, verifiedStorageBytes);
+@@ -1912,8 +1963,10 @@
+   gStoreGeometry = { true, layout->userdataFirst, layout->userdataLast, layout->imageBytes, layout->gptEntriesLba,
+                      layout->gptHeaderCrc, layout->gptEntriesCrc, layout->gptEntryCount };
+ #if defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
+-  if (layout->windows != 1 || !ufsRecoveryRootIdentity (layout->window[0].name,
+-        layout->window[0].size, layout->window[0].sha256)) {
++  bool paired = layout->windows >= 1 && layout->windows <= 2;
++  for (unsigned i = 0; paired && i < layout->windows; ++i)
++    paired = ufsRecoveryRootIdentity (layout->window[i].name, layout->window[i].size, layout->window[i].sha256);
++  if (!paired) {
+     rootDiagnosticFailure ("recovery window differs from the paired BaseSystem");
+     IOFree (layout, sizeof (RootLayout));
+     return false;
+@@ -1968,7 +2021,11 @@
+       return true;
+ #elif defined(NATIVE_UFS_RECOVERY_ROOT) && NATIVE_UFS_RECOVERY_ROOT
+       // Wait for the expected UUID from APFS; transport publication does not authenticate the volume.
+-      return gPending == 1 && gPendingDevice[0]->recoveryVolumeUuid (gPendingUuid[0]);
++      for (unsigned i = 0; i < gPending; ++i) {
++        if (!gPendingDevice[i]->recoveryVolumeUuid (gPendingUuid[i])) return false;
++        for (unsigned j = 0; j < i; ++j) if (!strcmp (gPendingUuid[i], gPendingUuid[j])) return false;
++      }
++      return gPending == layout->windows;
+ #else
+       return false; // Legacy root publication requires owner verification.
+ #endif
+--- a/drivers/NativeUfs/RootPublication.h
++++ b/drivers/NativeUfs/RootPublication.h
+@@ -12,6 +12,14 @@
+     plan.count = 1;
+     return true;
+   }
++  if (count != 2 || !names[0] || !names[1]) return false;
++  unsigned recoveryOs = !strcmp (names[0], "OS") ? 0 : 1;
++  unsigned isc = 1 - recoveryOs;
++  if (strcmp (names[recoveryOs], "OS") || strcmp (names[isc], "ISC")) return false;
++  plan.count = 2;
++  plan.order[0] = isc;
++  plan.order[1] = recoveryOs;
++  return true;
+ #else
+   if (count == 1) return false;
+ #endif
+--- /dev/null
++++ b/drivers/NativeUfs/RootWindowOverlay.h
+@@ -0,0 +1,53 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#pragma once
++#include "../NativeRamBlock/SparseDisk.h"
++// Reuse the RAM disk's sparse pages. Missing pages come from the read-only UFS
++// seed; writes allocate at most residentLimit bytes and never call a disk writer.
++// The caller owns the zeroed page table, bounce page, and serialized lifetime.
++template <class Ops>
++static UfsWindowResult ufsOverlayIO (Ops &ops, RamSparseDisk &disk, uint64_t absolute,
++                                     bool write, uint64_t block, uint64_t count,
++                                     uint64_t residentLimit, uint8_t *bounce)
++{
++  if (!disk.pages || !bounce || !ufsWindowGeometry (absolute, disk.bytes) || (disk.bytes & 4095) ||
++      !residentLimit || (residentLimit & 4095) || !count || block >= disk.bytes / 512 ||
++      count > disk.bytes / 512 - block)
++    return { kIOReturnBadArgument, 0 };
++  UfsWindowGuard<Ops> guard (ops);
++  struct Adapter {
++    Ops &parent;
++    RamSparseDisk &disk;
++    uint64_t absolute, offset, cursor, limit;
++    uint8_t *bounce;
++    IOReturn status = kIOReturnSuccess;
++    uint8_t *allocate () {
++      if (disk.resident >= limit) { status = kIOReturnNoMemory; return nullptr; }
++      uint8_t *page = parent.allocate ();
++      if (!page) { status = kIOReturnNoMemory; return nullptr; }
++      status = parent.read ((absolute + cursor) / 4096, 1, page);
++      if (status != kIOReturnSuccess) { parent.release (page); return nullptr; }
++      return page;
++    }
++    uint64_t read (uint64_t done, void *out, uint64_t length) {
++      uint64_t copied = parent.load (done, out, length);
++      cursor = offset + done + copied;
++      return copied;
++    }
++    uint64_t copy (uint64_t done, const void *, uint64_t length) {
++      uint64_t at = offset + done;
++      const uint8_t *page = disk.find (at / 4096);
++      if (!page) {
++        status = parent.read ((absolute + at) / 4096, 1, bounce);
++        if (status != kIOReturnSuccess) return 0;
++        page = bounce;
++      }
++      return parent.copy (done, page + (at & 4095), length);
++    }
++  } adapter = { ops, disk, absolute, block * 512, block * 512, residentLimit, bounce };
++  bool noMemory = false;
++  uint64_t length = count * 512;
++  uint64_t done = ramSparseIO (disk, write, block * 512, length, adapter, noMemory);
++  IOReturn status = adapter.status != kIOReturnSuccess ? adapter.status :
++    noMemory ? kIOReturnNoMemory : done == length ? kIOReturnSuccess : kIOReturnIOError;
++  return { status, done };
++}

@@ -4,5 +4,18 @@
   "window": "OS",
   "bytes": 1577092608,
   "sha256": "6199e53d3cf60c59790e507851ef48141dbfa23875fdde5e838446984ed56881",
-  "volume_uuid": "808eac5e-8275-478d-814c-2229d8eb8d07"
+  "volume_uuid": "808eac5e-8275-478d-814c-2229d8eb8d07",
+  "isc": {
+    "window": "ISC",
+    "bytes": 2149580800,
+    "sha256": "ef3675db11103eb3db4437857cd0d875be62a5e14d7ff3b18f7700df39737f71",
+    "volume_uuid": "eb96f3fe-29c9-438b-bb52-39de154920eb",
+    "volumes": {
+      "SHENG-xART": "EB96F3FE-29C9-438B-BB52-39DE154920EB",
+      "SHENG-Preboot": "CE2D36C7-7D58-4DB7-AE57-FA78D1CC54B8",
+      "SHENG-Hardware": "BDED3A6D-1AC9-4998-852D-C94F5F12C3C4"
+    },
+    "volatile_overlay_limit_bytes": 67108864,
+    "sep_trusted_storage": false
+  }
 }

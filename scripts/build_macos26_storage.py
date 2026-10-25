@@ -45,8 +45,19 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
         recovery_prefix = ('#include <libkern/libkern.h>\n'
             f'#define NATIVE_UFS_RECOVERY_BYTES {recovery_root["bytes"]}ULL\n'
             '#define NATIVE_UFS_RECOVERY_DIGEST {' + ','.join(str(b) for b in digest) + '}\n'
-            f'#define NATIVE_UFS_RECOVERY_UUID "{identity}"\n'
-            f'#include "{root / "platform/sheng/macos26/storage/recovery_root.h"}"\n')
+            f'#define NATIVE_UFS_RECOVERY_UUID "{identity}"\n')
+        if 'isc' in recovery_root:
+            isc = recovery_root['isc']
+            isc_digest = bytes.fromhex(isc['sha256'])
+            isc_uuid = str(uuid.UUID(isc['volume_uuid'])).upper()
+            if (isc['window'] != 'ISC' or len(isc_digest) != 32 or not 0 < isc['bytes'] <= 4 << 30
+                    or isc['bytes'] % 4096 or isc['volatile_overlay_limit_bytes'] != 64 << 20
+                    or isc['sep_trusted_storage'] is not False):
+                raise ValueError('requires the bounded owned ISC seed contract')
+            recovery_prefix += (f'#define NATIVE_UFS_ISC_BYTES {isc["bytes"]}ULL\n'
+                '#define NATIVE_UFS_ISC_DIGEST {' + ','.join(str(b) for b in isc_digest) + '}\n'
+                f'#define NATIVE_UFS_ISC_UUID "{isc_uuid}"\n')
+        recovery_prefix += f'#include "{root / "platform/sheng/macos26/storage/recovery_root.h"}"\n'
     wrapper.write_text(
         '#include <TargetConditionals.h>\n'
         'static_assert(TARGET_OS_OSX == 1, "requires macOS storage ABI");\n'
@@ -128,5 +139,10 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                         recovery_root_header_sha256=hashlib.sha256((root / 'platform/sheng/macos26/storage/recovery_root.h').read_bytes()).hexdigest(),
                         root_publication_sha256=hashlib.sha256((upstream.parent / 'RootPublication.h').read_bytes()).hexdigest(),
                         recovery_transport_is_not_authentication=True)
+        if 'isc' in recovery_root:
+            evidence['isc_volatile_overlay'] = dict(seed_read_only=True, disk_writes=False,
+                limit_bytes=64 << 20, boot_argument='native-ufs-isc-overlay=1', persistent=False,
+                production_header_sha256=hashlib.sha256((upstream.parent / 'RootWindowOverlay.h').read_bytes()).hexdigest(),
+                sparse_disk_header_sha256=hashlib.sha256((upstream.parent.parent / 'NativeRamBlock/SparseDisk.h').read_bytes()).hexdigest())
     (destination / 'build.json').write_text(json.dumps(evidence, indent=2) + '\n')
     record['storage_driver' if transport == 'virtio' else 'ufs_driver'] = evidence
