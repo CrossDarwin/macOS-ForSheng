@@ -7,10 +7,12 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'out/macos26-xnu'
@@ -127,6 +129,40 @@ def run(command: list, name: str, record: dict, cwd: Path = ROOT, env=None) -> N
         raise subprocess.CalledProcessError(result.returncode, command)
 
 
+def refresh_comment_only_patches(source: Path, applied: dict) -> None:
+    """Refresh recorded patch comments while retaining unchanged source timestamps."""
+    changed = [p for p in PATCHES if str(p.relative_to(ROOT)) in applied
+               and sha(p) != applied[str(p.relative_to(ROOT))]]
+    if not changed:
+        return
+    tokens = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|/\*.*?\*/|//[^\n]*', re.S)
+
+    def code(text):
+        return tokens.sub(lambda m: ''.join('\n' for c in m[0] if c == '\n')
+                          if m[0].startswith(('/*', '//')) else m[0], text)
+
+    with tempfile.TemporaryDirectory(prefix='comment-refresh-', dir=OUT) as temporary:
+        clean = Path(temporary) / 'source'
+        subprocess.run(['git', 'clone', '--quiet', '--shared', '--no-hardlinks',
+                        ROOT / 'sources/macos26/xnu', clean], check=True)
+        for patch in PATCHES:
+            if str(patch.relative_to(ROOT)) in applied:
+                subprocess.run(['git', '-C', clean, 'apply', patch], check=True)
+        paths = subprocess.check_output(['git', '-C', clean, 'ls-files', '--modified',
+                                         '--others', '--exclude-standard', '-z']).decode().split('\0')
+        updates = []
+        for name in filter(None, paths):
+            actual, desired = source / name, clean / name
+            if (not actual.is_file() or not desired.is_file()
+                    or code(actual.read_text()) != code(desired.read_text())):
+                raise ValueError('previously applied patch changed beyond comments: ' + name)
+            if actual.read_bytes() != desired.read_bytes():
+                updates.append((desired, actual))
+        for desired, actual in updates:
+            stage_file(desired, actual)
+    applied.update({str(p.relative_to(ROOT)): sha(p) for p in changed})
+
+
 def prepare() -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / 'logs').mkdir(exist_ok=True)
@@ -161,6 +197,7 @@ def prepare() -> dict:
         if hashlib.sha256(current_diff).hexdigest() != previous_record['source_diff_sha256']:
             raise ValueError('isolated source has unrecorded changes; preserve it for inspection')
         applied = previous_record['patches']
+        refresh_comment_only_patches(source, applied)
     for patch in PATCHES:
         identity = str(patch.relative_to(ROOT))
         if identity in applied:
@@ -502,8 +539,9 @@ def main() -> None:
     ARCH = args.arch
     if ARCH == 'arm64e':
         OUT = ROOT / 'out/macos26-xnu-arm64e'
-        PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0001-native-el1-pac-abi.patch')
-        PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0002-native-arm64e-chained-startup.patch')
+        before = PATCHES.index(ROOT / 'platform/sheng/macos26/patches/0040-native-prelink-structor-signing.patch')
+        PATCHES[before:before] = [ROOT / 'platform/sheng/macos26/pac/0001-native-el1-pac-abi.patch',
+                                 ROOT / 'platform/sheng/macos26/pac/0002-native-arm64e-chained-startup.patch']
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0003-native-user-pac-lifecycle.patch')
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0004-native-signing-window-failure.patch')
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0005-native-user-a-key-policy.patch')
