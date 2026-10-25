@@ -292,6 +292,8 @@ def main():
             configure_native_text_state(files / 'kernel.macho.adt', development_root=True,
                                         root_hash=root_hash, boot_volume_uuid=args.root_volume_uuid)
             transport_title = 'UFS+ISC' if args.isc_overlay else 'UFS'
+            if log_qualification:
+                transport_title += '+LOG'
             (stage / 'unixnu.toml').write_text('version = 1\n[boot]\ntimeout = -1\nfallback_timeout = 30\ndefault = "native26ufs"\n'
                 '[kits]\nautoload = false\n[[entry]]\nid = "native26ufs"\n'
                 f'title = "SHENG macOS 26 - {transport_title} {identity["uuid"][:8]}"\ntype = "xnu"\n'

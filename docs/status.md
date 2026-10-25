@@ -1700,3 +1700,18 @@ SHENGLOG.BIN已在实机创建，首LBA448535，文件末块为只读归属标�
 整分区回读SHA256为1efe6fe6550711cb327213553adeb7f9ec162b00bd3c805980b678fb6956007d，
 与准备镜像一致；主备GPT保持原样，设备再次恢复Android槽a、boot_completed=1。
 此时文件尚无内核运行时快照，不能把预分配成功写成内核日志写盘成功。
+
+
+### 运行时日志候选已编译，完整XNU文件验证进行中
+
+CI40185402114通过，接入原版恢复组件后的UUID为4F62754E-8ACC-3090-8892-C12EB721BA16，
+内核SHA256为45d1c2c0318f0aa7c160cf3902f53fa0a507899df96a8f0f3827c17c618db266。
+早期候选的volatile递增不符合Xcode27的C++23规则，已改用原子计数并按C++23验证。
+快照函数先前声明为weak_import，被显式导入准入拒绝；已改为必须由配套内核提供的强依赖。
+
+新的QEMU后端仅替换hostSubmit以下的控制器传输，使用真实IOLock、内核分配、
+RootLayout解析、UFS命令构造及macoslog worker；测试介质来自本地真实GPT和预分配FAT镜像。
+本版启动汇编实际16格、IOFindBSDRoot及NativeUfs::start默认拒绝均通过。
+mode 1已通过，日志文件首LBA448535，8589次读取、写入0、同步0。
+mode 2已生成可解码快照并运行原版launchd任务，完整最终结果及物理写入另行记录。
+该QEMU后端不是物理UFS仿真，不能替代实机写入和Recovery回读。
