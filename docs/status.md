@@ -1512,3 +1512,21 @@ IOMedia包含disk0（0x5e008600字节）及disk0s1（0x5e000000字节），分�
 
 视频位于private/device/ufs-panic-40164717613/hardware-boot.mp4，详情帧及结构化观察已保存。
 本轮随后正常恢复Android，a槽可启动，sys.boot_completed=1，未刷写分区或变更槽位。
+
+
+### 新候选在30秒后发布目标卷，已具备实测条件
+
+CI40166730488成功，实际UFS源码SHA匹配0034；反汇编等待比较常量为180000（0x2bf20），
+100毫秒暂停递增，未绕过UUID或祖先检查。候选UUID 40AD15FD-6BA0-3834-BC05-B6B36A2F0F65，
+SHA256 def31f2d8d4dc75c492501a7dc5f248bf5f24702c633ddbbecb5daa32283b81e。
+匹配物理放置的启动汇编、IOFindBSDRoot、实际UFS默认关闭返回及独立panic面16行绑定均通过。
+
+同一NativeUfsBlock离线读取对照在elapsed=30000 ms时仍打印waiting、busy=1，随后才出现
+目标卷ready、BSD root: disk1s1和load_init_program。这是旧30秒窗口不足的运行时反例，
+但底层hostBringUp和GPT解析被明确替换，不能据此断言实机唯一故障已解决。
+8519次模拟读取69771264字节；原版存储、GPT子盘和APFS卷发布实际执行，VirtIO节点禁用。
+现场位于private/experiments/20261025-native-arm64e/ufs-root-wait-40166730488。
+
+新部署包out/macos26-ufs-wait-hardware-40166730488，临时RAM启动，原根卷和布局保持原样。
+旧A2FEEAC1部署镜像与ADT已销毁，视频、诊断、内核符号及恢复备份保留。
+新包尚未部署；下一轮录像应覆盖最长180秒发布等待，读取每10秒进度和最终详情。
