@@ -1846,3 +1846,18 @@ DroidVM的NativeAdrenoMetalPlugin经IOGPUMetalDevice加载，创建的设备向M
 25F71 SkyLight内保留CompositorSW及默认合成器选择路径。
 下一项先验证原版软件合成入口和实际输出，再评估配套Metal前端及原生GPU后端。
 软件合成路径目前只有静态入口证据，不能宣称可用或已有图形Recovery。
+
+
+### QEMU已进入软件合成激活路径，第一帧仍未通过
+
+显式QEMU实验在实际WindowServer进程的默认合成器once block处，
+核对原版88字节哈希及共享缓存slide后，以16字节叶函数设置原有软件合成选择位。
+本实验修改了客体内存中的代码，未改原始磁盘文件；不是未修改用户态的验收结果。
+不删除PAC指令，不修改寄存器返回值，也不引入假的Metal设备。
+随后同一线程确实到达原版activate_compositor_sw入口，解除默认选择阶段的Metal等待。
+
+但535秒传输预算内未命中复制完成点，未看到first swap submitted，WindowServer仍退出并重启。
+目前只证明软件合成激活入口可执行，不能证明软件合成器完成初始化、成功渲染或图形Recovery。
+后续按实际异常和调用栈定位新退出点，不能把之前的Metal等待原因套到本次退出。
+一次前置运行尚未启用实验时触发中断屏蔽超时，已保留现场；
+QEMU后续使用原版interrupt-masked-debug-mode=1记录该超时，实机配置保持不变。
