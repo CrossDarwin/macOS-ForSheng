@@ -1,4 +1,4 @@
-# 实施状态 - 2026-10-25
+# 实施状态 - 2026-10-26
 
 系统目标已改为配对的 macOS 26.5 / 25F71。旧 XNU 独立验证 EL1 硬件交接，不能作为 macOS 26/27 用户空间的替代内核。
 
@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | 原版launchd、sh/bash及恢复系统Data脚本已执行；tmpfs、FSCompression、Sandbox、Quarantine已通过；WindowServer主动退出定位到HID及显示初始化 |
+| 原生 25F71 ARM64E QEMU | 原版launchd及恢复服务已运行；显式软件合成开发实验已完成10帧GOP复制，画面为黑底鼠标；保留钥匙串登录的就绪检查对照已运行原版RecoveryOS Agent的AppKit入口，尚无Recovery窗口 |
 | 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；WindowServer反复exit(1)，尚无图形Recovery证据 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -1912,7 +1912,7 @@ sRGB源码修正的构建40208410649已下载并完成30个原版模块及显示
 新UUID为43E660E5-73B4-30E3-B998-A82D62224439，
 候选SHA-256为5f555e6fa0d5b5975804de138c79430aaafcd18a53c93daf39e518d136442d68。
 配套DWARF各调试section与前一构建逐字节一致，进程布局据此复用并重新绑定新候选身份。
-正在用编译后的sRGB声明验证连续帧输出，再检查Recovery窗口服务。
+编译后的sRGB声明已用于下述连续帧验证。
 
 
 同一新候选的连续帧观测已完成：原版WindowServer依次将GOP完整复制计数推进至1–10，
@@ -1921,3 +1921,48 @@ sRGB源码修正的构建40208410649已下载并完成30个原版模块及显示
 仍有明确记录的两个QEMU用户代码开发补丁：Metal能力once block与分配前BGRA选择。
 第10帧截图仍为黑底鼠标指针，因此当前验收限于连续呈现，不含Recovery窗口。
 下一项定位恢复界面客户端及窗口显示链路，再决定实机部署方案。
+
+
+### Recovery客户端已进入AppKit，仍未创建可见恢复窗口
+
+连续帧之后的有界运行没有出现LanguageChooser或RecoverySpringboard。
+原版recoveryosd仍存活，其最后的用户栈为SecKeychainLogin → StorageManager::login →
+Keychain构造 → check_system_keychain → read；内核保存栈同时确认socket读取等待。
+配对25F71代码检查的是/var/run/systemkeychaincheck.done，并从
+/var/run/systemkeychaincheck.socket等待就绪，尚未创建Aqua会话。
+原版systemkeychain的一个线程停在CSSM_Init调用的阻塞式ASL日志发送中；
+仅凭这一份快照不能断言syslogd已死锁或SEP是原因。
+
+显式QEMU对照只省略上述void就绪检查，保留原版SecKeychainLogin及其返回值处理。
+recoveryosd随即越过socket等待，进入真正解锁路径，随后在
+__SecLookupIndirectUnlockKey → NSXPCConnection → 同步Mach回复等待中停留。
+按配对框架的SecuritydXPCClient初始化代码，目标服务为com.apple.securityd.general；
+配对LaunchAgent将该服务交给/usr/libexec/secd。
+短观测只能证明该时刻的等待，不能据此认定调用永久不返回。
+
+以上实验仍使用只读根镜像、同一编译sRGB候选和明确记录的软件合成/BGRA开发补丁。
+就绪检查补丁只修改QEMU客体内存，未修改原始磁盘文件；共享缓存页可能被其他客体进程共享，
+不能宣称是进程私有补丁。线程及日志证据保留在本地private/，未上传。
+
+
+同一就绪检查对照延长至传输预算结束后，recoveryosd已越过实际钥匙串登录，
+停留在原版ROSAgent::runAquaSpecificTasks的同步XPC调用中。
+原版RecoveryOS Agent已启动，其主线程保存的用户边界与栈为
+NSApplicationMain → NSApplication::run → finishLaunching → 主菜单初始化。
+该线程在快照中可运行，不能把这个边界当作卡死函数。
+截图仍为黑底鼠标，未发现LanguageChooser或RecoverySpringboard。
+
+独立省略SecKeychainLogin调用的负对照没有产生恢复窗口，未作为部署方案。
+该实验只在核对实际recoveryosd头部、调用点字节及配对Security入口后调整QEMU的PC，
+没有伪造认证返回值，也没有修改原始文件。它与保留登录的对照都出现了旧ASL链上的等待：
+secd部分工作线程在os_log的syslog镜像发送及日志锁上等待，recoveryosd也有ASL锁等待。
+syslogd仍有可运行线程，因此当前证据是日志转发阻塞及其连带等待，不是已证明的永久死锁。
+单变量对照已关闭QEMU中的旧syslog镜像，保留原版钥匙串就绪检查、登录与恢复会话流程。
+该对照仍未产生恢复窗口：最终recoveryosd线程停留在check_system_keychain的socket读取，
+systemkeychain等待PID91的bash子任务，syslogd还有写入中的线程。
+期间出现的Force enable input device日志不能作为钥匙串登录完成的证据。
+因此单独关闭旧镜像不足以解决就绪等待，也不把此前瞬时XPC等待归为永久死锁。
+
+已启动更长的QEMU观察，沿用曾到达RecoveryOS Agent的就绪检查对照，保留真正钥匙串登录。
+这次扩大最终只读线程快照至最多96个进程，包含子shell，避免只记录父服务而遗漏实际子任务。
+运行结果尚待确认，未封装或部署到sheng。
