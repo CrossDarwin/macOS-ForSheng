@@ -26,6 +26,17 @@ ARM.BIN及RECOVERY.BIN是固定16字节的最新加载器状态，分别标记�
 宿主EFI测试覆盖高地址相距3 GiB的日志/panic、指定分区连接、错误状态读回、地址间隔拒绝、
 现有CRC/UUID/短写/分配失败；实机跨重启捕获尚未验收。
 
+保存现场前使用同一固件的小型恢复包，避免再次加载完整内核：
+
+```sh
+python3 scripts/package_native_log_recovery.py \
+  --source-build out/macos26-ufs-logfix-hardware-40124513764/build.json \
+  --output out/native-log-recovery-NEW
+```
+
+该包复用已核对的固件载荷，菜单读取不可执行标记。NativeLogSave执行后，ParseKernel拒绝标记并返回菜单；
+它不申请新内核窗口、不重新建立NEXTLOG。返回菜单本身不证明日志保存成功，应从Recovery读回CAP目录和状态文件。
+
 root Recovery只读导出：
 
 ```sh
