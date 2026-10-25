@@ -16,7 +16,8 @@ class IscOverlay(unittest.TestCase):
             self.skipTest('requires a host C++ compiler')
         with tempfile.TemporaryDirectory() as temporary:
             executable = Path(temporary) / 'overlay'
-            subprocess.run([compiler, '-std=c++17', '-Wall', '-Wextra', '-Werror',
+            warnings = ['-Wunneeded-internal-declaration'] if 'clang' in Path(compiler).name else []
+            subprocess.run([compiler, *warnings, '-std=c++17', '-Wall', '-Wextra', '-Werror',
                             '-fsanitize=address,undefined', str(ROOT / 'tests/ufs_isc_overlay.cpp'),
                             '-o', str(executable)], check=True, capture_output=True, timeout=30)
             subprocess.run([str(executable)], check=True, capture_output=True, timeout=10)

@@ -1,0 +1,15 @@
+--- a/drivers/NativeRamBlock/SparseDisk.h
++++ b/drivers/NativeRamBlock/SparseDisk.h
+@@ -8,9 +8,9 @@
+   uint64_t bytes, resident;
+   const uint8_t *find(uint64_t i) const { return pages ? pages[i] : nullptr; }
+ };
+-static uint32_t ramU32(const uint8_t *p){uint32_t v;memcpy(&v,p,4);return v;}
+-static uint64_t ramU64(const uint8_t *p){uint64_t v;memcpy(&v,p,8);return v;}
+-static bool ramPackedLayout(const uint8_t *p,uint64_t n,uint64_t *logical) {
++static inline uint32_t ramU32(const uint8_t *p){uint32_t v;memcpy(&v,p,4);return v;}
++static inline uint64_t ramU64(const uint8_t *p){uint64_t v;memcpy(&v,p,8);return v;}
++static inline bool ramPackedLayout(const uint8_t *p,uint64_t n,uint64_t *logical) {
+   if(!p || n<32 || n>0x10000000 || memcmp(p,"DBRDISK1",8) || ramU32(p+8)!=1 || ramU32(p+12)!=4096)return false;
+   uint64_t size=ramU64(p+16),count=ramU64(p+24),end=0;
+   if(!size || size>(1ULL<<40) || (size&4095) || count>65536 || count>(n-32)/16)return false;
