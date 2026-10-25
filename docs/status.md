@@ -1982,3 +1982,16 @@ _RegisterApplication → HIServices的RegisterApplication block → abort → pt
 下一次观察已增加对该槽指向字符串及有界用户栈的只读捕获。
 完成原因确认后再处理注册所依赖的会话/服务条件，不把跳过abort作为注册成功。
 原始日志、线程与寄存器保留本地，未部署sheng。
+
+
+### 复现等待链显示旧日志镜像同时拖住注册与钥匙串服务
+
+增加失败消息捕获的20分钟运行未复现上一次应用注册SIGABRT；最终由观察器预算中断，
+这不能算应用注册已经修复。最终快照仍在SecKeychainLogin的DbCreate调用中，
+securityd等待applekeystored的kb_load回复；applekeystored主线程则停留在os_log的旧syslog镜像发送。
+launchservicesd的工作线程也在同一旧镜像发送路径等待。
+这些是实际线程链路，不把日志不再增长等同于内核崩溃；只读CPU采样还显示WindowServer在EL0执行。
+
+新的组合对照保留真正钥匙串登录和原版应用注册调用，合并已单独验证的就绪检查省略与旧syslog镜像关闭。
+目的是检验关键服务不再被镜像发送拖住后是否能够返回，尚未执行缺少ASN的策略对照。
+后者已准备，但仅允许在捕获到匹配的缺少ASN退出消息后运行，不伪造ASN或WindowServer连接成功。
