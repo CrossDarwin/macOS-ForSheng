@@ -1,16 +1,15 @@
 # sheng 内核现场与 KDP
 
-当前25F71 ARM64E实机视频确认连续内核文字、NativeUfs: published OS、原版APFS和FSCompression加载。
-最后仍在等待808EAC5E-8275-478D-814C-2229D8EB8D07，没有挂载或launchd证据。
-40161755752实际包含0051，QEMU确认普通面板绑定24行；实机仍只显示首次panic摘要，没有媒体列表或读盘计数。
-普通writer被打断时，旧panic正文的trylock也会失败；这是源码可复现的缺口，尚未证明是本次硬件唯一原因。
-0052把首次panic正文保存到独立4096字节快照，并在普通24行下方预留16行固定文字区。
-其像素和游标不与普通writer共用，不强行释放被打断的锁。AArch64 QEMU实际字体像素、writer忙、
-RAM头已记录可恢复异常、嵌套panic及80行后续日志的固定显示已通过。CI40164717613及完整内核原生映射验证已通过。QEMU中预期的无控制器panic已在独立文字区实际显示计数，实机尚待验证。
+当前A2FEEAC1实机已读到独立PANIC DETAIL：prepared=1、published=1、reads=12、failures=0。
+媒体列表有disk0和disk0s1；其容量和GPT分区GUID与已部署BaseSystem相符，但目标APFS卷尚未发布。
+最后普通日志停在swcrypto_threadpool_init的Starting ThreadPool；没有挂载或launchd证据。
+原发布线程从早期start开始计时，30秒后主动panic，可能中止仍在进行的APFS初始化，尚未证明唯一原因。
+0034改为180秒有界等待，每10秒报告reads/failures/busy，仍严格检查目标UUID及窗口祖先。
+超时媒体列表增加Content、busy和类名。新版本待CI与QEMU验证。
 
-macoslog只读导出仍只有OBSERVED.JSON，没有自动捕获文件。
-当前固件SHENG_VENDOR_HW=0，最终FD没有UFSDxe；DarwinBoot和Fat存在，但缺少内部UFS文件系统的物理后端。
-手动恢复菜单实机出现，选择后返回；这不证明保存器成功访问内部存储。按用户要求暂缓该后端。
+独立panic区的实机显示已通过，普通日志和首次详情分用像素及缓冲，不依赖普通writer。
+macoslog仍无自动捕获文件：当前固件SHENG_VENDOR_HW=0，最终FD没有UFSDxe，缺少内部存储物理后端。
+按用户要求暂缓分区日志，使用整屏视频；完整实机RAM日志未恢复。
 KDP和UART仍没有实机传输能力。
 
 内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。

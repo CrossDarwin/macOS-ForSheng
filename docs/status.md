@@ -1493,3 +1493,22 @@ SHA256 faa5a27a574f47968f790400aec6fb99ac2be54d9f55ffc9a68315ef78ad27f5。
 菜单版本A2FEEAC1，资格及截图在private/experiments/20261025-native-arm64e/ufs-panic-40164717613。
 尚未部署；实机仍未证明目标根卷挂载。旧6F504502部署镜像和ADT已销毁，内核符号、输入、视频和恢复备份保留。
 下一轮仅需记录独立PANIC DETAIL中的媒体与I/O计数，再决定修复哪一层。
+
+
+### A2FEEAC1实机首次读到媒体列表与I/O计数
+
+113秒视频已保存，独立PANIC DETAIL实机可读，prepared=1、published=1、reads=12、failures=0。
+IOMedia包含disk0（0x5e008600字节）及disk0s1（0x5e000000字节），分区GUID
+5878145C-6D81-4FB7-8057-14FF5AC18457与离线BaseSystem GPT相符。
+目标APFS卷808EAC5E-8275-478D-814C-2229D8EB8D07没有出现在列表中。
+这次证明GPT子分区已发布且传输未报告错误；不能仅凭success计数保证所有读取字节正确。
+最后普通日志为swcrypto_threadpool_init:1133: Starting ThreadPool，未见其1155行或dev_init。
+
+原发布线程在早期根设备start后立即计时，30秒即panic；APFS初始化和线程池就绪并不受此线程控制。
+0034延长有界等待到180秒，仍只接受目标UUID且祖先为本窗口的IOMedia；每10秒报告读取/失败计数与busy，
+超时媒体条目增加Content、busy及实际类名。测试覆盖45秒后就绪、截止点、永不就绪和错误身份，ASan/UBSan通过。
+这用于检验是否提前中止初始化，不宣称已修复物理根卷失败。已有QEMU离线对照受GDB停机影响，
+不能用其成功证明真实30秒窗口充足。新候选待编译及同一发布路径验证。
+
+视频位于private/device/ufs-panic-40164717613/hardware-boot.mp4，详情帧及结构化观察已保存。
+本轮随后正常恢复Android，a槽可启动，sys.boot_completed=1，未刷写分区或变更槽位。
