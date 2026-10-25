@@ -9,7 +9,7 @@
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
 | 原生 25F71 ARM64E QEMU | 原版launchd、sh/bash及恢复系统Data脚本已执行；tmpfs、FSCompression、Sandbox、Quarantine已通过；WindowServer主动退出定位到HID及显示初始化 |
-| 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；尚无图形Recovery证据 |
+| 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；WindowServer反复exit(1)，尚无图形Recovery证据 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
 | 26A428 KDK | 下载哈希、Apple 包签名、T8140 内核及配对 DWARF UUID 验证通过 |
@@ -22,7 +22,7 @@
 | 旧 XNU 完整配置 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
-| macOS 实机启动 / 双系统 | 64 GiB macosroot已创建，配套BaseSystem写入并完整读回一致；剩余userdata重建后Android槽a正常启动；macOS实机BaseSystem及ISC挂载已通过；自动RAM日志写盘尚未通过 |
+| macOS 实机启动 / 双系统 | 64 GiB macosroot已创建，配套BaseSystem写入并完整读回一致；剩余userdata重建后Android槽a正常启动；macOS实机BaseSystem及ISC挂载已通过；运行时保留日志写入macoslog并在重启后由Recovery读回已通过 |
 
 ## 已定位的引导问题
 
@@ -1723,3 +1723,25 @@ mode 2已生成可解码快照并运行原版launchd任务，完整最终结果�
 只读模式未写入，默认拒绝实际返回0；文件外区域和末尾保护块均保持一致。
 原版launchd主函数执行，ISC三个角色卷挂载，ISC RAM层7写2同步、57344字节驻留、失败0。
 以上使用QEMU控制器传输替身，物理UFS写入尚未通过；需要临时启动后Recovery读回才能确认。
+
+
+### 实机运行时日志写盘与重启后读取已通过
+
+4F62754E候选临时启动后，视频记录NativeUfs验证日志文件并提交第一份快照。
+随后从root Recovery只读导出SHENGLOG.BIN，两个提交槽均有效，序号为44和43，
+最新快照UUID与本次内核一致。运行前文件载荷为空，确认本次数据不是预置的QEMU捕获。
+完整macoslog分区读回与预分配镜像比较，文件外字节、FAT、其他文件、保护块和主备GPT均未改变。
+设备已恢复Android，boot_completed=1、槽_a。
+
+最新快照记录控制台累计218024字节，保留81920字节，省略136104字节，busy-writer丢失82字节。
+这是运行时保留前缀和环形尾部的持久快照，不是完整流式历史，也不保证最后一次panic已提交。
+旧UEFI恢复器和RAM跨重启保留仍未通过；本次写盘不依赖这两条路径。
+通用解码器不自动认证硬件来源，本次实机资格由独立的空文件基线、启动视频和Recovery回读记录共同确认。
+视频、原始日志和分区镜像仅保存在本地private/。
+
+持久日志已确认实机WindowServer进入运行态，pid85在3824毫秒后以exit(1)退出，
+随后launchd再次创建pid87。logd及opendirectoryd查询失败出现在退出之前，但尚不能证明其为退出原因。
+此前QEMU的原版SkyLight退出调用栈定位到HID和display/cursor初始化；实机目前只确认退出码及重启，
+下一步按实际IOKit查询和用户客户端返回值定位，不能把QEMU的失败位置直接作为实机结论。
+保存的首次EL1同步异常寄存器位于bzero+0x20，日志在此后继续进入用户态，不能当作最终致命panic。
+图形Recovery仍未显示。
