@@ -1606,3 +1606,30 @@ D86D84A7本轮300.629333秒视频已保存，画面需旋转180度。
 视频及逐时画面保存在private/device/development-dyld-40169005156，
 结构化观察及关键帧同步到private/experiments/20261025-native-arm64e/development-dyld-40169005156。
 本轮没有刷写新分区，实机当前停留于panic现场，待返回FASTBOOT后正常恢复Android。
+
+### 原生UFS双窗口已在离线读取对照中挂载全部ISC角色卷
+
+CI40177580007成功，候选UUID4423A7AA-98AB-338F-9401-9BE0979716CB，
+SHA256 3bd193607b7ff09c24058be0c14af5f981e273548c3a92bd172cf8be0776ffa6。
+此前CI40176660878未启动runner，GitHub明确返回Billing/spending limit拒绝；用户处理后本轮已完成。
+
+0035接入生产NativeUfsBlock的OS和ISC双窗口，先发布ISC并等待匹配UUID及实际窗口祖先，随后发布OS。
+OS保持只读；ISC以只读种子配合最多64MiB驻留数据的稀疏RAM写入层，需显式native-ufs-isc-overlay=1。
+0036将共享SparseDisk头中的普通静态辅助函数改为static inline，修复macOS编译器的Werror诊断。
+共享生产读写算法已通过短复制、部分写入、容量上限、底层读取失败和不可变种子的ASan/UBSan测试。
+
+本轮离线对照使用生产块设备、分区及原版APFS组件，底层hostBringUp、RootLayout和UFS读取由受限镜像替身提供。
+11397次替身读取共168779776字节，两个窗口实际发布，读取失败0。
+原版apfs_boot_util先后挂载SHENG-xART、SHENG-Preboot和SHENG-Hardware，原版launchd继续执行后续启动任务。
+这确认已越过此前mount-phase-1失败，但不是物理UFS仿真或本版实机通过。
+本轮未观察到ISC写入或同步请求，不能以挂载成功宣称完整IOMemoryDescriptor写入及刷新路径已实测。
+
+初轮只分配512MiB内核内存，原版临时Data创建再次触发已定位的tmpfs预算限制，
+最终restore-datapartition exit(1)。按既有实机3GiB内核分配继续运行4GiB QEMU对照，结果另记。
+配套启动汇编、根发现入口和NativeUfs::start默认拒绝已通过；默认拒绝实际返回0，四个硬件/媒体计数均为0。
+
+双窗口根镜像已准备，尚未写入平板。新增增量工具只向现有macosroot尾部写ISC，
+校验其回读后才提交4KiB清单，最后全镜像回读；不修改GPT、Android userdata或原有BaseSystem。
+发生清单写入确认超时时记录未知状态，不自动重试。5项更新失败路径与9项封装准入测试通过。
+源码参考及按启动阶段排序的接入条件见docs/droidvm-reference.md。
+所有运行日志与画面仅保存在本地，当前设备保持Android。
