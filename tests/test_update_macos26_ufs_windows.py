@@ -85,9 +85,9 @@ class UpdateWindows(unittest.TestCase):
                 if command.startswith('blockdev --getsize64'):
                     return str(owner.plan['root_bytes'])
                 if 'sha256sum' in command:
-                    if 'bs=512 ' in command:
+                    if 'skip=1048576 count=512 ' in command:
                         data = owner.current[MIB:MIB+512]
-                    elif 'skip=2 ' in command:
+                    elif 'skip=2097152 ' in command:
                         if self.fail_isc_hash:
                             return '0'*64+'  -'
                         data = owner.current[2*MIB:]
@@ -101,7 +101,7 @@ class UpdateWindows(unittest.TestCase):
     def remote_write(self, arguments, **kwargs):
         command = arguments[-1]
         self.assertIn('of='+updater.PARTITION, command)
-        self.assertIn('iflag=fullblock', command)
+        self.assertIn('iflag=count_bytes', command)
         self.assertNotIn('blkdiscard', command)
         if 'seek=2 ' in command:
             self.writes.append('ISC')

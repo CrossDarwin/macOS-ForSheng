@@ -107,12 +107,12 @@ def update(device, plan_dir, previous_root, previous_deployment, candidate_dir, 
     old_manifest = (previous_root / 'manifest.bin').read_bytes()
     if device.read(plan['root_first_lba'], 1) != old_manifest:
         raise ValueError('current manifest differs; no automatic rewrite')
-    def remote_digest(offset, size, block=WINDOW):
-        if offset % block or size % block:
+    def remote_digest(offset, size):
+        if offset % 512 or size % 512:
             raise ValueError('unaligned bounded readback')
-        return device.shell(f'set -o pipefail; dd if={PARTITION} bs={block} skip={offset // block} '
-                            f'count={size // block} iflag=fullblock 2>/dev/null | sha256sum', timeout=180).split()[0]
-    if remote_digest(os_window['offset'], os_window['bytes'], 512) != os_window['sha256']:
+        return device.shell(f'set -o pipefail; dd if={PARTITION} bs={WINDOW} skip={offset} '
+                            f'count={size} iflag=skip_bytes,count_bytes | sha256sum', timeout=180).split()[0]
+    if remote_digest(os_window['offset'], os_window['bytes']) != os_window['sha256']:
         raise ValueError('BaseSystem changed before the update; no writes performed')
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     (output / 'manifest-before.bin').write_bytes(old_manifest)
@@ -129,7 +129,8 @@ def update(device, plan_dir, previous_root, previous_deployment, candidate_dir, 
         save()
         with image.open('rb') as source, (output / 'write-isc.log').open('w') as log:
             source.seek(isc['offset'])
-            command = f'dd of={PARTITION} bs={WINDOW} seek={isc["offset"] // WINDOW} count={isc["bytes"] // WINDOW} iflag=fullblock conv=notrunc,fsync'
+            # Toybox count_bytes bounds pipe input by bytes, including short reads.
+            command = f'dd of={PARTITION} bs={WINDOW} seek={isc["offset"] // WINDOW} count={isc["bytes"]} iflag=count_bytes conv=notrunc,fsync'
             subprocess.run(device.adb + ['shell', '-T', command], stdin=source, stdout=log,
                            stderr=subprocess.STDOUT, check=True, timeout=300)
         if remote_digest(isc['offset'], isc['bytes']) != isc['sha256']:
@@ -138,7 +139,7 @@ def update(device, plan_dir, previous_root, previous_deployment, candidate_dir, 
         record['status'] = 'committing-manifest'
         save()
         with (output / 'write-manifest.log').open('w') as log:
-            subprocess.run(device.adb + ['shell', '-T', f'dd of={PARTITION} bs={BLOCK} count=1 iflag=fullblock conv=notrunc,fsync'],
+            subprocess.run(device.adb + ['shell', '-T', f'dd of={PARTITION} bs={BLOCK} count={BLOCK} iflag=count_bytes conv=notrunc,fsync'],
                            input=manifest, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
         record['manifest_committed'] = True
         save()
