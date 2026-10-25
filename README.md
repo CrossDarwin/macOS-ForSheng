@@ -1,5 +1,8 @@
 # macOS-ForSheng
 
+请注意，这个项目未曾被公开 如果你在 X(推特) 等地方发现了这个项目的宣传 皆为冒假
+Please note that this project has never been publicly announced. If you find any promotion for this project on platforms like Twitter, it is a scam.
+
 小米平板 6S Pro（sheng / SM8550）的 macOS 移植研究目录。
 
 当前系统目标为 macOS 26.5 / 25F71，内核、恢复系统和用户空间来自同一构建。
