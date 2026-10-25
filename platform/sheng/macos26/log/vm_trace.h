@@ -8,6 +8,7 @@ extern uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
 extern volatile uint64_t sheng_bootstrap_vm_witness;
 extern volatile uint64_t sheng_status_pixels;
 extern uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns, sheng_console_rows;
+extern uint64_t sheng_console_panic_rows;
 
 static __attribute__((always_inline)) inline void
 sheng_vm_trace(unsigned stage)
@@ -44,6 +45,7 @@ sheng_vm_trace_begin(const boot_args *args)
     sheng_status_scale = 0;
     sheng_console_columns = 0;
     sheng_console_rows = 0;
+    sheng_console_panic_rows = 0;
     sheng_bootstrap_vm_pixels = 0;
     sheng_bootstrap_vm_row_pa = 0;
     sheng_bootstrap_vm_witness = 0;
@@ -62,8 +64,10 @@ sheng_vm_trace_begin(const boot_args *args)
             const uint64_t columns = available > 88 ? 88 : available;
             const uint64_t available_rows = (video->v_height - top) / scale;
             const uint64_t rows = available_rows > 32 ? (available_rows - 32) / 16 : 0;
-            const uint64_t bounded_rows = rows > 24 ? 24 : rows;
-            const uint64_t pixels = (32 + bounded_rows * 16) * scale;
+            const uint64_t panic_rows = rows >= 12 ? (rows - 6 > 16 ? 16 : rows - 6) : 0;
+            const uint64_t normal_rows = rows - panic_rows;
+            const uint64_t bounded_rows = normal_rows > 24 ? 24 : normal_rows;
+            const uint64_t pixels = (32 + (bounded_rows + panic_rows) * 16) * scale;
             const uint64_t status_end = status + (pixels - 1) * stride + columns * 8 * scale * 4;
             if (video->v_width >= 224 + 44 * 8 * scale &&
                 bounded_rows >= 6 && top + pixels <= video->v_height && status >= video->v_baseAddr &&
@@ -72,6 +76,7 @@ sheng_vm_trace_begin(const boot_args *args)
                 sheng_status_scale = scale;
                 sheng_console_columns = columns;
                 sheng_console_rows = bounded_rows;
+                sheng_console_panic_rows = panic_rows;
             }
             if (sheng_bootstrap_fb_trace_ready) {
                 sheng_bootstrap_vm_pixels = first;

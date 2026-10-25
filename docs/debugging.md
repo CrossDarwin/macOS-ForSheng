@@ -1,10 +1,16 @@
 # sheng 内核现场与 KDP
 
-当前25F71 ARM64E实机已进入UFS根卷发布等待，照片记录UFS ROOT FAILURE及期望APFS卷UUID。
-按唯一诊断路径，UFS接管、GPT/清单读取和块服务发布已经走过，APFS卷匹配尚未通过。
-本轮macoslog只读导出仍只有OBSERVED.JSON，没有NEXTLOG、ARM/RECOVERY状态或CAP目录。
-FAT16恢复容器虽收到Booting OKAY，用户仍看到FASTBOOT，入口执行未确认；命令确认不能替代实际执行。完整实机日志仍未恢复。
-独立渲染器已验证24行字体和防覆盖，但40124513764内核遗漏0051，实际仍绑定6行；原大面板资格结论撤回。CI40161755752已实际应用0051，QEMU读取sheng_panel_bound_rows=0x18，进入IOFindBSDRoot，实机仍待验证。
+当前25F71 ARM64E实机视频确认连续内核文字、NativeUfs: published OS、原版APFS和FSCompression加载。
+最后仍在等待808EAC5E-8275-478D-814C-2229D8EB8D07，没有挂载或launchd证据。
+40161755752实际包含0051，QEMU确认普通面板绑定24行；实机仍只显示首次panic摘要，没有媒体列表或读盘计数。
+普通writer被打断时，旧panic正文的trylock也会失败；这是源码可复现的缺口，尚未证明是本次硬件唯一原因。
+0052把首次panic正文保存到独立4096字节快照，并在普通24行下方预留16行固定文字区。
+其像素和游标不与普通writer共用，不强行释放被打断的锁。AArch64 QEMU实际字体像素、writer忙、
+RAM头已记录可恢复异常、嵌套panic及80行后续日志的固定显示已通过。新内核尚待CI及原生映射验证。
+
+macoslog只读导出仍只有OBSERVED.JSON，没有自动捕获文件。
+当前固件SHENG_VENDOR_HW=0，最终FD没有UFSDxe；DarwinBoot和Fat存在，但缺少内部UFS文件系统的物理后端。
+手动恢复菜单实机出现，选择后返回；这不证明保存器成功访问内部存储。按用户要求暂缓该后端。
 KDP和UART仍没有实机传输能力。
 
 内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。

@@ -22,9 +22,10 @@ from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 def qualify(build, observation, bootstrap, default_off, installed, plan, root_build):
     kernel, symbols, identity = identify(build)
     kernel_build = json.loads((build / 'build.json').read_text())
-    panel_patch = ROOT / 'platform/sheng/macos26/patches/0051-native-multiline-panic-panel.patch'
-    if kernel_build.get('patches', {}).get(str(panel_patch.relative_to(ROOT))) != hashlib.sha256(panel_patch.read_bytes()).hexdigest():
-        raise ValueError('requires the compiled multiline panic panel')
+    for name in ('0051-native-multiline-panic-panel.patch', '0052-native-independent-panic-surface.patch'):
+        panel_patch = ROOT / 'platform/sheng/macos26/patches' / name
+        if kernel_build.get('patches', {}).get(str(panel_patch.relative_to(ROOT))) != hashlib.sha256(panel_patch.read_bytes()).hexdigest():
+            raise ValueError('requires the compiled independent multiline panic panel')
     observed = json.loads((observation / 'result.json').read_text())
     traced = json.loads((bootstrap / 'result.json').read_text())
     refused = json.loads((default_off / 'gdb-stop.json').read_text())
@@ -40,6 +41,7 @@ def qualify(build, observation, bootstrap, default_off, installed, plan, root_bu
             or observed.get('observed_globals', {}).get('_sheng_panel_ready') != '0x1'
             or observed.get('observed_globals', {}).get('_sheng_console_rows') != '0x18'
             or observed.get('observed_globals', {}).get('_sheng_panel_bound_rows') != '0x18'
+            or observed.get('observed_globals', {}).get('_sheng_panic_panel_bound_rows') != '0x10'
             or observed.get('observed_globals', {}).get('_sheng_panel_witness') != '0x1'):
         raise ValueError('requires this exact native kernel at the qualified root-discovery checkpoint')
     for name in ('_g_crypto_funcs', '_img4if', '_amfi', '_libCoreEntitlements', '_pthread_functions'):

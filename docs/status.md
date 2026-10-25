@@ -1440,3 +1440,24 @@ FD内DarwinBoot的实际PE含SHNREC01/SHNARM01，Fat驱动也存在，因此不�
 新24行候选40161755752已临时启动，ABL返回Booting OKAY、a槽状态正常。
 菜单标题含6F504502，要求用户先核对版本并记录交接页和stage/prepared/published/reads/failures。
 目前等待屏幕结果，不能把传输确认当作该内核已在实机执行。
+
+
+### 实机连续内核文字通过，根卷识别仍阻断
+
+40161755752 / 6F504502实机视频已保存，确认连续内核文字、NativeUfs: published OS、
+APFS v2811.120.14和FSCompression加载。最后等待808EAC5E-8275-478D-814C-2229D8EB8D07，
+首次panic摘要为UFS ROOT FAILURE: root window volume；详细计数和媒体列表没有显示。
+这证明块服务发布路径已执行，不证明APFS卷已经出现或挂载，也没有launchd启动证据。
+设备随后正常恢复Android，a槽可启动，sys.boot_completed=1、ro.boot.slot_suffix=_a。
+本轮未刷写分区，视频及恢复记录位于private/device/ufs-panel-40161755752。
+
+源码确认普通日志writer忙时，原panic正文也会被trylock丢弃，只剩独立标题。
+对照Snapintosh外部监控器的独立日志状态，sheng没有其EL2服务，改用自身独立首次panic快照与像素区。
+0052保持普通24行，下方新增16行panic详情；映射按完整几何扩展，首次文本最多4095字节，
+屏幕固定显示容纳的前段，普通环形日志继续保留丢失计数，不伪称整段消息都能同时显示。
+AArch64 QEMU实际运行共享头文件，在writer=1、RAM异常头state=3时保留正文，未夺取writer；
+逐像素核对真实字体，80行后续普通日志和第二次panic均未覆盖首次详情。
+800像素高屏幕的6行普通日志与16行详情几何也通过。结果位于out/native-panic-writer-validation。
+本次没有证据把根卷失败归因于UUID、读盘或媒体发布中的某一个；后续依靠可读计数区分。
+
+原手动RAM日志恢复部署镜像已销毁，构建元数据和现场保留，缺失UFS固件后端仍未实现。

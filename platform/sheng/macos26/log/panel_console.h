@@ -11,6 +11,46 @@ static unsigned sheng_status_pinned;
 
 volatile uint64_t sheng_status_pixels;
 uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns, sheng_console_rows;
+uint64_t sheng_console_panic_rows;
+volatile uint64_t sheng_panic_panel_bound_rows, sheng_panic_text_state, sheng_panic_writer_busy;
+char sheng_first_panic_text[4096];
+static struct {
+    uintptr_t base;
+    unsigned stride, columns, rows, scale;
+} sheng_panic_panel;
+
+/* 独占像素区和游标，不等待可能被panic打断的普通日志writer */
+static void sheng_panic_panel_render(void)
+{
+    if (!sheng_panic_panel.base ||
+        __atomic_load_n(&sheng_panic_text_state, __ATOMIC_ACQUIRE) != 2) return;
+    const unsigned scale = sheng_panic_panel.scale;
+    for (unsigned y = 0; y < sheng_panic_panel.rows * 16 * scale; y++) {
+        volatile uint32_t *pixels = (volatile uint32_t *)(sheng_panic_panel.base +
+            y * sheng_panic_panel.stride);
+        for (unsigned x = 0; x < sheng_panic_panel.columns * 8 * scale; x++) pixels[x] = 0xff000000u;
+    }
+    unsigned row = 0, column = 0;
+    for (unsigned part = 0; part < 2; part++) {
+        const char *text = part ? sheng_first_panic_text : "SHENG - PANIC DETAIL\n";
+        for (unsigned n = 0; text[n] && n < 4095 && row < sheng_panic_panel.rows; n++) {
+            const unsigned char c = (unsigned char)text[n];
+            if (c == '\r') { column = 0; continue; }
+            if (c == '\n') { column = 0; row++; continue; }
+            if (c < 32 || c > 126) continue;
+            const uintptr_t origin = sheng_panic_panel.base +
+                row * 16 * scale * sheng_panic_panel.stride + column * 8 * scale * 4;
+            for (unsigned y = 0; y < 16 * scale; y++) {
+                volatile uint32_t *pixels = (volatile uint32_t *)(origin + y * sheng_panic_panel.stride);
+                const unsigned bits = sheng_panel_font[c * 16 + y / scale];
+                for (unsigned x = 0; x < 8 * scale; x++)
+                    pixels[x] = bits & (1u << (x / scale)) ? 0xffffffffu : 0xff000000u;
+            }
+            if (++column == sheng_panic_panel.columns) { column = 0; row++; }
+        }
+    }
+    __asm__ volatile ("dsb sy" ::: "memory");
+}
 
 /* 同一次原生映射覆盖独立文字区，旧阶段条不再与文字共用像素 */
 static void sheng_status_render(const char *prefix, const char *message)
@@ -69,7 +109,6 @@ static struct {
     uintptr_t base;
     unsigned stride, columns, rows, scale, x, y, pinned;
 } sheng_panel;
-static unsigned sheng_panel_capture_panic;
 
 static void sheng_panel_clear_row(unsigned row)
 {
@@ -111,7 +150,7 @@ static void sheng_panel_newline(void)
 
 static void sheng_panel_putc(unsigned char byte)
 {
-    if (!sheng_panel_ready || (sheng_panel_capture_panic && sheng_panel.y >= sheng_panel.rows - 2)) return;
+    if (!sheng_panel_ready) return;
     if (byte == '\r') { sheng_panel.x = 0; return; }
     if (byte == '\n') { sheng_panel_newline(); return; }
     if (byte < 32 || byte > 126) return;

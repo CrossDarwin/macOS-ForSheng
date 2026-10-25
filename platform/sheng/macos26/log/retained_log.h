@@ -39,7 +39,7 @@ void sheng_bootstrap_capture_end(void)
     __atomic_store_n(&sheng_bootstrap_capture_enabled, 0, __ATOMIC_RELEASE);
 }
 
-static void sheng_log_clean(const void *address, size_t bytes)
+static void sheng_log_clean(const volatile void *address, size_t bytes)
 {
 #if defined(__aarch64__)
     uintptr_t first = (uintptr_t)address & ~(uintptr_t)63;
@@ -79,6 +79,20 @@ void sheng_log_putc(char byte)
 }
 
 volatile uint64_t sheng_panel_bound_rows;
+
+void sheng_log_bind_panic_panel(uintptr_t address, unsigned stride, unsigned columns,
+    unsigned rows, unsigned scale)
+{
+    if (!address || stride < 2560 || stride > 65536 || columns < 32 || columns > 100 ||
+        rows < 6 || rows > 16 || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride) return;
+    sheng_panic_panel.base = address;
+    sheng_panic_panel.stride = stride;
+    sheng_panic_panel.columns = columns;
+    sheng_panic_panel.rows = rows;
+    sheng_panic_panel.scale = scale;
+    sheng_panic_panel_bound_rows = rows;
+    sheng_panic_panel_render();
+}
 
 void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     unsigned rows, unsigned scale)
@@ -189,7 +203,6 @@ void sheng_log_panic(uint64_t caller, const char *message)
 {
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
-    int first = !sheng_status_pinned;
     if (__atomic_compare_exchange_n(&r->panic_state, &expected, 1, 0,
                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
         r->pc = caller;
@@ -205,12 +218,18 @@ void sheng_log_panic(uint64_t caller, const char *message)
     }
     /* 原始可恢复异常可能已占用RAM头，不影响真正panic的屏幕固定 */
     sheng_status_panic(message);
-    expected = 0;
-    if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
+    uint64_t text_expected = 0;
+    if (__atomic_compare_exchange_n(&sheng_panic_text_state, &text_expected, 1, 0,
         __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-        sheng_panel_reset();
-        sheng_panel_capture_panic = 1;
-        __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+        sheng_panic_writer_busy = __atomic_load_n(&r->writer, __ATOMIC_RELAXED);
+        unsigned n = 0;
+        for (; message && message[n] && n < sizeof(sheng_first_panic_text) - 1; n++)
+            sheng_first_panic_text[n] = message[n];
+        sheng_first_panic_text[n] = 0;
+        sheng_log_clean(sheng_first_panic_text, sizeof(sheng_first_panic_text));
+        __atomic_store_n(&sheng_panic_text_state, 2, __ATOMIC_RELEASE);
+        sheng_log_clean(&sheng_panic_text_state, sizeof(sheng_panic_text_state));
+        sheng_panic_panel_render();
     }
     {
         const char *prefix = "\nSHENG-LOG: panic: ";
@@ -218,13 +237,6 @@ void sheng_log_panic(uint64_t caller, const char *message)
         for (unsigned n = 0; message && message[n] && n < 4095; n++)
             sheng_log_putc(message[n]);
         sheng_log_putc('\n');
-    }
-    expected = 0;
-    if (first && __atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
-        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-        sheng_panel_capture_panic = 0;
-        sheng_panel_pin_panic();
-        __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
     }
     sheng_log_clean(r, sizeof(*r));
 }

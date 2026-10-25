@@ -1,0 +1,39 @@
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -387,13 +387,13 @@
+ 		const uintptr_t start = status && status < first ? status : first;
+ 		uintptr_t end = first + 11 * sheng_bootstrap_vm_stride + 1460;
+ 		if (status) {
+-			const uintptr_t status_end = status + ((32 + 16 * sheng_console_rows) * sheng_status_scale - 1) *
++			const uintptr_t status_end = status + ((32 + 16 * (sheng_console_rows + sheng_console_panic_rows)) * sheng_status_scale - 1) *
+ 			    sheng_bootstrap_vm_stride + sheng_console_columns * 8 * sheng_status_scale * 4;
+ 			if (status_end > end) end = status_end;
+ 		}
+ 		const uintptr_t offset = start & 16383;
+ 		const vm_size_t bytes = (offset + end - start + 16383) & ~(vm_size_t)16383;
+-		if (end > start && bytes <= 16 * 1048576) {
++		if (end > start && bytes <= 32 * 1048576) {
+ 			const vm_offset_t mapped = ml_io_map(start - offset, bytes);
+ 			if (mapped) {
+ 				sheng_bootstrap_vm_pixels = mapped + offset + first - start;
+@@ -405,6 +405,10 @@
+ 	if (sheng_status_pixels) {
+ 		sheng_log_bind_panel(sheng_status_pixels + 32 * sheng_status_scale * sheng_bootstrap_vm_stride,
+ 		    (unsigned)sheng_bootstrap_vm_stride, (unsigned)sheng_console_columns, (unsigned)sheng_console_rows,
++		    (unsigned)sheng_status_scale);
++		sheng_log_bind_panic_panel(sheng_status_pixels + (32 + 16 * sheng_console_rows) *
++		    sheng_status_scale * sheng_bootstrap_vm_stride, (unsigned)sheng_bootstrap_vm_stride,
++		    (unsigned)sheng_console_columns, (unsigned)sheng_console_panic_rows,
+ 		    (unsigned)sheng_status_scale);
+ 	}
+ 	sheng_log_stage("arm_vm_init returned - live RAM log");
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -165,6 +165,7 @@
+ void sheng_log_panic(uint64_t caller, const char *message);
+ void sheng_bootstrap_capture_end(void);
+ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
++void sheng_log_bind_panic_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
+ void sheng_log_stage(const char *message);
+ void sheng_log_status(const char *message);
+ void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp);
