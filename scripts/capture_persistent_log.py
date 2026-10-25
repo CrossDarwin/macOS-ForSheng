@@ -151,8 +151,20 @@ def main() -> None:
                 loader_status[name] = status_record(path.read_bytes(), magic)
             except ValueError as error:
                 loader_status[name] = dict(decode_error=str(error))
+    runtime_capture = None
+    path = args.output / 'files' / 'SHENGLOG.BIN'
+    if path.exists():
+        from native_log_file import decode as decode_file
+        try:
+            raw, runtime_capture = decode_file(path.read_bytes(), native['uuid'])
+            text = runtime_capture.pop('console_text')
+            (args.output / 'runtime-console.bin').write_bytes(raw)
+            (args.output / 'runtime-console.txt').write_text(text)
+            (args.output / 'runtime-console.json').write_text(json.dumps(runtime_capture, indent=2) + '\n')
+        except ValueError as error:
+            runtime_capture = dict(decoded=False, reason=str(error))
     result = dict(device=args.serial, kernel_uuid=native['uuid'], read_only_mount=True,
-                  captures=captures, loader_status=loader_status, raw_files_preserved=True,
+                  captures=captures, loader_status=loader_status, runtime_capture=runtime_capture, raw_files_preserved=True,
                   warm_reboot_retention_qualified=False, run_freshness_qualified=False)
     (args.output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

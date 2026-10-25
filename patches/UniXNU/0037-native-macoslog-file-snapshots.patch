@@ -1,0 +1,107 @@
+--- a/drivers/NativeUfs/RootCommands.h
++++ b/drivers/NativeUfs/RootCommands.h
+@@ -28,7 +28,7 @@
+ 
+ // Issue the UPIU already placed at gHost.virt + kUcdOffset through request slot 0. `direction` is
+ // the UTRD data direction (0 none, 1 from host, 2 to host). Direction 1 is reachable only through hostWrite4k, which
+-// confines it to the persistent store window. Returns the overall command status
++// confines it to explicitly opened store/log data windows. Returns the overall command status
+ // (0 = completed) in *ocs. Timeout/fatal status quarantines the allocation.
+ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t timeoutUs, uint32_t *ocs)
+ {
+@@ -257,10 +257,19 @@
+ }
+ 
+ // ---- Persistent store and log windows ------------------------------------------------------------------------------
+-// The only place this driver writes. At most two windows of 4096-byte LBAs on LUN 0 (the Data store and the diagnostic log),
+-// each opened once by its integration after it has proved that the window lies inside the userdata partition and clear of the
+-// root image; every write is checked against them again here, so nothing outside them can be written even if a caller is wrong.
++// All media writes pass through this guard. Legacy LUN 0 store/log windows retain their policy.
++// The optional LUN 4 path owns only preallocated macoslog file data, excluding its immutable guard.
++// Each caller proves ownership before opening a window; every write is bounded again here.
+ static bool gStoreOpen = false, gLogOpen = false;
++#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++static bool gMacosLogOpen = false;
++static uint64_t gMacosLogFirst, gMacosLogBlocks;
++// Dedicated FAT file data on LUN 4; the final immutable guard block is excluded.
++static bool hostMacosLogOpen(uint64_t first, uint64_t blocks) {
++  if (gMacosLogOpen || blocks != 511 || first <= 448512 || first > 464896 - 512) return false;
++  gMacosLogFirst = first; gMacosLogBlocks = blocks; gMacosLogOpen = true; return true;
++}
++#endif
+ static uint64_t gStoreFirst = 0, gStoreBlocks = 0, gLogFirst = 0, gLogBlocks = 0;
+ 
+ static bool hostLogOpen (uint64_t first, uint64_t blocks)
+@@ -289,10 +298,15 @@
+   return true;
+ }
+ 
+-// WRITE(10) of `blocks` 4096-byte blocks from src to lba on LUN 0; the range must lie inside one open window.
++// WRITE(10) of 4096-byte blocks; both LUN and range must match an explicitly opened window.
+ static IOReturn hostWrite4k (uint8_t lun, uint64_t lba, uint32_t blocks, const void *src, bool fua = false)
+ {
+-  if (!gHost.ready || !src || !blocks || blocks > kDataMax / 4096 || lun != 0 || !hostInWindow (lba, blocks)) {
++  bool allowed = lun == 0 && hostInWindow(lba, blocks);
++#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++  if (lun == 4 && gMacosLogOpen && lba >= gMacosLogFirst && lba - gMacosLogFirst < gMacosLogBlocks)
++    allowed = blocks <= gMacosLogBlocks - (lba - gMacosLogFirst);
++#endif
++  if (!gHost.ready || !src || !blocks || blocks > kDataMax / 4096 || !allowed) {
+     return kIOReturnBadArgument;
+   }
+   IOLockLock (gHost.lock);
+@@ -301,7 +315,7 @@
+   uint8_t cdb[10] = { 0x2a, uint8_t (fua ? 0x08 : 0), uint8_t (lba >> 24), uint8_t (lba >> 16), uint8_t (lba >> 8), uint8_t (lba),
+                       0, uint8_t (blocks >> 8), uint8_t (blocks), 0 };
+   uint32_t scsi = 0;
+-  IOReturn status = hostScsiDir (0, cdb, 10, 1, blocks * 4096U, 2000000, &scsi);
++  IOReturn status = hostScsiDir (lun, cdb, 10, 1, blocks * 4096U, 2000000, &scsi);
+   IOLockUnlock (gHost.lock);
+   return status;
+ }
+@@ -318,3 +332,14 @@
+   return status;
+ }
+ 
++
++#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++static IOReturn hostMacosLogSync(void) {
++  if (!gHost.ready || !gMacosLogOpen) return kIOReturnNotReady;
++  IOLockLock(gHost.lock);
++  uint8_t cdb[10] = {0x35}; uint32_t scsi = 0;
++  IOReturn status = hostScsiDir(4, cdb, 10, 0, 0, 10000000, &scsi);
++  IOLockUnlock(gHost.lock);
++  return status;
++}
++#endif
+--- a/drivers/NativeUfs/NativeUfs.cpp
++++ b/drivers/NativeUfs/NativeUfs.cpp
+@@ -995,6 +995,10 @@
+ #include "RootMediaWait.h"
+ 
+ }
++
++#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++#include NATIVE_MACOSLOG_WORKER
++#endif
+ 
+ // ---- Persistent Data store window (sheng-data-persist) ----------------------------------------------------------
+ // The only part of this driver that ever writes. The consumer (NativeRamBlock's overlay) asks for a window of the given
+@@ -2059,11 +2063,17 @@
+                           "root window preparation failed");
+     return false;
+   }
++#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++  mlStart();
++#endif
+   return true;
+ }
+ 
+ void NativeUfs::stop (IOService *provider)
+ {
++#if defined(NATIVE_MACOSLOG) && NATIVE_MACOSLOG
++  mlShutdown();
++#endif
+   fCmdDesc.reset ();
+   fMap.reset ();
+   IOService::stop (provider);

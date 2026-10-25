@@ -115,6 +115,7 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertEqual(request(f'Z1,{symbols["done"]:x},4'), 'OK')
                         self.assertTrue(request('c').startswith(('T05', 'S05')))
                         self.assertEqual(number('panic_test_checks'), 15)
+                        self.assertEqual(number('snapshot_test_checks'), 7)
                         self.assertEqual(before, memory(base, len(before)))
                         output = ROOT / 'out/native-panic-writer-validation'
                         output.mkdir(parents=True, exist_ok=True)

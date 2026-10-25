@@ -9,7 +9,7 @@
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
 | 原生 25F71 ARM64E QEMU | 原版launchd、sh/bash及恢复系统Data脚本已执行；tmpfs、FSCompression、Sandbox、Quarantine已通过；WindowServer主动退出定位到HID及显示初始化 |
-| 原生 25F71 ARM64E 实机 | 最新实测仍在Image4接口缺失处panic；QEMU的新组件及中断修正版尚未部署 |
+| 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；尚无图形Recovery证据 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
 | 26A428 KDK | 下载哈希、Apple 包签名、T8140 内核及配对 DWARF UUID 验证通过 |
@@ -22,7 +22,7 @@
 | 旧 XNU 完整配置 QEMU | 完整配置产物经实际 UEFI/DarwinBoot 执行到 bsd_init，4 KiB 页表；未启动用户空间 |
 | EL1 参考内核 | XNU 10063.141.1 已在 Actions 39905217735 构建通过，使用 gzip 和备份中的厂商 DTB 后已进入 XNU；MMU 后 3 秒复位探针实机通过 |
 | 加载器合成交接 | QEMU 实测 boot_args、ramdisk、trustcache、清零与关闭 MMU 交接通过；不是 XNU 启动 |
-| macOS 实机启动 / 双系统 | 64 GiB macosroot已创建，配套BaseSystem写入并完整读回一致；剩余userdata重建后Android槽a正常启动；macOS实机挂载及自动RAM日志落盘尚未通过 |
+| macOS 实机启动 / 双系统 | 64 GiB macosroot已创建，配套BaseSystem写入并完整读回一致；剩余userdata重建后Android槽a正常启动；macOS实机BaseSystem及ISC挂载已通过；自动RAM日志写盘尚未通过 |
 
 ## 已定位的引导问题
 
@@ -1668,3 +1668,27 @@ SHA256 27fadeccda9f171d77eecdc94c63c0b752b131085452c6958b780c4df96a3460。
 封装实际通过同UUID启动汇编、根发现、默认拒绝、三个ISC角色卷及真实写入/同步的检查。
 当前仅已具备实机临时启动条件，尚未发送这版；用户录像准备待确认。
 旧D86D84A7部署镜像和ADT已移除，配套原始内核、符号及视频证据保留。
+
+
+### 实机ISC与临时Data已通过，改用运行时文件快照保存日志
+
+4423A7AA的528.704秒实机视频已保存于本地private/。145秒出现原版hello, launchd，
+160至170秒依次完成SHENG-xART、SHENG-Preboot、SHENG-Hardware挂载。
+185至195秒临时Data和模板复制继续，275至525秒持续出现新的XPC服务启动记录。
+未见最终panic或整机重启，未捕获实机Aqua Session或图形Recovery，不能移用QEMU的图形会话结论。
+重复bootstrap的error 37和不适用OS变体的error 158均不是对应进程的退出码。
+设备本轮已正常恢复Android槽a，boot_completed=1。
+
+旧UEFI日志恢复器缺少内部UFS的BlockIO后端，macoslog只有人工观察文件，
+NEXTLOG/捕获文件与RAM跨重启保留仍未实测通过。
+新增0037让NativeUfs在运行时显式启用native-ufs-macoslog=2后保存保留日志，
+mode 1仅验证，默认关闭。文件由Recovery在既有FAT16中预分配，内核不修改FAT或GPT。
+两个1MiB槽交替保存82048字节日志快照，先写载荷并同步，再写CRC提交头并同步。
+写入仅限LUN4中已验证的SHENGLOG.BIN数据块，末尾保护块禁止写入；验证或命令失败立即停止。
+保留16KiB前缀、64KiB尾部及丢失计数，不等于完整流式历史，也不保证panic前最后两秒。
+
+本地生产解析器、提交算法和worker已通过FAT镜像副本不一致、碎片、交叉引用、GUID/重叠、
+逐步断写恢复、默认关闭、只读验证、重启序号和错误停止测试。
+实际生产UFS命令通过LUN4边界与SYNCHRONIZE CACHE目标LUN测试；
+QEMU还验证RAM快照不夺取忙碌writer，且原有panic文字区保持独立。
+当前这些结果不包含新候选完整XNU启动或物理UFS日志写入，尚未宣称实机修复完成。

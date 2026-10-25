@@ -80,6 +80,21 @@ void sheng_log_putc(char byte)
 
 volatile uint64_t sheng_panel_bound_rows;
 
+unsigned sheng_log_snapshot_copy(void *destination, unsigned bytes);
+unsigned sheng_log_snapshot_copy(void *destination, unsigned bytes)
+{
+    struct sheng_log_record *r = &sheng_log_buffer;
+    uint32_t expected = 0;
+    if (!destination || bytes != sizeof(*r) ||
+        !__atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return 0;
+    /* Copy RAM only; never issue storage commands or render while holding the writer. */
+    __builtin_memcpy(destination, r, sizeof(*r));
+    ((struct sheng_log_record *)destination)->writer = 0;
+    __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+    return sizeof(*r);
+}
+
 void sheng_log_bind_panic_panel(uintptr_t address, unsigned stride, unsigned columns,
     unsigned rows, unsigned scale)
 {

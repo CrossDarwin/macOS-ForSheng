@@ -5,6 +5,16 @@ typedef struct { Boot_Video Video; } boot_args;
 #include "vm_trace.h"
 
 volatile uint64_t panic_test_checks;
+volatile uint64_t snapshot_test_checks;
+static struct sheng_log_record snapshot;
+/* The freestanding fixture supplies the kernel memcpy dependency. */
+void *memcpy(void *destination, const void *source, size_t size)
+{
+    volatile unsigned char *out = destination;
+    const volatile unsigned char *in = source;
+    for (size_t i = 0; i < size; i++) out[i] = in[i];
+    return destination;
+}
 __attribute__((noinline)) void panic_ready(void) { __asm__ volatile("nop"); }
 
 void run_trace(void)
@@ -33,6 +43,8 @@ void run_trace(void)
     /* Simulate a recoverable fault occupying the RAM header and a normal writer interrupted before panic. */
     sheng_log_buffer.panic_state = 3;
     sheng_log_buffer.writer = 1;
+    if (!sheng_log_snapshot_copy(&snapshot, sizeof(snapshot)) && sheng_log_buffer.writer == 1)
+        snapshot_test_checks |= 1;
     sheng_log_panic(0x112233, reason);
     if (sheng_log_buffer.writer == 1 && sheng_log_buffer.panic_state == 3 &&
         sheng_panic_text_state == 2 && sheng_panic_writer_busy == 1 && sheng_log_buffer.dropped > 0)
@@ -47,4 +59,10 @@ void run_trace(void)
     for (unsigned n = 0; n < 80; n++) sheng_log_stage("ordinary log after first panic");
     sheng_log_panic(0x998877, "SECOND PANIC MUST NOT REPLACE FIRST");
     if (sheng_panic_writer_busy == 1 && sheng_first_panic_text[0] == 'U') panic_test_checks |= 4;
+    if (sheng_log_snapshot_copy(&snapshot, sizeof(snapshot)) == sizeof(snapshot) &&
+        !snapshot.writer && !sheng_log_buffer.writer && snapshot.total == sheng_log_buffer.total &&
+        snapshot.panic_state == sheng_log_buffer.panic_state) snapshot_test_checks |= 2;
+    if (!sheng_log_snapshot_copy(0, sizeof(snapshot)) &&
+        !sheng_log_snapshot_copy(&snapshot, sizeof(snapshot)-1) && !sheng_log_buffer.writer)
+        snapshot_test_checks |= 4;
 }

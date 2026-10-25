@@ -9,6 +9,7 @@ import subprocess
 import uuid
 
 from native_macho import macho
+from native_log_file import validate_contract
 
 BUNDLE = 'org.unixnu.driver.NativeVirtioBlock'
 PROTOCOL_CHARACTERISTICS = {
@@ -58,6 +59,14 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                 '#define NATIVE_UFS_ISC_DIGEST {' + ','.join(str(b) for b in isc_digest) + '}\n'
                 f'#define NATIVE_UFS_ISC_UUID "{isc_uuid}"\n')
         recovery_prefix += f'#include "{root / "platform/sheng/macos26/storage/recovery_root.h"}"\n'
+        log = json.loads((root / 'config/macoslog.json').read_text())
+        validate_contract(log)
+        recovery_prefix += '#define NATIVE_MACOSLOG 1\n'
+        for name, value in (('FILE', uuid.UUID(log['file_uuid']).bytes),
+                            ('PARTITION', uuid.UUID(log['partition_uuid']).bytes_le),
+                            ('TYPE', uuid.UUID(log['partition_type']).bytes_le)):
+            recovery_prefix += '#define NATIVE_MACOSLOG_' + name + '_ID {' + ','.join(map(str, value)) + '}\n'
+        recovery_prefix += f'#define NATIVE_MACOSLOG_WORKER "{root / "platform/sheng/macos26/storage/macoslog_worker.h"}"\n'
     wrapper.write_text(
         '#include <TargetConditionals.h>\n'
         'static_assert(TARGET_OS_OSX == 1, "requires macOS storage ABI");\n'
@@ -132,6 +141,11 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                     hardware_enable_required=transport == 'ufs', root_transport_read_only=True,
                     original_storage_runtime_qualified=False, hardware_admitted=False)
     if transport == 'ufs':
+        evidence['macoslog'] = dict(contract=log, default_off=True,
+            boot_argument='native-ufs-macoslog', read_only_mode=1, write_mode=2,
+            writes_confined_to_preallocated_file=True, filesystem_metadata_writes=False,
+            source_sha256={name: hashlib.sha256((root / 'platform/sheng/macos26/storage' / name).read_bytes()).hexdigest()
+                           for name in ('macoslog_layout.h', 'macoslog_worker.h')})
         evidence.update(root_partition='macosroot', root_lun=0,
                         android_userdata_used=False, root_media_layout_qualified=False,
                         recovery_root=recovery_root,

@@ -1,0 +1,19 @@
+{
+  "schema": "sheng-macoslog-v1",
+  "lun": 4,
+  "block_bytes": 4096,
+  "disk_blocks": 521216,
+  "partition_index": 78,
+  "partition_first": 448512,
+  "partition_blocks": 16384,
+  "partition_uuid": "4cd2ed34-2142-4ea4-abf2-ec6c51d117d7",
+  "partition_type": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+  "partition_name": "macoslog",
+  "fat_label": "MACOSLOG",
+  "filename": "SHENGLOG.BIN",
+  "file_bytes": 2097152,
+  "slot_bytes": 1048576,
+  "snapshot_bytes": 82048,
+  "period_ms": 2000,
+  "file_uuid": "f84556a4-4249-578c-90d2-1484122f7a56"
+}

@@ -157,7 +157,7 @@ def main() -> None:
         if component_map['candidate_sha256'] != record['kernel_sha256']:
             raise ValueError('component symbol map differs from the actual candidate')
         for name, value in component_map.get('storage_driver', {}).get('symbols', {}).items():
-            if not name.startswith(('_native_virtio_', '_native_ufs_')):
+            if not name.startswith(('_native_virtio_', '_native_ufs_', '_native_macoslog_')):
                 continue
             if name in addresses and addresses[name] != value:
                 raise ValueError('transport symbol collides with the native kernel')
@@ -436,6 +436,10 @@ def main() -> None:
                         ('_native_ufs_isc_overlay_enabled', 4), ('_native_ufs_isc_writes', 8),
                         ('_native_ufs_isc_syncs', 8), ('_native_ufs_isc_resident_bytes', 8),
                         ('_native_ufs_isc_failures', 8),
+                        ('_native_macoslog_state', 4), ('_native_macoslog_error', 4),
+                        ('_native_macoslog_phase', 4), ('_native_macoslog_generation', 8),
+                        ('_native_macoslog_snapshots', 8), ('_native_macoslog_busy', 8),
+                        ('_native_macoslog_first_lba', 8),
                         ('_sheng_qemu_no_ignition_enabled', 4), ('_sheng_development_no_ignition_enabled', 4),
                             ('_native_ufs_probe_calls', 4), ('_native_ufs_matched', 4),
                             ('_native_ufs_probe_requested', 4), ('_native_ufs_mapped', 4),
@@ -531,6 +535,10 @@ def main() -> None:
                         ('_native_ufs_isc_overlay_enabled', 4), ('_native_ufs_isc_writes', 8),
                         ('_native_ufs_isc_syncs', 8), ('_native_ufs_isc_resident_bytes', 8),
                         ('_native_ufs_isc_failures', 8),
+                        ('_native_macoslog_state', 4), ('_native_macoslog_error', 4),
+                        ('_native_macoslog_phase', 4), ('_native_macoslog_generation', 8),
+                        ('_native_macoslog_snapshots', 8), ('_native_macoslog_busy', 8),
+                        ('_native_macoslog_first_lba', 8),
                         ('_sheng_qemu_no_ignition_enabled', 4), ('_sheng_development_no_ignition_enabled', 4),
                         ('_native_virtio_ready', 4), ('_native_virtio_read_requests', 4),
                         ('_native_virtio_read_failures', 4), ('_native_virtio_sectors', 8),
