@@ -564,6 +564,12 @@ def main() -> None:
                 record.setdefault('unavailable_globals', {})[name] = value
                 continue
             observed_globals[name] = int.from_bytes(raw, 'little')
+    for name, width in (('_native_ufs_blocks_published', 4), ('_native_ufs_root_step', 4),
+                        ('_native_ufs_block_reads', 8), ('_native_ufs_block_failures', 8)):
+        if name in addresses:
+            value = snapshot['memory'].get(f'{addresses[name]:x}:{width:x}', '')
+            if len(value) == width * 2 and not value.startswith('E'):
+                observed_globals[name] = int.from_bytes(bytes.fromhex(value), 'little')
     record['observed_globals'] = {name: hex(value) for name, value in observed_globals.items()}
     if args.virtio_block_image:
         record['virtio_block_input'] = snapshot['virtio_block_input']

@@ -19,7 +19,7 @@ from native_devtree import configure_native_text_state
 from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 
 
-def qualify(build, observation, bootstrap, default_off, installed, plan, root_build):
+def qualify(build, observation, bootstrap, default_off, installed, plan, root_build, *, with_isc=False):
     kernel, symbols, identity = identify(build)
     kernel_build = json.loads((build / 'build.json').read_text())
     for name in ('0051-native-multiline-panic-panel.patch', '0052-native-independent-panic-surface.patch'):
@@ -84,10 +84,25 @@ def qualify(build, observation, bootstrap, default_off, installed, plan, root_bu
             or partition.get('root_image_sha256') != media['sha256']
             or media.get('bytes') != root.get('image_bytes') or root.get('build') != '25F71'
             or media.get('bytes', 0) > partition.get('root_bytes', 0)
-            or len(root.get('windows', [])) != 1
+            or len(root.get('windows', [])) != (2 if with_isc else 1)
             or any(root['windows'][0].get(k) != recovery[k] for k in ('bytes', 'sha256'))
             or root['windows'][0].get('name') != recovery['window']):
         raise ValueError('requires the written dedicated root extent with matching full readback')
+    if with_isc:
+        isc = root['windows'][1]
+        overlay = driver['build'].get('isc_volatile_overlay', {})
+        if (root.get('isc_volatile_overlay') is not True
+                or isc.get('name') != 'ISC'
+                or any(isc.get(k) != recovery['isc'][k] for k in ('bytes', 'sha256'))
+                or isc.get('offset', 0) < root['windows'][0]['offset'] + root['windows'][0]['bytes']
+                or isc['offset'] + isc['bytes'] > root['image_bytes']
+                or overlay.get('seed_read_only') is not True or overlay.get('disk_writes') is not False
+                or overlay.get('persistent') is not False or overlay.get('limit_bytes') != 64 << 20
+                or overlay.get('production_header_sha256') != hashlib.sha256(
+                    (ROOT / 'UniXNU/drivers/NativeUfs/RootWindowOverlay.h').read_bytes()).hexdigest()
+                or overlay.get('sparse_disk_header_sha256') != hashlib.sha256(
+                    (ROOT / 'UniXNU/drivers/NativeRamBlock/SparseDisk.h').read_bytes()).hexdigest()):
+            raise ValueError('requires the paired isolated ISC seed and bounded volatile overlay')
     return kernel, symbols, identity, media, partition
 
 
@@ -112,6 +127,20 @@ def qualify_development_dyld(build, observation, identity, root_uuid):
     return observed
 
 
+def qualify_isc_overlay(build, observation, identity, root_uuid):
+    observed = qualify_development_dyld(build, observation, identity, root_uuid)
+    values = observed.get('observed_globals', {})
+    console = (observation / 'console.txt').read_text()
+    recovery = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())
+    if (values.get('_native_ufs_isc_overlay_enabled') != '0x1'
+            or values.get('_native_ufs_isc_failures') != '0x0'
+            or int(values.get('_native_ufs_isc_resident_bytes', '0x0'), 16) > 64 << 20
+            or int(values.get('_native_ufs_blocks_published', '0x0'), 16) != 2
+            or any('mount-complete volume ' + name not in console for name in recovery['isc']['volumes'])):
+        raise ValueError('requires exact-candidate ISC, Preboot and Hardware mounts without overlay failures')
+    return observed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kernel-build', type=Path, required=True)
@@ -127,14 +156,18 @@ def main():
     parser.add_argument('--backup-dir', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--development-no-ignition', action='store_true')
+    parser.add_argument('--isc-overlay', action='store_true',
+                        help='expose the paired ISC seed through a bounded volatile RAM overlay')
     parser.add_argument('--dyld-observation', type=Path,
                         help='matching original launchd main execution with the explicit development flag')
     args = parser.parse_args()
     if args.development_no_ignition != bool(args.dyld_observation):
         parser.error('--development-no-ignition and --dyld-observation must be used together')
+    if args.isc_overlay and not args.development_no_ignition:
+        parser.error('--isc-overlay requires the qualified explicit development root')
     kernel, symbols, identity, media, partition = qualify(args.kernel_build,
         args.qemu_observation, args.bootstrap_observation, args.default_off_observation,
-        args.root_deployment, args.partition_plan, args.root_build)
+        args.root_deployment, args.partition_plan, args.root_build, with_isc=args.isc_overlay)
     root_hash = args.root_hash.read_bytes()
     hash_evidence = json.loads(args.root_hash.with_suffix(args.root_hash.suffix + '.json').read_text())
     root = json.loads(args.root_build.read_text())
@@ -175,6 +208,9 @@ def main():
     if args.development_no_ignition:
         qualify_development_dyld(args.kernel_build, args.dyld_observation, identity, args.root_volume_uuid)
         boot_args += ' -sheng-development-no-ignition'
+    if args.isc_overlay:
+        qualify_isc_overlay(args.kernel_build, args.dyld_observation, identity, args.root_volume_uuid)
+        boot_args += ' native-ufs-isc-overlay=1'
     args.output.mkdir(parents=True, exist_ok=False)
     try:
         with tempfile.TemporaryDirectory(dir=args.output) as temporary:
@@ -236,6 +272,8 @@ def main():
                     warm_reboot_capture_qualified=False),
                 development_root=True, synthetic_vm_identity=False, qemu_only_boot_args=False,
                 development_no_ignition=args.development_no_ignition,
+                isc_overlay=args.isc_overlay, isc_disk_writes=False,
+                isc_overlay_persistent=False, isc_overlay_limit_bytes=(64 << 20) if args.isc_overlay else 0,
                 dyld_observation=str(args.dyld_observation.resolve()) if args.dyld_observation else None,
                 root_variant='recoveryos', recovery_transport_is_not_authentication=True,
                 deployment_scope='fastboot boot only; no boot/recovery/UEFI partition flashing')

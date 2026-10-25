@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from package_macos26_ufs import qualify, qualify_development_dyld
+from package_macos26_ufs import qualify, qualify_development_dyld, qualify_isc_overlay
 from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 
 
@@ -47,7 +47,7 @@ class UfsPackage(unittest.TestCase):
         self.root = dict(image_bytes=2048, build='25F71', windows=[dict(name='OS',
                          bytes=self.recovery['bytes'], sha256=self.recovery['sha256'])])
 
-    def run_qualification(self):
+    def run_qualification(self, *, with_isc=False):
         for path, record in ((self.paths[1] / 'result.json', self.observed),
                              (self.paths[2] / 'result.json', self.bootstrap),
                              (self.paths[3] / 'gdb-stop.json', self.off),
@@ -61,7 +61,30 @@ class UfsPackage(unittest.TestCase):
         (self.paths[0] / 'build.json').write_text(json.dumps(dict(patches={
             str(panel.relative_to(ROOT)): hashlib.sha256(panel.read_bytes()).hexdigest() for panel in panels})))
         with patch('package_macos26_ufs.identify', return_value=(Path('kernel'), {}, self.identity)):
-            return qualify(*self.paths, *(self.folder / name for name in ('installed.json', 'plan.json', 'root.json')))
+            return qualify(*self.paths, *(self.folder / name for name in ('installed.json', 'plan.json', 'root.json')), with_isc=with_isc)
+
+    def test_isc_requires_current_compiled_overlay_and_disjoint_seed(self):
+        self.root['windows'][0]['offset'] = 1 << 20
+        isc = dict(name='ISC', offset=2 << 30, bytes=self.recovery['isc']['bytes'],
+                   sha256=self.recovery['isc']['sha256'])
+        self.root['windows'].append(isc)
+        self.root.update(isc_volatile_overlay=True, image_bytes=isc['offset'] + isc['bytes'])
+        self.media['bytes'] = self.root['image_bytes']
+        overlay = dict(seed_read_only=True, disk_writes=False, persistent=False, limit_bytes=64 << 20,
+            production_header_sha256=hashlib.sha256((ROOT / 'UniXNU/drivers/NativeUfs/RootWindowOverlay.h').read_bytes()).hexdigest(),
+            sparse_disk_header_sha256=hashlib.sha256((ROOT / 'UniXNU/drivers/NativeRamBlock/SparseDisk.h').read_bytes()).hexdigest())
+        self.driver['build']['isc_volatile_overlay'] = overlay
+        self.assertEqual(self.run_qualification(with_isc=True)[2], self.identity)
+        for field, value in (('persistent', True), ('disk_writes', True),
+                             ('production_header_sha256', 'stale'), ('sparse_disk_header_sha256', 'stale')):
+            original = overlay[field]
+            overlay[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'isolated ISC'):
+                self.run_qualification(with_isc=True)
+            overlay[field] = original
+        isc['offset'] = self.root['image_bytes']
+        with self.assertRaisesRegex(ValueError, 'isolated ISC'):
+            self.run_qualification(with_isc=True)
 
     def test_matching_recovery_transport_is_required(self):
         self.assertEqual(self.run_qualification()[2], self.identity)
@@ -104,6 +127,31 @@ class UfsPackage(unittest.TestCase):
 
 
 class DevelopmentDyldPackage(unittest.TestCase):
+    def test_isc_requires_all_role_mounts_and_bounded_failure_free_overlay(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            names = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())['isc']['volumes']
+            console = ''.join('mount-complete volume ' + name + '\n' for name in names)
+            values = dict(_native_ufs_isc_overlay_enabled='0x1', _native_ufs_isc_failures='0x0',
+                          _native_ufs_isc_resident_bytes='0x4000000', _native_ufs_blocks_published='0x2')
+            observed = dict(observed_globals=values)
+            with patch('package_macos26_ufs.qualify_development_dyld', return_value=observed):
+                (folder / 'console.txt').write_text(console)
+                self.assertEqual(qualify_isc_overlay(folder, folder, {}, 'volume'), observed)
+                for key, value in (('_native_ufs_isc_overlay_enabled', '0x0'),
+                                   ('_native_ufs_isc_failures', '0x1'),
+                                   ('_native_ufs_isc_resident_bytes', '0x4000001'),
+                                   ('_native_ufs_blocks_published', '0x1')):
+                    original = values[key]
+                    values[key] = value
+                    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'exact-candidate ISC'):
+                        qualify_isc_overlay(folder, folder, {}, 'volume')
+                    values[key] = original
+                for name in names:
+                    (folder / 'console.txt').write_text(console.replace('mount-complete volume ' + name, 'failed volume ' + name))
+                    with self.subTest(missing=name), self.assertRaisesRegex(ValueError, 'exact-candidate ISC'):
+                        qualify_isc_overlay(folder, folder, {}, 'volume')
+
     def test_stale_identity_missing_commpage_and_unreached_main_are_refused(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
