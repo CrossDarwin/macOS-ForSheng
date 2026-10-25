@@ -386,7 +386,7 @@
  }
  
  static bool appendNumber(OSDictionary *dictionary, const char *key, uint64_t value, unsigned bits = 32)
-@@ -474,9 +456,11 @@
+@@ -474,16 +456,19 @@
  
  // AppleParavirtDisplay::createDisplayAttributes, with the display of the boot framebuffer: one timing (the GOP mode) with one
  // 8-bit SDR color element. Chromaticities are sRGB's (16.16 fixed point, as the panel's EDID would give them).
@@ -399,7 +399,16 @@
      bool done = false;
      OSDictionary *attributes = OSDictionary::withCapacity(16), *product = OSDictionary::withCapacity(8);
      OSDictionary *chromaticity = OSDictionary::withCapacity(3), *whitePoint = point(20493, 21561);
-@@ -513,8 +497,8 @@
+     OSDictionary *transport = OSDictionary::withCapacity(2), *sourceLimits = OSDictionary::withCapacity(5);
+     OSDictionary *scalingLimits = OSDictionary::withCapacity(2);
+     OSArray *colors = OSArray::withCapacity(1), *timings = OSArray::withCapacity(1), *timingColors = OSArray::withCapacity(1);
+-    OSObject *color = ioavColorWithCapabilities(2, 8, 0, 0, 0, 16, false, nullptr, nullptr, nullptr, nullptr);
++    // Default RGB advertises a native gamut and selects extended-color IOSurfaces.
++    OSObject *color = ioavColorWithCapabilities(2, 8, 0, 0, 0, 10, false, nullptr, nullptr, nullptr, nullptr);
+     // CVT reduced blanking as IOAVFamily's sCVTTimingData has it (1280x800@60: 1440x823, 71 MHz). Sync rates are 16.16 fixed point
+     // (IOAVVideoTimingGetSyncRateRounded); the table leaves the horizontal one 0.
+     uint8_t timingData[80] = {};
+@@ -513,8 +498,8 @@
          if (!colors->setObject(color) || !timingColors->setObject(color) || !timings->setObject(timing))
              break;
          ioavTimingSetColorElements(timing, timingColors);
@@ -410,7 +419,7 @@
                appendNumber(product, "WeekOfManufacture", 24) && appendNumber(product, "YearOfManufacture", 2021)))
              break;
          if (!(appendDictionary(chromaticity, "Red", point(41943, 21627)) && appendDictionary(chromaticity, "Green", point(19661, 39322)) &&
-@@ -526,8 +510,8 @@
+@@ -526,8 +511,8 @@
                attributes->setObject("Chromaticity", chromaticity) && attributes->setObject("DefaultColorSpaceIsSRGB", kOSBooleanFalse) &&
                attributes->setObject("DefaultWhitePoint", whitePoint) && attributes->setObject("SupportsStandby", kOSBooleanTrue) &&
                appendNumber(attributes, "ContinuousFrequencySupport", 3) &&
@@ -421,7 +430,7 @@
                appendNumber(attributes, "NativeFormatHorizontalPixels", width) && appendNumber(attributes, "NativeFormatVerticalPixels", height) &&
                appendNumber(attributes, "PreciseAspectRatio", (static_cast<uint64_t>(width) << 16) / height)))
              break;
-@@ -539,8 +523,8 @@
+@@ -539,8 +524,8 @@
              break;
          if (!(appendNumber(scalingLimits, "RGBLayer_MinScaleFraction", 4) && appendNumber(scalingLimits, "RGBLayer_MaxScale", 4)))
              break;
@@ -432,7 +441,7 @@
          setProperty("primary", 0ULL, 32);   // AppleParavirtDisplay's display index
          done = setProperty("DisplayAttributes", attributes) && setProperty("Transport", transport) &&
              setProperty("ColorElements", colors) && setProperty("TimingElements", timings) &&
-@@ -559,14 +543,14 @@
+@@ -559,14 +544,14 @@
      OSSafeReleaseNULL(color);
      OSSafeReleaseNULL(timing);
      if (!done || set_digital_out_mode(kColorID, kTimingID) != kIOReturnSuccess) {
@@ -449,7 +458,7 @@
  {
      if (colorID != kColorID || timingID != kTimingID)
          return kIOReturnBadArgument;
-@@ -578,55 +562,55 @@
+@@ -578,55 +563,55 @@
      return kIOReturnSuccess;
  }
  
@@ -526,7 +535,7 @@
  {
      IOMFBSwapIORequest *swap = at<IOMFBSwapIORequest *>(this, kCurrentSwap);
      if (at<uint32_t>(swap, kSwapDropReasons))
-@@ -644,7 +628,7 @@
+@@ -644,7 +629,7 @@
  }
  
  // AppleParavirtDisplay::do_swap_info_notify_gated: the request's async result is the mask, the swap ID and the words it asks for.
@@ -535,7 +544,7 @@
  {
      const SwapInfo *info = reinterpret_cast<const SwapInfo *>(blob);
      uint32_t mask = at<uint32_t>(request, kNotifyMask);
-@@ -670,5 +654,5 @@
+@@ -670,5 +655,5 @@
      return userClientSendAsyncResult(&at<io_user_reference_t>(request, kNotifyAsyncReference), kIOReturnSuccess, args, count,
                                       kIOUserNotifyOptionCanDrop);
  }

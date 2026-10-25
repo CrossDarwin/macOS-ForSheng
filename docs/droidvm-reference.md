@@ -64,15 +64,33 @@ NativeGOPDisplay实际启动800×600，用户态服务发现已通过。
 原版用户客户端路径已通过；仍需验证IOSurface复制、交换完成和画面内容。
 
 
-## 当前首帧阻断：原版Metal设备等待超时
+## 首帧调查：从Metal等待到软件合成目标
 
 真实WindowServer异常栈已定位到WSSystemCanCompositeWithMetal的once block调用abort，
 EXC_CRASH/SIGABRT与原版“No suitable Metal devices present after %llu seconds.”分支一致。
 显示枚举、打开及开屏均已通过，尚无可用Metal设备及第一帧。
-因此Metal前端提升为当前渲染依赖；复制GOP scanout本身无法满足设备发现。
+复制GOP scanout本身无法满足Metal设备发现。后续显式QEMU实验已越过该检查，
+进入原版软件合成的显示更新，当前退出点改为IOSurface像素格式不受支持；尚无第一帧。
 
 重新核对固定版本NativeAdrenoMetalPlugin：IOGPUMetalDevice负责插件加载，
 实际设备由native_bridge_metal_open创建，并依赖Turnip及AGXAccelerator用户客户端。
 其动态缺失方法返回零用于接口调查，不能作为sheng完整渲染实现。
 原版25F71保留CompositorSW路径，下一项先验证原版软件合成入口及像素输出；
-该路径尚未运行通过，不能据此声称软件桌面可用。
+默认选择与阴影初始化都调用Metal能力检查，不能只改默认合成器选择。
+QEMU实验让原版Metal检查的once block保留“无设备”结果，保留PAC签名和认证，
+随后进入WSCompositeDestinationCreateWithIOSurface；该路径尚无帧输出，不能声称软件桌面可用。
+
+
+## UniXNU显示与GPU参考
+
+[GPU适配文档](https://unixnu.com/zh/porting/gpu)把A740电源/固件、
+SMMU映射、命令/fence和Metal前端分开验收；不能把接口存在视为sheng硬件加速已通过。
+[显示文档](https://unixnu.com/zh/porting/display)要求先确认CPU呈现的像素布局、行跨度、
+缓冲大小和交换生命周期，再接GPU呈现。当前GOP软件路径采用这一验收顺序。
+
+本地Snapintosh固定参考28663c30f0a14c1862c099d6ea46f1b3421ab011的
+`gpu/adreno-kext/kext/src/AdrenoDisplay.cpp`明确用IOAV colorimetry=10声明sRGB，
+避免Default RGB的16被识别为原生广色域，进而选择扩展颜色表面。
+本项目GOP只公布8-bit SDR及sRGB色度，仍继承了16，声明不一致。
+候选补丁改为10；保留IOSurface真实格式和存储布局，不伪造格式查询返回值。
+其运行效果需要实际表面格式及首帧复制验证，GPU加速仍未验收。

@@ -1868,3 +1868,21 @@ QEMU后续使用原版interrupt-masked-debug-mode=1记录该超时，实机配�
 因此只改变默认合成器选择不足以绕过共享能力检查。
 后续QEMU实验改为在原版Metal检查once block内返回“无设备”，让dispatch_once自然完成，
 保留PACIBSP/AUTIBSP及原版软件合成、阴影禁用判断；此方案仍需帧输出验证。
+
+
+### 软件合成已进入显示更新，退出点转为IOSurface格式
+
+配套25F71 QEMU实验在原版Metal能力once block的PACIBSP之后核对原始代码哈希，
+执行配对AUTIBSP/RET，使原版dispatch_once正常完成并保留“无设备”结果。
+原始磁盘保持只读；该显式实验修改了客体代码，不能作为未修改用户态的验收。
+
+实际WindowServer已进入SLCADisplay::render_update、UpdateDisplays与显示定时器路径。
+新异常仍是EXC_CRASH/SIGABRT，调用点为WSCompositeDestinationCreateWithIOSurface+0x1cc，
+对应原版“Unimplemented pixel format”分支。当前没有首次swap或完整帧复制证据。
+格式数值正在通过原版IOSurfaceGetPixelFormat的实际返回点读取，尚不据此猜测具体格式。
+
+GOP候选补丁把IOAV颜色元素从Default RGB的16改为sRGB的10，
+与已公布的8-bit SDR模式及色度一致。依据为本地固定Snapintosh实现，
+并结合当前25F71原版格式选择及软件目标创建代码核对。
+补丁准备流程已验证：相对既有编译输入只有该常量与英文约束注释变化。
+运行结果仍需新构建验证，不据此宣称已有图形Recovery。
