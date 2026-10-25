@@ -1,0 +1,37 @@
+--- a/scripts/qemu-entry/gdb-stop.py
++++ b/scripts/qemu-entry/gdb-stop.py
+@@ -436,7 +436,7 @@
+     screen_directory=tempfile.TemporaryDirectory(prefix='sheng-qmp-',dir='/tmp')
+     screen_socket=Path(screen_directory.name)/'qmp.sock'
+     command+=['-qmp',f'unix:{screen_socket.resolve()},server=on,wait=off']
+-for name in ('gdb-stop.json', 'gdb-failure.json'):
++for name in ('gdb-stop.json', 'gdb-failure.json', 'original-user-trace.jsonl'):
+     (fixture / name).unlink(missing_ok=True)
+ with (fixture / 'gdb-stderr.log').open('w') as errors:
+     process = subprocess.Popen(command, stdout=errors, stderr=errors)
+@@ -1063,6 +1063,17 @@
+                                             read['bytes'] = packet(f'm{target:x},{size:x}') if 0 < target < 0xfffffff000000000 - size else None
+                                             event['memory'].append(read)
+                                         events.append(event)
++                                        with (fixture / 'original-user-trace.jsonl').open('a') as trace_file:
++                                            trace_file.write(json.dumps(event) + '\n')
++                                        if site.get('terminal') is True:
++                                            followed_display['trace_terminal'] = site['name']
++                                            del pending[address]
++                                            followed_display['trace_unvisited_at_terminal'] = [s['name'] for s in pending.values()]
++                                            for remaining in pending:
++                                                if packet(f'z1,{remaining:x},4') != 'OK':
++                                                    raise RuntimeError('Cannot retire alternative original trace branch')
++                                            pending.clear()
++                                            break
+                                         hits[address] += 1
+                                         if hits[address] == site.get('max_hits', 1):
+                                             del pending[address]
+@@ -1806,6 +1817,7 @@
+             'qemu_cpu_model': 'cortex-a710' if args.qemu_accel == 'tcg' else 'host',
+             'error': str(error), 'qemu_exit_code': process.poll(),
+             'trace_events': locals().get('trace_events', []),
++            'followed_display_query': locals().get('followed_display'),
+             # A late diagnostic read can fail at an early boot panic. Preserve
+             # already captured registers/arguments without certifying a stop.
+             'partial_report': locals().get('report', {}),

@@ -452,8 +452,12 @@ def main():
                         help='include another original BootKC module and its dependency closure')
     parser.add_argument('--recovery-components', action='store_true',
                         help='include the paired original BaseSystem startup components')
+    parser.add_argument('--hid-components', action='store_true',
+                        help='include the paired original HID service for Recovery display experiments')
     parser.add_argument('--storage-driver', type=Path, help='standalone ARM64E transport build directory')
     args = parser.parse_args()
+    if args.hid_components and not args.recovery_components:
+        parser.error('--hid-components requires --recovery-components')
     try:
         kernel, names, identity = identify(args.kernel_build.resolve())
         modules = list(args.include_module)
@@ -467,10 +471,19 @@ def main():
             if '_sheng_native_boot_prelink_version' not in names:
                 raise ValueError('recovery startup requires native boot prelink identity support')
             modules += recovery_contract['original_modules']
+        hid_contract = None
+        if args.hid_components:
+            hid_contract = json.loads((ROOT / 'config/macos26-hid-modules.json').read_text())
+            if (hid_contract['build'] != '25F71' or hid_contract['xnu'] != '12377.121.6'
+                    or hid_contract['architecture'] != identity['architecture']):
+                raise ValueError('HID component contract differs from the paired native kernel')
+            modules += hid_contract['original_modules']
         candidate, report = emit(kernel.read_bytes(), args.bootkc.read_bytes(), names, identity,
                                  args.slide, (*ROOTS, *modules), args.storage_driver)
         if recovery_contract:
             report['recovery_components'] = recovery_contract
+        if hid_contract:
+            report['hid_components'] = hid_contract
         args.output.mkdir(parents=True, exist_ok=False)
         (args.output / kernel.name).write_bytes(candidate)
         shutil.copytree(args.kernel_build / 'kernel.development.sheng.dSYM', args.output / 'kernel.development.sheng.dSYM')

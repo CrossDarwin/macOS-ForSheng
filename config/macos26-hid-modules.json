@@ -1,0 +1,8 @@
+{
+  "build": "25F71",
+  "xnu": "12377.121.6",
+  "architecture": "arm64e",
+  "original_modules": [
+    "com.apple.iokit.IOHIDFamily"
+  ]
+}

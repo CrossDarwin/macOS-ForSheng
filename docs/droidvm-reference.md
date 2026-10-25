@@ -6,7 +6,8 @@
 
 sheng已在QEMU和实机执行25F71原版launchd，挂载ISC三个角色卷并完成临时Data与模板复制。
 实机运行时日志已写入macoslog并在重启后由Recovery读回。当前阻断是WindowServer反复exit(1)，
-尚无图形Recovery。QEMU退出调用栈指向HID和显示初始化，实机具体失败调用仍待定位。
+尚无图形Recovery。QEMU已确认缺少IOHIDSystem，并在加入配套IOHIDFamily后通过服务打开及共享内存初始化。
+显示发现和提交尚未通过，实机具体失败调用仍待定位。
 
 ## 当前优先项
 
@@ -14,7 +15,7 @@ sheng已在QEMU和实机执行25F71原版launchd，挂载ISC三个角色卷并�
 | --- | --- | --- | --- |
 | 已评估 | [mount替代入口](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/systemos-shims/sbin/mount) | `mount -P`返回成功，其余参数转发给mount.real；fsck替代入口也返回成功 | 只能与已完成的替代挂载链配套。ISC角色卷与临时Data现已实测通过，保留实际挂载链，不引入无条件成功 |
 | P1 | [SystemOS构造](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/scripts/make-macos-systemos.sh)与[Data种子](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/scripts/make-macos-data-seed.sh) | 从安装模板准备可写目录；只读资源留在SystemOS，通过链接连接Data；补充/var、/etc、/tmp | 完整系统阶段复用目录依赖分析。路径、权限、大小和UUID须从25F71实际输入重新取得；当前BaseSystem恢复环境不替换为它的完整系统布局 |
-| P0 | [启动与退出诊断](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/droidvm/README.md) | 提供exec/exit、致命异常回溯及受参数控制的stackshot | 已取得实机WindowServer退出码及重启记录，下一步取得失败的IOKit查询和调用返回值。继续使用保留日志、已实测的macoslog快照与独立屏幕区；VM的PL011串口不作为实机日志通道 |
+| P0 | [启动与退出诊断](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/droidvm/README.md) | 提供exec/exit、致命异常回溯及受参数控制的stackshot | 已取得实机WindowServer退出码及重启记录，QEMU已用调用返回值确认并解除HID服务缺失。下一步取得显示发现和提交结果。继续使用保留日志、已实测的macoslog快照与独立屏幕区；VM的PL011串口不作为实机日志通道 |
 | P2 | [kqworkloop限制修正](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/patches/xnu-12377/0005-no-kqworkloop-limits-launchd-sets-3-10-daemons-need-.patch) | 将动态workloop软硬上限设为无限制，针对其opendirectoryd失败 | 先记录sheng实际服务退出及限制值。只有出现同因失败才做局部开发开关；现在不取消全局限制 |
 | P1 | [DroidVMDisplay](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp) | 接IOMobileFramebuffer交换队列，CPU复制IOSurface到启动帧缓冲，并处理交换完成；代码另有27与26.5的交换记录适配 | 用户态已持续运行，接下来参考服务发现、用户客户端打开、提交、VBL和完成通知契约。使用25F71对应接口，单独验证sheng物理帧缓冲映射、步长和缓存属性 |
 | P3 | [Metal前端](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/metal/NativeAdrenoMetalPlugin.mm)与[GPU服务](https://github.com/Droid-VM/macOS-DroidVM/blob/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9/overlay/kext/DroidVMGpuKext.cpp) | 连接IOGPU服务发现、Metal插件、NativeBridge和Turnip；部分未提供方法动态返回零 | 可参考插件发现与用户客户端接口。源码不能证明完整渲染正确或sheng物理Adreno可用；GPU后端、内存、提交、同步与显示各自验收 |
@@ -34,6 +35,6 @@ sheng已在QEMU和实机执行25F71原版launchd，挂载ISC三个角色卷并�
 1. ISC三个角色卷、64MiB有限RAM写入层、临时Data及模板复制已在QEMU和实机通过。
    ISC已追加到现有macosroot并完整回读，GPT、Android userdata及原BaseSystem未改变。
 2. 运行时日志的两个持久快照槽已在实机写入并由Recovery读回；只保存前缀、尾部和丢失计数。
-3. 当前先在QEMU记录WindowServer失败的IOKit匹配、用户客户端打开和返回值，结合原版SkyLight退出栈定位。
+3. QEMU已通过配套IOHIDSystem查找、用户客户端打开和共享内存创建。接下来记录显示发现和提交，保持原版SkyLight错误判断。
    实机exit(1)不单独证明HID或显示的具体失败调用；没有同因证据时不跳过服务检查。
 4. 显示服务和用户客户端建立后，再验证实际帧缓冲映射、交换完成及输入，最后验证GPU后端。
