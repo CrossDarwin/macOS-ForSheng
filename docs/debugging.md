@@ -1,11 +1,10 @@
 # sheng 内核现场与 KDP
 
-当前A2FEEAC1实机已读到独立PANIC DETAIL：prepared=1、published=1、reads=12、failures=0。
-媒体列表有disk0和disk0s1；其容量和GPT分区GUID与已部署BaseSystem相符，但目标APFS卷尚未发布。
-最后普通日志停在swcrypto_threadpool_init的Starting ThreadPool；没有挂载或launchd证据。
-原发布线程从早期start开始计时，30秒后主动panic，可能中止仍在进行的APFS初始化，尚未证明唯一原因。
-0034改为180秒有界等待，每10秒报告reads/failures/busy，仍严格检查目标UUID及窗口祖先。
-超时媒体列表增加Content、busy和类名。CI40166730488及QEMU验证已通过。对照在elapsed=30000 ms仍waiting，随后才发布目标卷并到达load_init_program；这是旧等待上限不足的运行时反例，仍需sheng验证。
+当前40AD15FD实机已挂载macOS Base System根卷，并执行PID1的原版dyld，视频出现Darwin Ignition Sequence输出。
+原30秒发布窗口已延长至180秒，本次目标卷ready及mount-complete通过。
+最后停在libignition参数，尚未证明launchd主函数执行；视频之后的当前状态待用户确认。
+此前A2FEEAC1的reads=12、GPT子盘及首次panic已完整保留，不把旧失败状态继续当成当前阻断。
+下一步验证原版dyld的skipIgnition开发选项，先离线测试，不重写磁盘内容。
 
 独立panic区的实机显示已通过，普通日志和首次详情分用像素及缓冲，不依赖普通writer。
 macoslog仍无自动捕获文件：当前固件SHENG_VENDOR_HW=0，最终FD没有UFSDxe，缺少内部存储物理后端。

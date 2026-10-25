@@ -1530,3 +1530,18 @@ SHA256 def31f2d8d4dc75c492501a7dc5f248bf5f24702c633ddbbecb5daa32283b81e。
 新部署包out/macos26-ufs-wait-hardware-40166730488，临时RAM启动，原根卷和布局保持原样。
 旧A2FEEAC1部署镜像与ADT已销毁，视频、诊断、内核符号及恢复备份保留。
 新包尚未部署；下一轮录像应覆盖最长180秒发布等待，读取每10秒进度和最终详情。
+
+
+### sheng实机挂载BaseSystem并进入PID1的dyld用户态
+
+40AD15FD临时启动视频已保存。实机显示目标OS卷ready、apfs_vfsop_mountroot、
+macOS Base System的mount-complete；内核尝试加载/sbin/launchd，随后输出
+[1(launchd)]及原版Darwin Ignition Sequence/libignition参数。这证明本轮已经挂载根卷并执行PID1的用户态dyld。
+视频最后停在ignition level=0x5、force dylib root=0、halt after stage=n/a；没有launchd主函数执行证据。
+不能把进程名launchd或dyld日志等同于launchd完成初始化。
+
+延长根卷等待后的首次实机已越过原根卷阻断；无需重写BaseSystem或调整分区。
+视频168.874667秒，保存在private/device/ufs-root-wait-40166730488，root-mounted-140.png记录挂载完成及用户态输出。
+当前等待用户确认视频之后画面是否继续变化，尚未要求重启设备。
+下一步核对Ignition等待。配套XNU已有dyld_flags启动tunable，原版dyld的bit3为skipIgnition，
+先用同一候选及离线读取后端验证dyld_flags=0x8，不伪装VMM或Image4返回值。
