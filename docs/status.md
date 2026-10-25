@@ -1412,3 +1412,18 @@ logfs、xbl_sc_logs和rawdump有界只读快照已保存；日志中对应downlo
 全部现场保存在private/device/ufs-logfix-40124513764。
 
 0051构建修正的CI40161755752成功，后续重新验证实际绑定行数，不沿用旧面板资格。
+
+
+### 实际24行绑定与手动恢复菜单已通过QEMU
+
+CI40161755752产物核对0051及日志头SHA后重链接，UUID 6F504502-D6FD-3E1A-85DA-CCCD70637FA7，
+候选SHA256 5a8a473d5603fe9004535b4cafdd19f3c2883ab087438a6e339d20d1988f611a。
+QEMU进入IOFindBSDRoot，actual sheng_panel_bound_rows=0x18，原组件接口及sourcecrypto初始化通过；
+匹配sheng物理放置的启动汇编通过，UFS默认关闭时实际返回false且硬件计数为零。
+新硬件实验包位于out/macos26-ufs-panel-hardware-40161755752，尚未部署。
+40124513764旧部署镜像及ADT已销毁，日志和配套内核符号保留。
+
+恢复包改为手动选择，避免3秒自动执行在观察前返回或重启。
+实际20 MiB FAT16文件在QEMU UEFI下挂载，UniXNU读取unixnu.toml、加载DarwinBoot并显示recover菜单，
+确认停留手动选择。硬件恢复入口及macoslog文件系统访问仍未验收。
+新的手动恢复包位于out/native-log-recovery-manual-40161755752，不运行新内核或重设RAM请求。

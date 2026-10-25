@@ -158,9 +158,9 @@ def main():
                 '--root-match-volume-uuid', str(args.root_volume_uuid)], check=True)
             configure_native_text_state(files / 'kernel.macho.adt', development_root=True,
                                         root_hash=root_hash, boot_volume_uuid=args.root_volume_uuid)
-            (stage / 'unixnu.toml').write_text('version = 1\n[boot]\ntimeout = 3\ndefault = "native26ufs"\n'
+            (stage / 'unixnu.toml').write_text('version = 1\n[boot]\ntimeout = -1\nfallback_timeout = 30\ndefault = "native26ufs"\n'
                 '[kits]\nautoload = false\n[[entry]]\nid = "native26ufs"\n'
-                'title = "SHENG macOS 26 - UFS root experiment"\ntype = "xnu"\n'
+                f'title = "SHENG macOS 26 - UFS {identity["uuid"][:8]}"\ntype = "xnu"\n'
                 'path = "Payloads/kernel.macho"\nargs = "' + boot_args + '"\n')
             content = sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())
             mib = max(64, ((content * 5 // 4 + (1 << 20) - 1) >> 20) + 8)

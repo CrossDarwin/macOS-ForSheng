@@ -34,6 +34,14 @@ def validate_recovery_fat(bpb: bytes) -> int:
     return clusters
 
 
+def recovery_configuration() -> str:
+    # 按键可用时等待人工选择，避免保存器异常在观察前被倒计时自动触发
+    return ('version = 1\n[boot]\ntimeout = -1\nfallback_timeout = 30\n'
+            'default = "recover"\n[kits]\nautoload = false\n[[entry]]\nid = "recover"\n'
+            'title = "SHENG - Save previous RAM log"\ntype = "xnu"\n'
+            'path = "Payloads/recover-only.macho"\nargs = ""\n')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-build', type=Path, required=True)
@@ -65,10 +73,7 @@ def main() -> None:
             payloads.mkdir(parents=True)
             # NativeLogSave先执行，随后ParseKernel拒绝标记，不分配新内核窗口或重设请求
             (payloads / 'recover-only.macho').write_bytes(b'SHENG - retained log recovery only\n')
-            (stage / 'unixnu.toml').write_text('version = 1\n[boot]\ntimeout = 3\n'
-                'default = "recover"\n[kits]\nautoload = false\n[[entry]]\nid = "recover"\n'
-                'title = "SHENG - Save previous RAM log"\ntype = "xnu"\n'
-                'path = "Payloads/recover-only.macho"\nargs = ""\n')
+            (stage / 'unixnu.toml').write_text(recovery_configuration())
             fat = work / 'recovery.fat'
             subprocess.run(['mformat', '-C', '-T', str(20 * 2048), '-v', 'SHENGLOG',
                             '-N', '53484e26', '-i', str(fat), '::'], check=True)
