@@ -59,3 +59,6 @@ platform/sheng/macos26/display/0001-native-gop-display.patch。
 QEMU中原版WindowServer已在枚举完成路径读到参考管线1、已枚举1、显示记录1。
 NativeGOPDisplay实际启动800×600，用户态服务发现已通过。
 下一项是原始显示客户端打开返回值及实际帧提交；尚未确认GUI或sheng物理显示。
+
+同一候选的原版显示打开函数返回0、输出连接非空，输入记录为primary显示。
+原版用户客户端路径已通过；仍需验证IOSurface复制、交换完成和画面内容。
