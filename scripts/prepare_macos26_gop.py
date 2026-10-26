@@ -20,7 +20,7 @@ def prepare(root: Path, destination: Path) -> dict:
     repository, revision = manifest['repository'], manifest['revision']
     if repository != 'Droid-VM/macOS-DroidVM' or not re.fullmatch(r'[0-9a-f]{40}', revision):
         raise ValueError('requires a pinned display reference revision')
-    inputs = destination / 'inputs'
+    inputs = destination / 'inputs' / revision
     inputs.mkdir(parents=True, exist_ok=True)
     hashes = {}
     for name in ('DroidVMDisplay.cpp', 'IOMobileFramebufferABI.h'):

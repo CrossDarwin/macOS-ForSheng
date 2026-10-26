@@ -21,7 +21,7 @@ class PinnedDisplayInputs(unittest.TestCase):
         (self.root / 'platform/sheng/macos26/display/gop_scanout.h').write_text('// scanout\n')
         (self.root / 'platform/sheng/macos26/display/gop_layers.h').write_text('// layers\n')
         self.output = self.root / 'output'
-        inputs = self.output / 'inputs'
+        inputs = self.output / 'inputs' / ('1' * 40)
         inputs.mkdir(parents=True)
         files = {}
         for name, data in (('DroidVMDisplay.cpp', b'// upstream\n'),
@@ -50,12 +50,32 @@ class PinnedDisplayInputs(unittest.TestCase):
     def test_changed_source_or_header_is_rejected(self):
         for name in self.manifest['files']:
             with self.subTest(name=name):
-                path = self.output / 'inputs' / name
+                path = self.output / 'inputs' / self.manifest['revision'] / name
                 original = path.read_bytes()
                 path.write_bytes(original + b'// changed\n')
                 with self.assertRaisesRegex(ValueError, 'hash mismatch'):
                     prepare(self.root, self.output)
                 path.write_bytes(original)
+
+    def test_previous_revision_cache_is_not_reused(self):
+        import io
+        old_inputs = self.output / 'inputs'
+        for name in self.manifest['files']:
+            (old_inputs / name).write_bytes(b'// obsolete source\n')
+        previous = self.manifest['revision']
+        self.manifest['revision'] = '2' * 40
+        (self.root / 'config/macos26-gop-reference.json').write_text(json.dumps(self.manifest))
+
+        def download(url, timeout):
+            self.assertIn('/' + self.manifest['revision'] + '/', url)
+            return io.BytesIO((old_inputs / previous / url.rsplit('/', 1)[1]).read_bytes())
+
+        with patch('urllib.request.urlopen', side_effect=download) as request:
+            evidence = prepare(self.root, self.output)
+        self.assertEqual(request.call_count, 2)
+        self.assertIn(self.manifest['revision'], evidence['reference'])
+        self.assertEqual((self.output / 'NativeGOPDisplay.cpp').read_text(), '// adapted\n')
+        self.assertEqual((old_inputs / 'DroidVMDisplay.cpp').read_bytes(), b'// obsolete source\n')
 
     def test_patch_context_drift_is_not_accepted(self):
         path = self.root / 'platform/sheng/macos26/display/0001-native-gop-display.patch'
