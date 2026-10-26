@@ -1,0 +1,11 @@
+--- a/pexpert/arm/pe_kprintf.c
++++ b/pexpert/arm/pe_kprintf.c
+@@ -1,5 +1,8 @@
+ uint64_t sheng_boot_progress_seconds(void)
+ {
++	mach_timebase_info_data_t info;
++	clock_timebase_info(&info);
++	if (!info.numer || !info.denom) return 0;
+ 	uint64_t uptime, nanoseconds;
+ 	clock_get_uptime(&uptime);
+ 	absolutetime_to_nanoseconds(uptime, &nanoseconds);

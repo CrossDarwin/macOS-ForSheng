@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from package_macos26_ufs import qualify, qualify_development_dyld, qualify_isc_overlay
+from package_macos26_ufs import qualify, qualify_development_dyld, qualify_isc_overlay, qualify_boot_progress
 from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 
 
@@ -127,6 +127,28 @@ class UfsPackage(unittest.TestCase):
 
 
 class DevelopmentDyldPackage(unittest.TestCase):
+    def test_progress_requires_compiled_model_and_real_service_hooks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            sha = lambda path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+            record = dict(boot_progress=dict(default_off=True, stage_count=10, required_cpus=1,
+                repeated_events_advance=False, stalled_is_not_deadlock=True,
+                model_sha256=sha('platform/sheng/macos26/log/boot_progress.h'),
+                kernel_sha256=sha('platform/sheng/macos26/log/boot_progress_kernel.h')),
+                process_output_log=dict(default_off=True, vector_writes=True, max_bytes_per_write=159, max_iovecs=16,
+                    source_sha256=sha('platform/sheng/macos26/log/process_output.h')),
+                retained_log_source_sha256=sha('platform/sheng/macos26/log/retained_log.h'),
+                patches={'platform/sheng/macos26/patches/' + name: sha('platform/sheng/macos26/patches/' + name)
+                    for name in ('0055-native-process-output-log.patch', '0056-native-boot-progress.patch',
+                                 '0057-native-vector-output-log.patch', '0058-native-progress-clock-ready.patch')})
+            path = folder / 'build.json'
+            path.write_text(json.dumps(record))
+            self.assertFalse(qualify_boot_progress(folder)['physical_qualified'])
+            record['boot_progress']['model_sha256'] = 'stale'
+            path.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, 'source differs'):
+                qualify_boot_progress(folder)
+
     def test_wrapped_mount_lines_require_same_snapshot_stream_accounting(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)

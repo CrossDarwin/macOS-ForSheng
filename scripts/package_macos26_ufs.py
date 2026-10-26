@@ -225,6 +225,32 @@ def qualify_macoslog(build, observation, readonly, deployment, identity):
                 hardware_write_qualified=False, full_history=False, final_panic_guaranteed=False)
 
 
+def qualify_boot_progress(build):
+    compiled = json.loads((build / 'build.json').read_text())
+    progress = compiled.get('boot_progress', {})
+    output = compiled.get('process_output_log', {})
+    if (progress.get('default_off') is not True or progress.get('stage_count') != 10
+            or progress.get('required_cpus') != 1 or progress.get('repeated_events_advance') is not False
+            or progress.get('stalled_is_not_deadlock') is not True
+            or output.get('default_off') is not True or output.get('vector_writes') is not True
+            or output.get('max_bytes_per_write') != 159 or output.get('max_iovecs') != 16):
+        raise ValueError('requires bounded default-off progress and process output diagnostics')
+    for record, key, name in ((progress, 'model_sha256', 'boot_progress.h'),
+                               (progress, 'kernel_sha256', 'boot_progress_kernel.h'),
+                               (output, 'source_sha256', 'process_output.h'),
+                               (compiled, 'retained_log_source_sha256', 'retained_log.h')):
+        if record.get(key) != hashlib.sha256((ROOT / 'platform/sheng/macos26/log' / name).read_bytes()).hexdigest():
+            raise ValueError('compiled boot progress or output source differs')
+    for name in ('0055-native-process-output-log.patch', '0056-native-boot-progress.patch',
+                 '0057-native-vector-output-log.patch', '0058-native-progress-clock-ready.patch'):
+        path = ROOT / 'platform/sheng/macos26/patches' / name
+        if compiled.get('patches', {}).get(str(path.relative_to(ROOT))) != hashlib.sha256(path.read_bytes()).hexdigest():
+            raise ValueError('requires compiled service and vector-write hooks')
+    return dict(enabled=True, source=progress, process_output_filter='WindowServer',
+                process_output_mode=2, physical_qualified=False, runtime_qualified=False,
+                progress_is_not_percent=True, silence_is_not_deadlock=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kernel-build', type=Path, required=True)
@@ -250,6 +276,8 @@ def main():
     parser.add_argument('--macoslog-deployment', type=Path)
     parser.add_argument('--recovery-ui-observation', type=Path,
                         help='audited same-kernel QEMU language selector and real input fixture')
+    parser.add_argument('--boot-progress', action='store_true',
+                        help='enable observed milestone footer, service events and bounded WindowServer output')
     args = parser.parse_args()
     if args.development_no_ignition != bool(args.dyld_observation):
         parser.error('--development-no-ignition and --dyld-observation must be used together')
@@ -257,6 +285,8 @@ def main():
         parser.error('--isc-overlay requires the qualified explicit development root')
     if args.recovery_ui_observation and not args.isc_overlay:
         parser.error('Recovery UI requires the qualified ISC development root')
+    if args.boot_progress and not args.recovery_ui_observation:
+        parser.error('--boot-progress requires the qualified Recovery UI candidate')
     log_options = (args.macoslog_observation, args.macoslog_readonly_observation, args.macoslog_deployment)
     if any(log_options) and not all(log_options):
         parser.error('macoslog requires write, readonly and deployment evidence together')
@@ -315,6 +345,10 @@ def main():
     if args.recovery_ui_observation:
         ui_qualification = qualify_language_selector(args.kernel_build, args.recovery_ui_observation, identity)
         boot_args += ' native-gop-display=1 sheng-recovery-ui=1'
+    progress_qualification = None
+    if args.boot_progress:
+        progress_qualification = qualify_boot_progress(args.kernel_build)
+        boot_args += ' sheng-boot-progress=1 sheng-stderr-log=2 sheng-stderr-name=WindowServer'
     args.output.mkdir(parents=True, exist_ok=False)
     try:
         with tempfile.TemporaryDirectory(dir=args.output) as temporary:
@@ -386,6 +420,7 @@ def main():
                 isc_overlay_persistent=False, isc_overlay_limit_bytes=(64 << 20) if args.isc_overlay else 0,
                 macoslog=log_qualification,
                 recovery_ui=ui_qualification, native_gop_display=bool(ui_qualification),
+                boot_progress=progress_qualification,
                 native_recovery_input=False, physical_input_qualified=False,
                 dyld_observation=str(args.dyld_observation.resolve()) if args.dyld_observation else None,
                 root_variant='recoveryos', recovery_transport_is_not_authentication=True,

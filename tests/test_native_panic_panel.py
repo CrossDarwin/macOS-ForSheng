@@ -81,6 +81,7 @@ class NativePanicPanel(unittest.TestCase):
 
                         self.assertEqual(request(f'Z1,{symbols["panic_ready"]:x},4'), 'OK')
                         self.assertEqual(request(f'Z1,{symbols["progress_ready"]:x},4'), 'OK')
+                        self.assertEqual(request(f'Z1,{symbols["handoff_ready"]:x},4'), 'OK')
                         self.assertEqual(request(f'Z1,{symbols["fatal"]:x},4'), 'OK')
                         try:
                             stopped = request('c')
@@ -99,7 +100,7 @@ class NativePanicPanel(unittest.TestCase):
                             self.fail(f'ELR/ESR/FAR={values}, symbols={near}')
                         self.assertEqual(int.from_bytes(registers[32 * 8:33 * 8], 'little'), symbols['progress_ready'])
                         progress_base = 0x44000000 + (608 + 64 + 24 * 32 + 12 * 32) * 12192 + 896
-                        progress_pixels = memory(progress_base, 64 * 12192)
+                        progress_pixels = memory(progress_base, 128 * 12192)
                         glyphs = memory(symbols['sheng_panel_font'], 4096)
                         for line, expected in enumerate(('BOOT [#####-#---] - WindowServer exec',
                                 'No new stage/service: 60s - no loop verdict')):
@@ -110,7 +111,15 @@ class NativePanicPanel(unittest.TestCase):
                                         offset = (line * 32 + y) * 12192 + column * 64 + x * 4
                                         pixel = int.from_bytes(progress_pixels[offset:offset + 4], 'little')
                                         self.assertEqual(pixel, 0xffffffff if bits & (1 << (x // 2)) else 0xff000000)
+                        from PIL import Image
+                        output = ROOT / 'out/native-panic-writer-validation'
+                        output.mkdir(parents=True, exist_ok=True)
+                        Image.frombytes('RGBX', (3048, 128), progress_pixels, 'raw', 'BGRX').convert('RGB').crop(
+                            (0, 0, 1408, 128)).save(output / 'progress-footer.png')
                         self.assertEqual(request(f'z1,{symbols["progress_ready"]:x},4'), 'OK')
+                        self.assertTrue(request('c').startswith(('T05', 'S05')))
+                        self.assertEqual(memory(progress_base, len(progress_pixels)), progress_pixels)
+                        self.assertEqual(request(f'z1,{symbols["handoff_ready"]:x},4'), 'OK')
                         self.assertTrue(request('c').startswith(('T05', 'S05')))
                         self.assertEqual(number('panic_test_checks'), 11)
                         self.assertEqual(number('sheng_panel_bound_rows'), 24)
@@ -140,6 +149,7 @@ class NativePanicPanel(unittest.TestCase):
                         (output / 'result.json').write_text(json.dumps(dict(
                             writer_not_stolen=True, first_panic_text_preserved=True,
                             actual_font_pixels_verified=True, ordinary_tail_lines=80,
+                            progress_age_and_segments_verified=True, handoff_stops_progress_pixels=True,
                             panic_rows=16, normal_rows=24, hardware_executed=False), indent=2) + '\n')
                         from PIL import Image
                         raw = memory(0x44000000 + 608 * 12192 + 896, (64 + 40 * 32) * 12192)

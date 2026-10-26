@@ -10,6 +10,7 @@ static struct sheng_log_record snapshot;
 static uint64_t progress_clock = 120;
 uint64_t sheng_boot_progress_seconds(void) { return progress_clock; }
 __attribute__((noinline)) void progress_ready(void) { __asm__ volatile("nop"); }
+__attribute__((noinline)) void handoff_ready(void) { __asm__ volatile("nop"); }
 /* The freestanding fixture supplies the kernel memcpy dependency. */
 void *memcpy(void *destination, const void *source, size_t size)
 {
@@ -41,6 +42,11 @@ void run_trace(void)
     progress_clock = 180;
     sheng_boot_progress_tick();
     progress_ready();
+    sheng_panel_ready = 0;
+    progress_clock = 240;
+    sheng_boot_progress_tick();
+    handoff_ready();
+    sheng_panel_ready = 1;
     sheng_log_stage("ordinary log before interrupted writer");
     char reason[4096];
     const char first[] = "UFS ROOT FAILURE: root window volume not found\nstage=media publication prepared=1 published=1 reads=42 failures=0\n"
