@@ -9,6 +9,13 @@
 typedef uintptr_t user_addr_t;
 typedef uint64_t user_size_t;
 struct proc { char p_comm[MAXCOMLEN + 1]; int pid; };
+typedef struct test_uio { unsigned count; struct { user_addr_t address; user_size_t bytes; } vector[32]; } *uio_t;
+static int uio_iovcnt(uio_t uio) { return (int)uio->count; }
+static int uio_getiov(uio_t uio, int index, user_addr_t *address, user_size_t *bytes)
+{
+    *address = uio->vector[index].address; *bytes = uio->vector[index].bytes;
+    return 0;
+}
 static char output[1024];
 static size_t copied;
 static int copy_error, copies;
@@ -65,5 +72,25 @@ int main(void)
     sheng_process_output(&process, 2, (uintptr_t)long_text, sizeof(long_text), 1, "WindowServer");
     assert(!strstr(output, "[truncated]"));
     assert(copied == sizeof(long_text));
+    reset();
+    struct test_uio vectors = {
+        .count = 2, .vector = {{(uintptr_t)"first ", 6}, {(uintptr_t)"second", 6}}
+    };
+    sheng_process_outputv(&process, 2, (uio_t)(void *)&vectors, 1, "WindowServer");
+    assert(copies == 2 && !strcmp(output, "SHENG: fd2 pid 90 WindowServer - first second\n"));
+    reset(); copy_error = 14;
+    sheng_process_outputv(&process, 2, (uio_t)(void *)&vectors, 1, "WindowServer");
+    assert(copies == 1 && !output[0]);
+    reset();
+    vectors.vector[0].address = (uintptr_t)long_text; vectors.vector[0].bytes = sizeof(long_text);
+    sheng_process_outputv(&process, 2, (uio_t)(void *)&vectors, 1, "WindowServer");
+    assert(copies == 1 && copied == 159 && strstr(output, "[truncated]"));
+    reset();
+    vectors.count = 32;
+    for (unsigned i = 0; i < 32; i++) {
+        vectors.vector[i].address = (uintptr_t)"x"; vectors.vector[i].bytes = 1;
+    }
+    sheng_process_outputv(&process, 2, (uio_t)(void *)&vectors, 1, "WindowServer");
+    assert(copies == 16 && strstr(output, "[truncated]"));
     return 0;
 }

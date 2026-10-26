@@ -25,7 +25,9 @@ class NativePanicPanel(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             for source, target in (('retained_log.h', 'pe_sheng_log.h'),
-                                   ('panel_console.h', 'pe_sheng_panel.h'), ('vm_trace.h', 'vm_trace.h')):
+                                   ('panel_console.h', 'pe_sheng_panel.h'), ('vm_trace.h', 'vm_trace.h'),
+                                   ('boot_progress.h', 'pe_sheng_boot_progress.h'),
+                                   ('boot_progress_kernel.h', 'pe_sheng_boot_progress_kernel.h')):
                 shutil.copy2(ROOT / 'platform/sheng/macos26/log' / source, work / target)
             shutil.copy2(font, work / 'pe_sheng_font.h')
             (work / 'entry.S').write_text('.text\n.global _start\n_start:\n msr daifset,#15\n'
@@ -78,6 +80,7 @@ class NativePanicPanel(unittest.TestCase):
                             return int.from_bytes(memory(symbols[name], 8), 'little')
 
                         self.assertEqual(request(f'Z1,{symbols["panic_ready"]:x},4'), 'OK')
+                        self.assertEqual(request(f'Z1,{symbols["progress_ready"]:x},4'), 'OK')
                         self.assertEqual(request(f'Z1,{symbols["fatal"]:x},4'), 'OK')
                         try:
                             stopped = request('c')
@@ -94,6 +97,21 @@ class NativePanicPanel(unittest.TestCase):
                             values = [int.from_bytes(registers[n * 8:(n + 1) * 8], 'little') for n in range(3)]
                             near = sorted((address, name) for name, address in symbols.items() if address <= values[0])[-4:]
                             self.fail(f'ELR/ESR/FAR={values}, symbols={near}')
+                        self.assertEqual(int.from_bytes(registers[32 * 8:33 * 8], 'little'), symbols['progress_ready'])
+                        progress_base = 0x44000000 + (608 + 64 + 24 * 32 + 12 * 32) * 12192 + 896
+                        progress_pixels = memory(progress_base, 64 * 12192)
+                        glyphs = memory(symbols['sheng_panel_font'], 4096)
+                        for line, expected in enumerate(('BOOT [#####-#---] - WindowServer exec',
+                                'No new stage/service: 60s - no loop verdict')):
+                            for column, char in enumerate(expected):
+                                for y in range(32):
+                                    bits = glyphs[ord(char) * 16 + y // 2]
+                                    for x in range(16):
+                                        offset = (line * 32 + y) * 12192 + column * 64 + x * 4
+                                        pixel = int.from_bytes(progress_pixels[offset:offset + 4], 'little')
+                                        self.assertEqual(pixel, 0xffffffff if bits & (1 << (x // 2)) else 0xff000000)
+                        self.assertEqual(request(f'z1,{symbols["progress_ready"]:x},4'), 'OK')
+                        self.assertTrue(request('c').startswith(('T05', 'S05')))
                         self.assertEqual(number('panic_test_checks'), 11)
                         self.assertEqual(number('sheng_panel_bound_rows'), 24)
                         self.assertEqual(number('sheng_panic_panel_bound_rows'), 16)

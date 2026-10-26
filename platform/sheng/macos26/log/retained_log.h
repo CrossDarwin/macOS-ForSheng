@@ -79,10 +79,12 @@ void sheng_log_putc(char byte)
 }
 
 volatile uint64_t sheng_panel_bound_rows;
+#include "pe_sheng_boot_progress_kernel.h"
 
 unsigned sheng_log_snapshot_copy(void *destination, unsigned bytes);
 unsigned sheng_log_snapshot_copy(void *destination, unsigned bytes)
 {
+    sheng_boot_progress_tick();
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
     if (!destination || bytes != sizeof(*r) ||
@@ -182,6 +184,12 @@ void sheng_log_exception(uint64_t pc, uint64_t esr, uint64_t far, uint64_t sp)
 
 void sheng_log_stage(const char *message)
 {
+    if (message) {
+        const char expected[] = "PE_lockdown_iokit";
+        unsigned n = 0;
+        while (n < sizeof(expected) - 1 && message[n] == expected[n]) n++;
+        if (n == sizeof(expected) - 1 && !message[n]) sheng_boot_checkpoint(2);
+    }
     sheng_log_status(message);
     const char *prefix = "\nSHENG: ";
     while (*prefix) sheng_log_putc(*prefix++);

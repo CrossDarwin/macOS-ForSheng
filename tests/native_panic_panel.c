@@ -7,6 +7,9 @@ typedef struct { Boot_Video Video; } boot_args;
 volatile uint64_t panic_test_checks;
 volatile uint64_t snapshot_test_checks;
 static struct sheng_log_record snapshot;
+static uint64_t progress_clock = 120;
+uint64_t sheng_boot_progress_seconds(void) { return progress_clock; }
+__attribute__((noinline)) void progress_ready(void) { __asm__ volatile("nop"); }
 /* The freestanding fixture supplies the kernel memcpy dependency. */
 void *memcpy(void *destination, const void *source, size_t size)
 {
@@ -31,6 +34,13 @@ void run_trace(void)
         12192, 88, (unsigned)sheng_console_rows, 2);
     sheng_log_bind_panic_panel(sheng_status_pixels + (32 + 16 * sheng_console_rows) *
         sheng_status_scale * sheng_bootstrap_vm_stride, 12192, 88, (unsigned)sheng_console_panic_rows, 2);
+    sheng_boot_progress_enabled = 1;
+    for (unsigned stage = 0; stage < 4; stage++) sheng_boot_checkpoint(stage);
+    sheng_boot_service("launchd", 1, 0, 0);
+    sheng_boot_service("WindowServer", 85, 0, 0);
+    progress_clock = 180;
+    sheng_boot_progress_tick();
+    progress_ready();
     sheng_log_stage("ordinary log before interrupted writer");
     char reason[4096];
     const char first[] = "UFS ROOT FAILURE: root window volume not found\nstage=media publication prepared=1 published=1 reads=42 failures=0\n"

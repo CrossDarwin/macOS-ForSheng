@@ -1,0 +1,110 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -172,6 +172,12 @@
+ void sheng_log_repaint_panel(void);
+ extern volatile uint64_t sheng_panel_ready;
+ extern volatile uint64_t sheng_status_pixels;
++extern unsigned sheng_boot_progress_enabled;
++void sheng_boot_checkpoint(unsigned stage);
++void sheng_boot_service(const char *name, int pid, int exiting, int status);
++void sheng_boot_progress_tick(void);
++void sheng_boot_progress_start(void);
++void sheng_boot_log_state(unsigned state, unsigned error, uint64_t generation);
+ #endif
+ 
+ void PE_init_printf(
+--- a/pexpert/arm/pe_kprintf.c
++++ b/pexpert/arm/pe_kprintf.c
+@@ -16,6 +16,37 @@
+ #include "pe_sheng_log.h"
+ #endif
+ 
++#if SHENG
++#include <kern/clock.h>
++#include <kern/thread.h>
++uint64_t sheng_boot_progress_seconds(void)
++{
++	uint64_t uptime, nanoseconds;
++	clock_get_uptime(&uptime);
++	absolutetime_to_nanoseconds(uptime, &nanoseconds);
++	return nanoseconds / 1000000000ULL;
++}
++static void sheng_boot_progress_thread(__unused void *argument, __unused wait_result_t result)
++{
++	for (;;) {
++		sheng_boot_progress_tick();
++		assert_wait_timeout((event_t)&sheng_boot_progress_enabled, THREAD_UNINT, 2, NSEC_PER_SEC);
++		thread_block(THREAD_CONTINUE_NULL);
++	}
++}
++void sheng_boot_progress_start(void)
++{
++	static uint32_t started;
++	uint32_t expected = 0;
++	if (!sheng_boot_progress_enabled || !__atomic_compare_exchange_n(&started, &expected, 1,
++	    0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
++	thread_t thread;
++	if (kernel_thread_start(sheng_boot_progress_thread, NULL, &thread) == KERN_SUCCESS)
++		thread_deallocate(thread);
++	else printf("SHENG-PROGRESS: timer thread unavailable\n");
++}
++#endif
++
+ /* Globals */
+ typedef void (*PE_kputc_t)(char);
+ SECURITY_READ_ONLY_LATE(PE_kputc_t) PE_kputc;
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -546,6 +546,14 @@
+ void
+ PE_create_console(void)
+ {
++#if SHENG
++	unsigned progress = 0, cpus = 0;
++	PE_parse_boot_argn("sheng-boot-progress", &progress, sizeof(progress));
++	PE_parse_boot_argn("cpus", &cpus, sizeof(cpus));
++	sheng_boot_progress_enabled = progress == 1 && cpus == 1;
++	sheng_boot_checkpoint(0);
++	sheng_boot_checkpoint(1);
++#endif
+ 	/*
+ 	 * Check the head of VRAM for a panic log saved on last panic.
+ 	 * Do this before the VRAM is trashed.
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -894,6 +894,10 @@
+ 
+ 		bsd_init_kprintf("vfs_mountroot\n");
+ 		if (0 == (err = vfs_mountroot())) {
++#if SHENG
++			sheng_boot_progress_start();
++			sheng_boot_checkpoint(3);
++#endif
+ 			break;
+ 		}
+ 		rootdevice[0] = '\0';
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -2738,6 +2738,10 @@
+ 	p->p_acflag &= ~AFORK;
+ 
+ 	set_proc_name(imgp, p);
++#if SHENG
++	/* Image activation is observable here; this is not application readiness. */
++	sheng_boot_service(p->p_comm, proc_getpid(p), 0, 0);
++#endif
+ 
+ #if CONFIG_SECLUDED_MEMORY
+ 	if (secluded_for_apps &&
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -2351,6 +2351,9 @@
+ 	proc_unlock(p);
+ 	pid = proc_getpid(p);
+ 	exitval = p->p_xstat;
++#if SHENG
++	sheng_boot_service(p->p_comm, pid, 1, exitval);
++#endif
+ 	KERNEL_DEBUG_CONSTANT_IST(KDEBUG_COMMON,
+ 	    BSDDBG_CODE(DBG_BSD_PROC, BSD_PROC_EXIT) | DBG_FUNC_START,
+ 	    pid, exitval, 0, 0, 0);

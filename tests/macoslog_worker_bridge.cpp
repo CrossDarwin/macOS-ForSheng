@@ -59,6 +59,7 @@ static void thread_terminate(thread_t) {}
 static thread_t current_thread() { return nullptr; }
 static bool PE_parse_boot_argn(const char *, unsigned *out, unsigned) { *out=mode; return mode != 0; }
 static void IOSleep(unsigned);
+extern "C" void sheng_boot_log_state(unsigned, unsigned, uint64_t) {}
 #include "../platform/sheng/macos26/storage/macoslog_worker.h"
 static void IOSleep(unsigned ms) { assert(ms == 2000); __atomic_store_n(&mlStop, 1, __ATOMIC_RELEASE); }
 extern "C" unsigned sheng_log_snapshot_copy(void *out, unsigned n) {

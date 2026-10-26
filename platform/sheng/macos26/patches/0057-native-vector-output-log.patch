@@ -1,0 +1,12 @@
+--- a/bsd/kern/sys_generic.c
++++ b/bsd/kern/sys_generic.c
+@@ -784,6 +784,9 @@
+ 		goto out;
+ 	}
+ 
++#if SHENG
++	sheng_process_outputv(p, fd, uio, sheng_stderr_mode, sheng_stderr_name);
++#endif
+ 	error = writev_internal(p, fd, uio, flags, puguard, retval);
+ 
+ out:

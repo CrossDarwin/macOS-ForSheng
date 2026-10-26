@@ -78,6 +78,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0053-development-dyld-commpage.patch',
     ROOT / 'platform/sheng/macos26/patches/0054-development-recovery-ui-pages.patch',
     ROOT / 'platform/sheng/macos26/patches/0055-native-process-output-log.patch',
+    ROOT / 'platform/sheng/macos26/patches/0056-native-boot-progress.patch',
+    ROOT / 'platform/sheng/macos26/patches/0057-native-vector-output-log.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -215,6 +217,10 @@ def prepare() -> dict:
     stage_file(io_zero, source / 'pexpert/arm/pe_sheng_io_zero.h')
     retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
     stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
+    boot_progress = ROOT / 'platform/sheng/macos26/log/boot_progress.h'
+    boot_progress_kernel = ROOT / 'platform/sheng/macos26/log/boot_progress_kernel.h'
+    stage_file(boot_progress, source / 'pexpert/arm/pe_sheng_boot_progress.h')
+    stage_file(boot_progress_kernel, source / 'pexpert/arm/pe_sheng_boot_progress_kernel.h')
     process_output = ROOT / 'platform/sheng/macos26/log/process_output.h'
     stage_file(process_output, source / 'bsd/kern/sheng_process_output.h')
     panel_console = ROOT / 'platform/sheng/macos26/log/panel_console.h'
@@ -251,7 +257,8 @@ def prepare() -> dict:
                     'pexpert/arm/pe_sheng_panel.h', 'pexpert/arm/pe_sheng_font.h',
                     'pexpert/arm/pe_sheng_io_zero.h', 'osfmk/vm/sheng_recovery_ui.h',
                     'osfmk/vm/sheng_recovery_ui_kernel.h', 'osfmk/vm/sheng_recovery_ui_pages.h',
-                    'bsd/kern/sheng_process_output.h'], check=True)
+                    'bsd/kern/sheng_process_output.h', 'pexpert/arm/pe_sheng_boot_progress.h',
+                    'pexpert/arm/pe_sheng_boot_progress_kernel.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -261,9 +268,15 @@ def prepare() -> dict:
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   io_zero_source_sha256=sha(io_zero),
                   retained_log_source_sha256=sha(retained_log),
+                  boot_progress=dict(default_off=True, boot_argument='sheng-boot-progress=1',
+                      stage_count=10, required_cpus=1, model_sha256=sha(boot_progress),
+                      kernel_sha256=sha(boot_progress_kernel), stalled_is_not_deadlock=True,
+                      repeated_events_advance=False, periodic_summary_seconds=30,
+                      renderer_handoff='first native GOP frame', runtime_qualified=False),
                   process_output_log=dict(default_off=True, boot_argument='sheng-stderr-log',
                       stderr_mode=1, stdout_and_stderr_mode=2, process_filter='sheng-stderr-name',
-                      max_bytes_per_write=159, source_sha256=sha(process_output),
+                      max_bytes_per_write=159, max_iovecs=16, vector_writes=True,
+                      source_sha256=sha(process_output),
                       records_attempted_output=True, runtime_qualified=False),
                   panel_console_source_sha256=sha(panel_console),
                   panel_font_source_sha256=sha(panel_font),

@@ -2,6 +2,7 @@
 /* Included by the native UFS adapter after its bounded command helpers. */
 #include "macoslog_layout.h"
 extern "C" unsigned sheng_log_snapshot_copy(void *, unsigned);
+extern "C" void sheng_boot_log_state(unsigned, unsigned, uint64_t);
 extern "C" {
 volatile uint32_t native_macoslog_state, native_macoslog_error, native_macoslog_phase;
 volatile uint64_t native_macoslog_generation, native_macoslog_snapshots, native_macoslog_busy;
@@ -68,6 +69,7 @@ static void mlThread(void *argument, wait_result_t) {
         IOLog("NativeUfs: macoslog file verified, mode=%u first=%llu blocks=512\n", mode, first);
     }
     if (!failed && mode == 2) failed = !hostMacosLogOpen(first, 511);
+    sheng_boot_log_state(native_macoslog_state, native_macoslog_error, generation);
     while (!failed && mode == 2 && !__atomic_load_n(&mlStop, __ATOMIC_ACQUIRE)) {
         if (!gHost.ready || gHost.poisoned) { failed = true; break; }
         if (sheng_log_snapshot_copy(payload, 82048) != 82048) {
@@ -96,12 +98,14 @@ static void mlThread(void *argument, wait_result_t) {
             native_macoslog_state = 3; lastTotal = total; lastDropped = dropped;
             if (snapshots == 1)
                 IOLog("NativeUfs: macoslog first snapshot committed, generation=%llu\n", generation);
+            sheng_boot_log_state(native_macoslog_state, native_macoslog_error, generation);
         }
         IOSleep(2000);
     }
     if (failed) {
         native_macoslog_state = 5;
         IOLog("NativeUfs: macoslog stopped phase=%u error=%08x; no write retry\n", native_macoslog_phase, native_macoslog_error);
+        sheng_boot_log_state(native_macoslog_state, native_macoslog_error, generation);
     }
     if (payload) IOFree(payload, 21*4096);
     if (scratch) IOFree(scratch, 2*kDataMax);

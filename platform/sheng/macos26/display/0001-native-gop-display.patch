@@ -288,7 +288,7 @@
                swapID, options, timeout, result, fWaitFailures, at<uint32_t>(this, 6412), at<uint32_t>(this, kSystemPowerState),
                at<uint32_t>(this, kAPIPowerState), at<uint32_t>(this, kHardwarePowered), at<uint8_t>(this, kHardwareStarted),
                at<IOMFBSwapIORequest *>(this, kCurrentSwap), at<IOMFBSwapIORequest *>(this, kSwapQueueFirst));
-@@ -348,52 +310,44 @@
+@@ -348,52 +310,45 @@
  
  // AppleParavirtDisplay::do_power_state_change_gated: the display is on while both the system and WindowServer (setAPIPowerState)
  // want it on; each change goes to WindowServer as a power state notification, which CoreAnimation waits for before it swaps.
@@ -303,6 +303,7 @@
 -    IOLog("DroidVMDisplay: display %s\n", on ? "on" : "off");
 +    IOLog("NativeGOPDisplay: display %s\n", on ? "on" : "off");
      powerstate_notify(true, on);
++    if (on) sheng_boot_checkpoint(7);
      return kIOReturnSuccess;
  }
  
@@ -365,7 +366,7 @@
      swap_complete_gated();
  }
  
-@@ -412,49 +366,98 @@
+@@ -412,49 +367,110 @@
      return static_cast<uint8_t>((scaled + (1u << (shift - 1))) >> shift);
  }
  
@@ -441,14 +442,26 @@
 +            kIOMapAnywhere | kIOMapReadOnly, base, span);
 +    const uint8_t *source = frame.mapping && frame.mapping->getLength() >= span
 +        ? reinterpret_cast<const uint8_t *>(frame.mapping->getVirtualAddress()) : nullptr;
-+    if (!fFrames) {
-+        boolean_t interrupts = ml_set_interrupts_enabled(FALSE);
-+        sheng_panel_ready = 0;
-+        sheng_status_pixels = 0;
-+        __asm__ volatile("dsb sy" ::: "memory");
-+        ml_set_interrupts_enabled(interrupts);
-+        PE_initialize_console(nullptr, kPEDisableScreen);
-+    }
++    // A failed first copy must return the diagnostic surface to its owner.
++    struct DiagnosticHandoff {
++        bool active, committed = false;
++        uint64_t ready = 0, status = 0;
++        explicit DiagnosticHandoff(bool first) : active(first) {
++            if (!active) return;
++            boolean_t interrupts = ml_set_interrupts_enabled(FALSE);
++            ready = sheng_panel_ready; status = sheng_status_pixels;
++            sheng_panel_ready = 0; sheng_status_pixels = 0;
++            __asm__ volatile("dsb sy" ::: "memory");
++            ml_set_interrupts_enabled(interrupts);
++        }
++        ~DiagnosticHandoff() {
++            if (!active || committed) return;
++            boolean_t interrupts = ml_set_interrupts_enabled(FALSE);
++            sheng_panel_ready = ready; sheng_status_pixels = status;
++            __asm__ volatile("dsb sy" ::: "memory");
++            ml_set_interrupts_enabled(interrupts);
++        }
++    } handoff(!fFrames);
      uint64_t lit = 0, raw = 0, center = 0;
      bool sample = true;   // bring-up: the first frames and every 50th are logged, the last one goes into the periodic report
      for (uint64_t y = 0; y < copyHeight; y++) {
@@ -485,13 +498,18 @@
                  lit += (pixels[x] & 0xffffff) != 0;
                  raw += (rgba[0] | rgba[1] | rgba[2] | rgba[3]) != 0;
                  if (y == copyHeight / 2 && x == copyWidth / 2)
-@@ -462,11 +465,12 @@
+@@ -462,11 +478,17 @@
              }
          }
      }
 -    memory->complete();
 +    __asm__ volatile("dsb sy" ::: "memory");
 +    fFrames++;
++    handoff.committed = true;
++    if (fFrames == 1) {
++        PE_initialize_console(nullptr, kPEDisableScreen);
++        sheng_boot_checkpoint(9);
++    }
      fLastLit = lit;
      fLastCenter = center;
      if (format == kFormatRGhA && (fFrames <= 8 || fFrames % 50 == 0))
@@ -500,7 +518,7 @@
  }
  
  static bool appendNumber(OSDictionary *dictionary, const char *key, uint64_t value, unsigned bits = 32)
-@@ -502,16 +506,19 @@
+@@ -502,16 +524,19 @@
  
  // AppleParavirtDisplay::createDisplayAttributes, with the display of the boot framebuffer: one timing (the GOP mode) with one
  // 8-bit SDR color element. Chromaticities are sRGB's (16.16 fixed point, as the panel's EDID would give them).
@@ -522,7 +540,7 @@
      // CVT reduced blanking as IOAVFamily's sCVTTimingData has it (1280x800@60: 1440x823, 71 MHz). Sync rates are 16.16 fixed point
      // (IOAVVideoTimingGetSyncRateRounded); the table leaves the horizontal one 0.
      uint8_t timingData[80] = {};
-@@ -541,8 +548,8 @@
+@@ -541,8 +566,8 @@
          if (!colors->setObject(color) || !timingColors->setObject(color) || !timings->setObject(timing))
              break;
          ioavTimingSetColorElements(timing, timingColors);
@@ -533,7 +551,7 @@
                appendNumber(product, "WeekOfManufacture", 24) && appendNumber(product, "YearOfManufacture", 2021)))
              break;
          if (!(appendDictionary(chromaticity, "Red", point(41943, 21627)) && appendDictionary(chromaticity, "Green", point(19661, 39322)) &&
-@@ -554,8 +561,8 @@
+@@ -554,8 +579,8 @@
                attributes->setObject("Chromaticity", chromaticity) && attributes->setObject("DefaultColorSpaceIsSRGB", kOSBooleanFalse) &&
                attributes->setObject("DefaultWhitePoint", whitePoint) && attributes->setObject("SupportsStandby", kOSBooleanTrue) &&
                appendNumber(attributes, "ContinuousFrequencySupport", 3) &&
@@ -544,7 +562,7 @@
                appendNumber(attributes, "NativeFormatHorizontalPixels", width) && appendNumber(attributes, "NativeFormatVerticalPixels", height) &&
                appendNumber(attributes, "PreciseAspectRatio", (static_cast<uint64_t>(width) << 16) / height)))
              break;
-@@ -567,8 +574,8 @@
+@@ -567,8 +592,8 @@
              break;
          if (!(appendNumber(scalingLimits, "RGBLayer_MinScaleFraction", 4) && appendNumber(scalingLimits, "RGBLayer_MaxScale", 4)))
              break;
@@ -555,7 +573,7 @@
          setProperty("primary", 0ULL, 32);   // AppleParavirtDisplay's display index
          done = setProperty("DisplayAttributes", attributes) && setProperty("Transport", transport) &&
              setProperty("ColorElements", colors) && setProperty("TimingElements", timings) &&
-@@ -587,14 +594,14 @@
+@@ -587,14 +612,14 @@
      OSSafeReleaseNULL(color);
      OSSafeReleaseNULL(timing);
      if (!done || set_digital_out_mode(kColorID, kTimingID) != kIOReturnSuccess) {
@@ -572,7 +590,7 @@
  {
      if (colorID != kColorID || timingID != kTimingID)
          return kIOReturnBadArgument;
-@@ -606,55 +613,55 @@
+@@ -606,55 +631,57 @@
      return kIOReturnSuccess;
  }
  
@@ -590,11 +608,15 @@
  // AppleParavirtDisplay's hooks with nothing to do on a CPU-copied scanout: the swap and its layers need no mapping, there is no
  // gamma or color hardware (the family's defaults are unsupported, AppleParavirtDisplay accepts them).
 -IOReturn DroidVMDisplay::verify_swap(IOMFBSwapIORequest *)   // AppleParavirtDisplay returns 1 (IOMobileFramebufferLegacy: 0)
-+IOReturn NativeGOPDisplay::verify_swap(IOMFBSwapIORequest *)   // AppleParavirtDisplay returns 1 (IOMobileFramebufferLegacy: 0)
- {
-     if (!fSubmitted++)
+-{
+-    if (!fSubmitted++)
 -        IOLog("DroidVMDisplay: first swap submitted\n");
++IOReturn NativeGOPDisplay::verify_swap(IOMFBSwapIORequest *)   // AppleParavirtDisplay returns 1 (IOMobileFramebufferLegacy: 0)
++{
++    if (!fSubmitted++) {
++        sheng_boot_checkpoint(8);
 +        IOLog("NativeGOPDisplay: first swap submitted\n");
++    }
      return 1;
  }
 -IOReturn DroidVMDisplay::swap_layer_map(IOMFBSwapIORequest *, unsigned int) {return kIOReturnSuccess;}
@@ -649,7 +671,7 @@
  {
      IOMFBSwapIORequest *swap = at<IOMFBSwapIORequest *>(this, kCurrentSwap);
      if (at<uint32_t>(swap, kSwapDropReasons))
-@@ -672,7 +679,7 @@
+@@ -672,7 +699,7 @@
  }
  
  // AppleParavirtDisplay::do_swap_info_notify_gated: the request's async result is the mask, the swap ID and the words it asks for.
@@ -658,7 +680,7 @@
  {
      const SwapInfo *info = reinterpret_cast<const SwapInfo *>(blob);
      uint32_t mask = at<uint32_t>(request, kNotifyMask);
-@@ -698,5 +705,5 @@
+@@ -698,5 +725,5 @@
      return userClientSendAsyncResult(&at<io_user_reference_t>(request, kNotifyAsyncReference), kIOReturnSuccess, args, count,
                                       kIOUserNotifyOptionCanDrop);
  }
@@ -666,22 +688,3 @@
 -bool DroidVMDisplay::are_timings_enabled() const {return false;}
 +IOReturn NativeGOPDisplay::notify_crc_ready_gated(unsigned int) {return kIOReturnSuccess;}
 +bool NativeGOPDisplay::are_timings_enabled() const {return false;}
---- a/IOMobileFramebufferABI.h
-+++ b/IOMobileFramebufferABI.h
-@@ -141,6 +141,7 @@
-     virtual bool is_power_on_pending();                                                                                            // 368 0xcf25
-     virtual IOReturn ap_power_debug_trace(iomfb_power_trace_event_t, unsigned int, unsigned int, unsigned int, unsigned int);      // 369 0x5554
-     virtual IOReturn get_ap_power_debug_trace(void*, unsigned long, unsigned long) const;                                          // 370 0x3a25
-+    uint8_t iomfbState[0x90 - sizeof(IOService)];   // Includes the hardware-started byte at offset 140
- };
- 
- class IOMobileFramebufferLegacy : public IOMobileFramebuffer {
-@@ -343,7 +344,7 @@
-     virtual IOReturn trigger_pswap_dependent_thread();                                                                             // 470 0x106a
-     virtual IOReturn send_clamshell_state();                                                                                       // 471 0xf761
-     virtual IOReturn get_shared_disp_property();                                                                                   // 472 0xc09c
--    uint8_t iomfbLegacyState[0x1af8 - sizeof(IOService)];   // the instance size of its MetaClass
-+    uint8_t iomfbLegacyState[0x1af8 - sizeof(IOMobileFramebuffer)];   // the instance size of its MetaClass
- };
- 
- static_assert(sizeof(IOMobileFramebufferLegacy) == 0x1af8, "IOMobileFramebufferLegacy instance size");
