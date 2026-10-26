@@ -2013,3 +2013,25 @@ TRMUser::deviceOwners → AuthorizationCopyPreloginUserDatabase → com.apple.au
 它与此前旧syslog镜像是不同路径。新的对照关闭该可选转发，保留原始授权请求；
 另一组仅省略设备所有者发现，并使用原版TRMUser已有的空列表失败路径，不伪造认证成功。
 两组仍在QEMU运行，结果尚未确认。所有控制只用于本地开发，未修改只读恢复镜像或部署sheng。
+
+### 延长观察与所有者查询对照实际命中
+
+前两组后续已停止。第一组在LaunchServices应用签入及信任评估期间等待；
+第二组已启动原版authd，并发出实际预登录数据库请求。
+检查控制器发现，原观察器在WindowServer启动后撤销进程激活断点，
+使第二组后来启动的RecoveryOS Agent没有布下所有者查询控制点；该组不计作省略查询的验证。
+
+改为提前布点的下一组由20分钟传输时限结束，最终仍在lsd注册恢复卷中的应用，
+没有命中所有者查询控制点，也没有语言窗口。这个停止原因是观察边界，不是应用崩溃。
+现已启用每120秒保存一次的只读进程/线程快照，读取后继续同一客体运行，避免丢弃初始化进度。
+
+最新长观察已取得两次连续现场：lsd从数据库种子注册进入服务器事件循环，
+RecoveryOS Agent随后实际命中AuthorizationCopyPreloginUserDatabase入口。
+核对原版可执行头部、调用点及清零的输出槽后，仅把该调用调整到TRMUser已有的空列表失败路径，
+没有修改状态返回值或伪造认证成功。后续现场已在原版AppKit图标资源初始化中运行。
+截图仍为等待光标；LanguageChooser窗口尚未出现，不能把以上进展算作图形恢复验收。
+
+同时已准备原版ROSEnvironment的guest恢复模式选择。
+该框架依次读取security.mac.asp.recovery_boot_mode、NVRAM恢复模式及__OSINSTALL_GUEST_MODE，
+recoveryosd在模式缺失时可能跳过语言选择器。当前QEMU开发控制仅选择原有guest分支，
+不伪造机器型号、ASN或授权成功；该控制点尚待实际命中。
