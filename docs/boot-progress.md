@@ -40,6 +40,7 @@ Recovery Springboard、lsd、coreservicesd、loginwindow和diskarbitrationd。
 底部使用已映射panic区中未使用的四行，与滚动日志区分开。
 实际panic可以覆盖该区域并保留错误文本。第一次图形帧复制接管后停止诊断像素写入，
 首次复制失败会恢复诊断区所有权，防止因错误路径永久隐藏面板。
+每条像素扫描线短暂屏蔽中断并复查所有权，避免单核抢占后旧诊断写入覆盖图形帧。
 日志和服务事件仍可继续保存。
 
 `LOG`显示日志工作线程状态：off、opening、verified、committed或stopped。

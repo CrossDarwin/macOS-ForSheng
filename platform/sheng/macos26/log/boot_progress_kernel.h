@@ -34,15 +34,24 @@ static void sheng_boot_render(char lines[4][96])
     for (unsigned line = 0; line < 4; line++) {
         unsigned end = 0;
         while (end < 95 && lines[line][end]) end++;
-        for (unsigned col = 0; col < sheng_panic_panel.columns; col++) {
-            const unsigned char c = col < end ? (unsigned char)lines[line][col] : ' ';
-            for (unsigned y = 0; y < 16 * scale; y++) {
+        for (unsigned y = 0; y < 16 * scale; y++) {
+            /* On the required single CPU, ownership cannot change during one scanline. */
+            uint64_t saved_daif;
+            __asm__ volatile("mrs %0, daif\nmsr daifset, #3" : "=r"(saved_daif) :: "memory");
+            if (!sheng_panel_ready ||
+                __atomic_load_n(&sheng_panic_text_state, __ATOMIC_ACQUIRE) == 2) {
+                __asm__ volatile("msr daif, %0" :: "r"(saved_daif) : "memory");
+                return;
+            }
+            for (unsigned col = 0; col < sheng_panic_panel.columns; col++) {
+                const unsigned char c = col < end ? (unsigned char)lines[line][col] : ' ';
                 volatile uint32_t *pixels = (volatile uint32_t *)(base +
                     (line * 16 * scale + y) * sheng_panic_panel.stride + col * 8 * scale * 4);
                 const unsigned bits = sheng_panel_font[c * 16 + y / scale];
                 for (unsigned x = 0; x < 8 * scale; x++)
                     pixels[x] = bits & (1u << (x / scale)) ? 0xffffffffu : 0xff000000u;
             }
+            __asm__ volatile("dsb sy\nmsr daif, %0" :: "r"(saved_daif) : "memory");
         }
     }
     __asm__ volatile("dsb sy" ::: "memory");
