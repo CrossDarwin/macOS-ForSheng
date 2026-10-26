@@ -21,7 +21,8 @@ sheng 原生 XNU 同时提供屏幕诊断、RAM 保留日志和 macoslog 周期�
 RAM 追加与普通像素绘制使用独立的非阻塞锁。普通屏幕锁占用时跳过该次字符绘制，RAM 追加仍可进行。
 同一 CPU 的异步异常在 RAM 追加、82,048 字节快照复制及最多 512 字节回放文本提取期间屏蔽，随后恢复原有 DAIF。
 绘字、屏幕滚动和 UFS 命令不在该 RAM 临界区内执行。同步异常重入或其他 CPU 竞争仍可能产生丢失。
-以上修改已通过独立 ARM64 执行检查，尚待实机比较丢失计数。
+以上修改已通过独立 ARM64 执行检查。218FDCCE 实机快照的字符 writer 忙时丢失为 0，
+上一轮为 144,668；本轮仍有环形覆盖遗漏，不保证完整历史或后续运行无丢失。
 
 RAM 头的 `panic_state=3` 表示首次 EL1 同步异常，可能来自此前可恢复的异常。
 该记录不会被后续 panic 覆盖，不能把它的 PC/FAR 当作最终 panic 的现场。
@@ -53,7 +54,7 @@ PARTUUID 为 `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
 
 `sheng-stderr-name` 为空时匹配全部进程，其他值精确匹配进程短名称。
 特殊值 `recovery-ui` 精确匹配 `recoveryosd`、`RecoveryOS Agent`、`Language Chooser` 和 `Recovery Springb`。
-下一轮使用该组捕获恢复组件，避免用 WindowServer 的单进程过滤代替应用启动取证。
+218FDCCE 实机包已启用该组过滤，本次快照没有捕获到这些组件的 stdout/stderr 文本。
 仅写入统一日志或 syslog 的消息不保证经过 stdout/stderr；该开关不能捕获这些接口的全部输出。
 
 ## 从 Android Recovery 导出
