@@ -2092,3 +2092,14 @@ DiskArbitration的两个线程则停在FSClient的installedExtensionsForUser:rep
 不强行唤醒已经发出的请求、不伪造挂载或认证成功，也不省略原始所有者查询。
 实际控制已命中，后续快照中的DiskArbitration线程已离开扩展列表等待，进入卷状态处理。
 authd查询完成、Aqua初始化返回及语言窗口仍待验证。
+
+FSKit不可用分支对照随后已在保留原始所有者查询的情况下进入RecoveryOS Agent事件循环，
+authd不再保留先前Preboot挂载的信号量等待。
+Aqua观察器记录原版SecKeychainOpen返回0、SecKeychainUnlock返回-25294；
+UI开发策略在执行原版CFRelease后继续原版标记文件创建与完成回调。
+清理观察点的x0不属于认证状态，不能把其值解释为解锁成功。
+
+本轮实际启动的是Boot Picker，尚无语言窗口。
+检查模式观察器发现它只影响第一次getenv回退，后续recoveryBootMode查询仍会读到空环境。
+正在把显式QEMU guest回退保持为一致策略，保留原始sysctl与NVRAM结果的优先级，
+用于验证recoveryosd原有launchLanguageChooser分支；没有伪造锁状态或认证结果。
