@@ -42,3 +42,8 @@ Apple restore images, KDKs, reconstructed private ABI headers, firmware and
 device backups are not included in this repository.
 
 `config/sheng_defconfig` 原样来自固定提交的 UniXNU/UniXNU-sheng，遵循其 BSD-2-Clause-Patent 许可证；来源与文件哈希见 `config/sheng-baseline.json`。
+
+- Droid-VM/macOS-DroidVM: the optional QEMU input companion adapts DroidVMInput.cpp
+  and NativeVirtioPci.h at revision 031c35a57c89946977e51a1d64e009062faaed19
+  under BSD-2-Clause-Patent. The pinned source hashes and original license are
+  retained by scripts/prepare_macos26_input.py. This does not implement sheng touch.

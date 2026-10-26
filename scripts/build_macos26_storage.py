@@ -18,20 +18,27 @@ PROTOCOL_CHARACTERISTICS = {
 }
 
 
-def build(root, out, compile_record, source, run, record, env, *, transport='virtio', gop_display=False):
+def build(root, out, compile_record, source, run, record, env, *, transport='virtio', gop_display=False,
+          recovery_input=False):
     if transport not in ('virtio', 'ufs'):
         raise ValueError('unsupported native storage transport')
     if gop_display and transport != 'ufs':
         raise ValueError('the board GOP companion requires the UFS bundle')
+    if recovery_input and not gop_display:
+        raise ValueError('the QEMU input experiment requires the GOP companion')
     component = 'NativeVirtioBlock' if transport == 'virtio' else 'NativeUfs'
     bundle = BUNDLE if transport == 'virtio' else 'org.blu-sharky.NativeUfs'
     directory = 'storage-driver' if transport == 'virtio' else 'ufs-driver'
     destination = out / directory
     destination.mkdir(exist_ok=True)
     display = None
+    input_driver = None
     if gop_display:
         from prepare_macos26_gop import prepare
         display = prepare(root, destination / 'gop-display')
+    if recovery_input:
+        from prepare_macos26_input import prepare
+        input_driver = prepare(root, destination / 'recovery-input')
     upstream = root / 'UniXNU/drivers' / component / (component + '.cpp')
     include = destination / 'include/IOKit/storage'
     include.mkdir(parents=True, exist_ok=True)
@@ -112,12 +119,21 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                 '-Wno-c99-designator', '-Wno-reorder-init-list',
                 '-Wno-deprecated-enum-enum-conversion', '-Wno-unnecessary-virtual-specifier']
     run(command, directory + '-compile', record, cwd=Path(compile_record['directory']), env=env)
+    objects = [str(obj)]
+    if input_driver:
+        input_object = destination / 'recovery-input/NativeRecoveryInput.o'
+        input_command = [str(input_object) if arg == str(obj) else
+                         input_driver['source'] if arg == str(wrapper) else arg for arg in command]
+        input_command += ['-I', str(sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/Headers')]
+        run(input_command, directory + '-input-compile', record,
+            cwd=Path(compile_record['directory']), env=env)
+        objects.append(str(input_object))
     binary = destination / (component + '.macho')
     run(['xcrun', 'ld', '-arch', 'arm64e', '-kext', '-kexts_use_stubs',
          '-platform_version', 'macos', '26.5', '26.5',
          '-undefined', 'dynamic_lookup', '-fixup_chains',
          '-no_adhoc_codesign', '-headerpad', '0x1000',
-         str(obj), '-o', str(binary)], directory + '-link', record, env=env)
+         *objects, '-o', str(binary)], directory + '-link', record, env=env)
     image = macho(binary.read_bytes(), 'arm64e')
     if (image['kind'] != 11 or not image['subtype'] & 0x40000000
             or not any(c == 0x80000034 for c, _, _ in image['commands'])):
@@ -148,6 +164,15 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
         info['OSBundleLibraries'].update({
             'com.apple.iokit.IOMobileGraphicsFamily': '1.0.0',
             'com.apple.iokit.IOSurface': '1.0.0', 'com.apple.iokit.IOAVFamily': '1.0.0'})
+    if input_driver:
+        info['IOKitPersonalities']['NativeRecoveryInput'] = dict(
+            CFBundleIdentifier=bundle, IOClass='NativeRecoveryInput',
+            IOProviderClass='IOPlatformDevice', IONameMatch='native-recovery-input',
+            IOMatchCategory='NativeRecoveryInput', IOProbeScore=500)
+        info['IOKitPersonalities']['NativeRecoveryHIDEventDriver'] = dict(
+            CFBundleIdentifier='com.apple.iokit.IOHIDFamily', IOClass='IOHIDEventDriver',
+            IOProviderClass='IOHIDInterface', VendorID=6900, ProductID=4178, IOProbeScore=3000)
+        info['OSBundleLibraries']['com.apple.iokit.IOHIDFamily'] = '2.0.0'
     (destination / 'Info.plist').write_bytes(plistlib.dumps(info))
     evidence = dict(bundle=bundle, upstream_source_sha256=hashlib.sha256(upstream.read_bytes()).hexdigest(),
                     binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
@@ -157,6 +182,8 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
                     original_storage_runtime_qualified=False, hardware_admitted=False)
     if display:
         evidence['native_gop_display'] = display
+    if input_driver:
+        evidence['native_recovery_input'] = input_driver
     if transport == 'ufs':
         evidence['macoslog'] = dict(contract=log, default_off=True,
             boot_argument='native-ufs-macoslog', read_only_mode=1, write_mode=2,

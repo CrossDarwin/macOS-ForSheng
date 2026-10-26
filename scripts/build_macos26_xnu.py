@@ -465,7 +465,8 @@ def compile_sources(args, record: dict) -> None:
             build_storage(ROOT, OUT, compile_record, source, run, record, env)
             if args.build_ufs_driver:
                 build_storage(ROOT, OUT, compile_record, source, run, record, env,
-                              transport='ufs', gop_display=args.build_gop_display)
+                              transport='ufs', gop_display=args.build_gop_display,
+                              recovery_input=args.build_recovery_input)
             save(record)
 
 
@@ -552,6 +553,8 @@ def main() -> None:
                         help='compile the default-off sheng UFS transport with the paired ARM64E ABI')
     parser.add_argument('--build-gop-display', action='store_true',
                         help='include the default-off paired CPU GOP display in the UFS companion')
+    parser.add_argument('--build-recovery-input', action='store_true',
+                        help='include the default-off QEMU VirtIO HID input companion')
     parser.add_argument('--arch', choices=('arm64', 'arm64e'), default='arm64')
     parser.add_argument('--kdk-root', type=Path)
     parser.add_argument('-j', '--jobs', type=int, default=4, choices=range(1, 33))
@@ -560,6 +563,8 @@ def main() -> None:
         parser.error('--build-ufs-driver requires --link-kernel --arch arm64e')
     if args.build_gop_display and not args.build_ufs_driver:
         parser.error('--build-gop-display requires --build-ufs-driver')
+    if args.build_recovery_input and not args.build_gop_display:
+        parser.error('--build-recovery-input requires --build-gop-display')
     ARCH = args.arch
     if ARCH == 'arm64e':
         OUT = ROOT / 'out/macos26-xnu-arm64e'

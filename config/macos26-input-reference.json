@@ -1,0 +1,26 @@
+{
+  "repository": "Droid-VM/macOS-DroidVM",
+  "revision": "031c35a57c89946977e51a1d64e009062faaed19",
+  "files": {
+    "DroidVMInput.cpp": {
+      "path": "overlay/kext/DroidVMInput/DroidVMInput.cpp",
+      "canonical_sha256": "1f47d0d58fdca93c292fb8dd6baa6e1defa84feceb7f1f2fc660b6c4a0eb51e1"
+    },
+    "NativeVirtioPci.h": {
+      "path": "overlay/droidvm/drivers/NativeVirtioInputPci/NativeVirtioPci.h",
+      "canonical_sha256": "5aa082422647a73f9a6e820f7b398f1b8975a14918727f3900f4860b95a3e075"
+    },
+    "LICENSE": {
+      "path": "overlay/droidvm/drivers/NativeVirtioInputPci/LICENSE",
+      "canonical_sha256": "03a8ab50f4b3b4c65f070d07302a3522e7badbf54dde090cca59bb3e746bba3f"
+    }
+  },
+  "abi": {
+    "build": "25F71",
+    "family_uuid": "D47761A2-4E78-3078-B57C-DB202D4A62B4",
+    "family_version": "2238.120.5",
+    "device_slots": 334,
+    "device_bytes": 208,
+    "family_text_sha256": "f6520bb511d75d1fcf2537fde1d04abe46bf6b36216a934d09a3b80d86e76803"
+  }
+}
