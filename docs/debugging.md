@@ -1,181 +1,110 @@
-# sheng 内核现场与 KDP
+# 日志与崩溃诊断
 
-当前40AD15FD实机已挂载macOS Base System根卷，并执行PID1的原版dyld，视频出现Darwin Ignition Sequence输出。
-原30秒发布窗口已延长至180秒，本次目标卷ready及mount-complete通过。
-最后停在libignition参数，尚未证明launchd主函数执行；视频之后的当前状态待用户确认。
-此前A2FEEAC1的reads=12、GPT子盘及首次panic已完整保留，不把旧失败状态继续当成当前阻断。
-下一步验证原版dyld的skipIgnition开发选项，先离线测试，不重写磁盘内容。
+本页说明 sheng 原生 XNU 的屏幕日志、macoslog 快照和崩溃取证边界。
+当前实机结果见[移植状态](status.md)。用户照片、录像、原始日志和内存快照仅保存到本地 `private/`。
 
-独立panic区的实机显示已通过，普通日志和首次详情分用像素及缓冲，不依赖普通writer。
-macoslog仍无自动捕获文件：当前固件SHENG_VENDOR_HW=0，最终FD没有UFSDxe，缺少内部存储物理后端。
-按用户要求暂缓分区日志，使用整屏视频；完整实机RAM日志未恢复。
-KDP和UART仍没有实机传输能力。
+## 日志来源
 
-内部日志存储使用用户授权新建的`macoslog`：sde第78分区、64 MiB FAT16、标签`MACOSLOG`，PARTUUID `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
-root Recovery已经实测挂载、普通文件写入和读回，并完成capture_persistent_log.py只读导出；`OBSERVED.JSON`是人工读取屏幕后的结构化记录，不是RAM导出。XNU仍没有已验证的UFS写入后端。新增DarwinBoot保存流程使用固件文件系统，宿主EFI服务测试已通过，跨重启RAM留存与实机UEFI文件系统枚举仍未验证。
-禁止向现有厂商logfs或userdata裸写日志。64 MiB来自当前sde的未分配尾部，未调整原分区边界或Android数据大小；有效GPT及空闲区回滚备份保存在`private/backups/20261024-macoslog-partition`。
+| 来源 | 保存内容 | 限制 |
+| --- | --- | --- |
+| 滚动控制台 | 当前字符输出 | 屏幕会滚动，刷屏不等于启动推进 |
+| 底部进度 | 固定阶段、目标服务、停留时间和提交状态 | 不是百分比，不判定死循环 |
+| 首次 panic 面板 | 最多 4,095 字节的首次 panic 文本 | 可见范围受屏幕尺寸限制 |
+| panic 二维码 | 内核 UUID、调用地址、钩子寄存器、丢失计数及有界原因 | 仅摘要；实现与实测状态见[二维码说明](panic-qr.md) |
+| RAM 保留日志 | 128 字节头、16 KiB 前缀、64 KiB 环形尾部 | writer 忙时会丢字，环形尾部会覆盖旧记录 |
+| macoslog 文件 | 定期提交的 RAM 日志快照 | 不保存无限历史，不保证最后时刻或最终 panic |
 
-`0015-native-retained-log-persistence.patch`在加载下一份内核前读取macoslog上的NEXTLOG.BIN，核对指定RAM范围、日志头、内核UUID和物理地址。先独占原RAM页，再分配快照，防止分配快照时覆盖来源；原页已被固件占用或不具备恒等映射时拒绝读取。
-固件只允许操作上述PARTUUID、名称、类型、起止LBA及4096字节扇区均匹配的64 MiB分区；需要PartitionInfo、BlockIo及SimpleFileSystem三个协议同时存在。不存在时打印跳过原因，不转向其他分区或裸写。
-每次新增CAP00001等目录，保存NATIVE.BIN、CONSOLE.TXT、PANIC.BIN、REQUEST.BIN、STATUS.TXT；逐文件Flush并读回比对后才写DONE.TXT。中断目录保留且不重用，后续捕获不会覆盖它。
-CONSOLE.TXT包含16 KiB前缀及64 KiB环形尾部，超出容量和writer忙时丢失的字节有明确标注；这不是整机RAM转储，也不保证无限日志。512 KiB panic区另外保留。
-加载当前匹配内核后，从实际Mach-O符号和已分配PA生成下一次NEXTLOG.BIN，不猜测地址；上一次请求尚未成功恢复时保留原请求，不覆盖。必须重新进入含此加载器的UniXNU才会尝试恢复，进入Android或断电可能破坏原RAM。相同UUID也不单独证明属于最近一次运行。
+`LOG committed` 只说明一次提交成功。panic 发生后，工作线程、调度器或存储驱动未必能继续运行。
+因此屏幕已有 panic 而磁盘没有对应文本并不矛盾；不能从最后一次快照推断具体停止时刻。
+普通字符 writer、首次 panic 文本和 panic 像素区分别管理。普通 writer 忙时，首次 panic 仍可显示。
 
-0033修正旧恢复器与3 GiB窗口不兼容的地址限制。原范围0x880000000..0x8bb300000之外，
-只增加实机UEFI RAM表中的0x8c0000000..0xa00000000；中间的外部abort间隔仍拒绝。
-实际AllocateAddress独占页和逐页恒等映射检查保留，不扩大Linux RAM读取器的范围。
-macoslog身份及尺寸匹配后，若文件系统协议尚未建立，只连接这个分区再查询FAT协议。
-ARM.BIN及RECOVERY.BIN是固定16字节的最新加载器状态，分别标记请求建立和恢复结果；
-只记录状态，不证明RAM内容已保存，也不证明来自最近一次内核。capture_persistent_log.py会同时解码。
-如果日志卷本身无法打开，这两份状态也不能写入，仍需交接页错误作为依据。
-宿主EFI测试覆盖高地址相距3 GiB的日志/panic、指定分区连接、错误状态读回、地址间隔拒绝、
-现有CRC/UUID/短写/分配失败；实机跨重启捕获尚未验收。
+RAM 头的 `panic_state=3` 表示首次 EL1 同步异常，可能来自此前可恢复的异常。
+该记录不会被后续 panic 覆盖，不能把它的 PC/FAR 当作最终 panic 的现场。
+二维码单独记录 panic 钩子当时的寄存器，仍不等于原始异常的完整寄存器和调用栈。
 
-保存现场前使用同一固件的小型恢复包，避免再次加载完整内核：
+## macoslog 写入方式
 
-```sh
-python3 scripts/package_native_log_recovery.py \
-  --source-build out/macos26-ufs-logfix-hardware-40124513764/build.json \
-  --output out/native-log-recovery-NEW
-```
+当前布局由 `config/macoslog.json` 固定：64 MiB FAT16 分区，标签 `MACOSLOG`，
+PARTUUID 为 `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
+`SHENGLOG.BIN` 为预分配的连续 2 MiB 文件，包含两个 1 MiB 提交槽及文件归属保护块。
 
-该包复用已核对的固件载荷，菜单读取不可执行标记。NativeLogSave执行后，ParseKernel拒绝标记并返回菜单；
-它不申请新内核窗口、不重新建立NEXTLOG。返回菜单本身不证明日志保存成功，应从Recovery读回CAP目录和状态文件。
-恢复入口在按键可用时取消自动倒计时，先停留菜单再由操作者选择。真实20 MiB FAT16文件在QEMU UEFI挂载后读取配置并显示recover菜单已通过；这不证明实机固件保存器已执行。
-20 MiB恢复卷使用FAT16并校验簇数；此前强制FAT32只有40298簇，低于EnhancedFatDxe门槛，卷被拒绝，界面显示no boot entry found，保存器没有执行。
+`native-ufs-macoslog=2` 启用工作线程。线程核对 GPT、分区身份、FAT 链和保护范围后，
+每 2 秒尝试保存变化后的日志，先写数据，再提交带 CRC 的头部。
+内核只更新既有文件的数据区，不新建文件、不修改 FAT 或 GPT。
+任一身份或范围不匹配时停止写入，不转向其他分区。
 
-root Recovery只读导出：
+解码器按内核 UUID、文件标记、CRC 和代数选择有效槽。
+`omitted` 表示环形覆盖后无法恢复的字符范围；`dropped` 表示 writer 忙时丢失的字节。
+两项为零也只覆盖这次快照，不能证明完整运行历史或最终 panic 已保存。
 
-```sh
-python3 scripts/capture_persistent_log.py --serial 29d9c0be \
-  --kernel-build private/ci/macos26-arm64e-kernel-RUN \
-  --output private/experiments/CAPTURE
-```
+## 从 Android Recovery 导出
 
-脚本不自动重启，不改分区；核对sheng/root Recovery、sde78、主GPT CRC与分区GUID/边界及FAT16卷后只读挂载，导出完成即卸载。原始文件全部保留，只有UUID匹配且完成标记有效的记录才解码。EFI文本还会与现有环形解码器逐字节核对。
+设备需处于已验证的 root Android Recovery，电脑需有 ADB。
+以下命令从已核对的 `macoslog` 读取固定 64 MiB，不挂载、不写入，也不自动重启。
+`DEVICE_SERIAL`、`CAPTURE` 和 `KERNEL_UUID` 必须替换为本次设备、未使用的捕获名称和实际内核 UUID。
 
-自构建 XNU 优先使用 KDP 保留现场，避免仅用定时复位判断路径。
-当前 UEFI 页表/PAC 探针不是 XNU，不能通过内核 KDP 调试。
+1. 确认设备及分区身份：
 
-## 已有配置与实际阻断
+   ```sh
+   adb devices -l
+   adb -s DEVICE_SERIAL shell 'readlink -f /dev/block/by-name/macoslog; blockdev --getsize64 /dev/block/by-name/macoslog'
+   ```
 
-配套 25F71 源码的 `config/MASTER.arm64.MacOSX` 已将 `mach_kdp`、`config_serial_kdp`、
-`kdp_interactive_debugging` 放入 PERF_DBG_BASE；SHENG 没有移除它们。
-Actions 39937165999 的实际归档包含 `kdp_raise_exception`、`kdp_register_send_receive`、
-`kdp_serial_send` 和 `kdp_serial_receive`，编译参数保留 `-g`，优化为 `-O2`。
-无需为这些已有选项重复构建。
+   本项目已配置设备的分区为 `sde78`，尺寸应为 `67108864`。
+   名称或尺寸不符时停止，核对 GPT，不改用其他块设备。
 
-Actions 39946670153 已链接 macOS 26.5 SHENG 可执行内核并生成对应 dSYM。
-初版 QEMU 地址断点受到加载器错误映射影响，该通过结论已撤回。
-修正 32 MiB VA/PA 同余后，现场指令与文件一致，实际进入 C panic；尚未到达 BSD。
-sheng 实机内核调试传输仍未接通。
-现有 `pe_serial.c` 只有被条件选择的平台后端，SHENG 尚未注册可用的收发实现。
-仅添加 `kdp_match_name=serial` 不会自动得到 USB、网络或 UART 通道。
+2. 读取原始分区。目标目录必须不存在：
 
-源码链路：`kdp_init` 注册串行收发；`kdp_serial_send/receive` 经 `pal_serial_*` 调用 `serial_putc/getc`。
-网络后端通过 `kdp_register_send_receive` 提供直接收发，调试停机时必须能轮询工作，不能依赖已停止的调度器或中断。
-fastboot 由 ABL 提供，ADB 由 Android 提供，两者都不是 XNU KDP 的现成传输。
+   ```sh
+   mkdir private/device/CAPTURE
+   adb -s DEVICE_SERIAL exec-out \
+     'dd if=/dev/block/by-name/macoslog bs=4096 count=16384 status=none' \
+     > private/device/CAPTURE/macoslog.img
+   ```
 
-## 接入验收
+3. 在仓库根目录解码。脚本会拒绝截断镜像、错误 FAT、保护块、UUID 或提交 CRC：
 
-先完成一个实机可用的双向轮询后端，再配置启动时停机及 panic 等待。
-具备后端后，按配套 XNU README 的 `debug=0x14e` 作为 panic 等待调试器起点；
-需要启动时停住时加 DB_HALT 位，即 `debug=0x14f`。不同时添加强制重启位。
-串行后端使用 `kdp_match_name=serial`；网络后端需填写真实接口名，不能虚构 en0。
+   ```sh
+   PYTHONPATH=scripts python3 - private/device/CAPTURE KERNEL_UUID <<'PY'
+   import json
+   from pathlib import Path
+   import sys
+   from native_log_file import FILE_BYTES, decode, locate
 
-每次调试保留同一次链接的未剥离内核、dSYM、UUID、链接 map、加载地址和 slide，不能拿原版 T8103 KDK 符号代替 SHENG 自构建符号。
-传输未实现前，这些启动参数只作为待接入配置，不写入当前实机测试镜像。
-验收以读取 PC/SP/寄存器、获取回溯并恢复执行为准；停止画面或归档中的 KDP 符号不等于已连接。
+   directory, kernel_uuid = Path(sys.argv[1]), sys.argv[2]
+   image = (directory / 'macoslog.img').read_bytes()
+   offset = locate(image)
+   data = image[offset:offset + FILE_BYTES]
+   snapshot, report = decode(data, kernel_uuid)
+   (directory / 'SHENGLOG.BIN').write_bytes(data)
+   (directory / 'console.bin').write_bytes(snapshot)
+   (directory / 'console.txt').write_text(report.pop('console_text'))
+   (directory / 'console.json').write_text(json.dumps(report, indent=2) + '\n')
+   PY
+   ```
 
-## arm64e 范围
+导出后保留原始分区、二进制、文本、解码元数据及同次内核的 UUID、dSYM、链接 map 和加载地址。
+读回后才根据下一次测试需要重启。已有快照槽会被后续运行轮换，不作为归档使用。
 
-arm64e 是包含指针认证约定的 ABI，不是仅内核态的一组指令。
-EL0 程序可执行 PAC/AUT，内核负责密钥生命周期和特权状态；Apple 专有密钥行为另行处理。
-本项目 Android EL0 的 PAC 往返已有实机证据；启动核 EL1 五类密钥库切换和恢复也已实测通过（flags=0x7fff）。
-两项实验均不证明 Apple 的密钥派生和 XNU 任务生命周期已接通。
-后续兼容同时覆盖用户态签名指针、dyld fixup、进程/线程切换、异常进入和用户返回。
-不能只在内核替换指令，或通过放行 arm64e subtype 代替密钥语义实现。
+## panic 与二维码
 
-来源：[配套 XNU 调试说明](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/README.md#debugging-xnu)、
-[KDP 传输实现](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/osfmk/kdp/kdp_udp.c)、
-[Apple 用户态指针认证](https://developer.apple.com/documentation/security/preparing-your-app-to-work-with-pointer-authentication)、
-[Clang arm64e ABI](https://clang.llvm.org/docs/PointerAuthentication.html)。
+出现 `SHENG - FIRST PANIC` 后，拍下完整文字及二维码，不需要继续等待普通进度。
+普通扫码软件可读取离线文本，不需要联网或上传照片。
+二维码不存放 URL，也不会自动提交报告。编码失败或显示区域不足时保留文字面板。
+若屏幕或映射本身损坏，二维码也可能无法绘制。
 
-## 原生内核日志
+最终 panic 目前没有同步 UFS 写入路径。不要在 panic 中直接调用依赖工作线程或中断的常规文件系统接口。
+Linux DRM panic 的参考机制及本项目编码范围见[panic 二维码](panic-qr.md)。
 
-参考 Snapintosh 固定源码的 `probes/xnuboot/telemetry.c`、`compat/console-link.h` 和
-`tools/recover-console-log.py`。它由 EL2 监控层统一接收 SPTM SERIAL_PUTC 与 UART 输出，
-保留开头和尾部，通过 q1n1 USB NCM / call service 导出。sheng 的原生 EL1 路线没有这层常驻服务，
-不能只加 serial=3 就宣称获得 USB 日志。
+## 其他调试路径
 
-`platform/sheng/macos26/log/retained_log.h` 在内核自己的映射和内存窗口中保留日志，
-不用未确认归属的固定物理地址。头部 128 字节，启动前缀 16 KiB，尾部环形区 64 KiB。
-`_sheng_log_buffer` 是同次链接中的地址来源，头部记录实际物理地址和内核 LC_UUID。
-写入不等待锁；重入丢失单独计数，数据和提交游标清理到一致点。
-视频与串行字符出口都接入，串行字符不重复记录；panic 的公共入口在串行初始化前也保存有界的格式化消息。
-头部另保存 panic caller/SP、ELR_EL1、ESR_EL1、FAR_EL1 和 MPIDR_EL1。
-这些是日志钩子执行时的寄存器，不能当成原始异常的完整现场；完整调试仍需 KDP 或 GDB。
+QEMU 观察器 `scripts/observe_macos26_kernel.py` 可通过 GDB 读取保留日志、寄存器和独立 panic 区。
+`scripts/decode_xnu_panic.py` 解码配套 XNU 的 version-8 panic 头，校验 CRC、UUID 和范围。
+只使用同次链接的内核及 dSYM，不用原版 T8103 符号代替 SHENG 自构建符号。
 
-`observe_macos26_kernel.py` 复用 UniXNU 的 UEFI/QEMU 入口和 GDB 传输，
-按新内核符号停止后读取固定大小的日志，保存 `console.bin`、`console.txt`、`console.json`，
-同时保留完整 GDB 寄存器和 UART 文件。`decode_native_log.py` 拒绝错 UUID、未知布局和截断输入，
-明确标记环形覆盖、重入丢失与未完成写入，不把不完整日志当成完整记录。
-构建同时保留实际内核、dSYM 和链接 map。
+内核已包含 KDP 符号，但 sheng 尚无可用的双向轮询收发后端。
+ADB 和 fastboot 分别属于 Android 与 ABL，不能充当已停止的 XNU 的 KDP 通道。
 
-实机导出仍需实现并验证：原生 XNU 尚无 q1n1 NCM 等价后端；现有 Linux RAM reader 固定读取的是旧 UEFI 区域，
-不能拿它读取新内核日志。若采用 warm reset 后的只读导出，必须把实际日志物理区传给 reader、
-从 reader 的 Linux 分配器保留该区，并先验证 ABL/固件跨重启未覆盖它。
-冷启动与断电不保留 RAM。当前不宣称跨重启保留或实机 USB 日志已通过。
-
-来源：[Snapintosh USB NCM 启动与日志通道](https://github.com/Acelogic/Snapintosh/blob/main/README.md)、
-[统一控制台缓冲区](https://github.com/Acelogic/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/probes/xnuboot/telemetry.c)、
-[保留日志恢复](https://github.com/Acelogic/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/tools/recover-console-log.py)。
-
-首次 EL1 同步异常还在 `locore.s` 的两类 EL1 long vector 入口保存一次硬件 ELR/ESR/FAR 和来源栈，
-位置在依赖 current_thread 的原向量代码之前，避免早期 BRK 后的递归异常覆盖原因。
-不改变原异常处理方向，不在这里复位；panic_state=3 表示这份首次异常现场，后续 panic 不覆盖它。
-这段汇编和新增 reader 尚待目标构建及实机验收。
-
-原生只读 reader 的独立源码为 `probes/native_log_reader.c`，构建器为 `scripts/build_native_log_reader.py`。
-它按观察到的 DarwinBoot PA 和对应 `_sheng_log_buffer` 偏移计算范围，保留 96 KiB RAM，导出其中 82048 字节。
-源内核内建 UFS，因此 reader 的 DT 显式禁用 `/soc@0/ufshc@1d84000`，不只依赖 PID1 不打开块设备。
-USB 文件为 `NATIVLOG.BIN` 和 `STATUS.TXT`；`scripts/capture_native_log.py` 校验地址、长度和 CRC 后匹配内核 UUID。
-失败也保留原始快照。相同内核 UUID 本身不证明数据来自当前一次启动，捕获记录始终单独标记 freshness/retention 未验收。
-
-```sh
-python3 scripts/build_native_log_reader.py --kernel-build <Actions产物中的macos26-xnu目录> \
-  --kernel-physical-base <本次sheng屏幕实际显示的DarwinBoot内核PA> \
-  --boot-template <当前槽boot备份>
-python3 scripts/capture_native_log.py --reader-build <新reader的build.json> --output <新捕获目录>
-```
-
-这些工具只生成或读取候选产物，不自动重启、部署或刷写设备。
-
-原生日志首次实际执行结果：Actions 39951693129 的内核在 QEMU 产生 6852 字节日志，解码 UUID 匹配，busy/覆盖丢失均为 0。
-首次 EL1 同步异常头的 panic_state=3，PC 对应 crypto_random_kmem_ctx_size，FAR=0x150；后续 panic 保留该现场。
-这验证了字符记录和首次异常记录的运行路径，尚不证明 sheng 跨重启 RAM 保留或 USB 导出成立。
-
-实际候选封装命令：
-
-```sh
-python3 scripts/package_macos26_kernel.py --kernel-build <macos26-sheng-kernel产物目录> \
-  --firmware-build out/firmware-build.json --backup-dir <当前槽备份目录>
-```
-
-封装使用当前厂商 DTB、32 MiB 同余加载器和 256 字节启动熵，不自动部署。
-
-DarwinBoot 现在可为 `--panic-log` 设备树在 owned window 内分配独立 512 KiB，并填写 `/pram/reg`。
-`/chosen/embedded-panic-log-size` 沿用 XNU 原接口；不使用厂商固定保留地址或未分配内存。
-QEMU 实测 gPanicBase=0xfffffe000a000000、gPanicSize=0x80000，标准 panic 流程已产生完整寄存器、内核 UUID、回溯和压缩 stackshot。
-已取回 512 KiB 原始 panic 区；version=8、CRC 匹配、内核 UUID 匹配，panic 文本 3500 字节、stackshot 2314 字节。
-这是 QEMU 运行结果，未验收 sheng 重启后的保留或 USB 导出。
-
-观察器增加 `--capture-panic-buffer`：从现场 gPanicBase 指针分块读取，保存 `xnu-panic.bin`、`xnu-panic.txt`、`xnu-stackshot.bin` 和元数据。
-`scripts/decode_xnu_panic.py` 按配套源码的 packed version-8 头解码；范围损坏、UUID 不匹配或 CRC 未完成时保留原始区并明确标记。
-
-reader v2 可同时导出原生控制台和标准 panic 区。
-构建时增加 `--panic-physical-base <本次DarwinBoot打印的panic RAM PA>`，两段 RAM 分别保留并禁止 Linux 映射分配。
-地址必须在实际 owned window 内，不能相互重叠；不用模拟器地址生成实机 reader。
-USB 仍为 1 MiB 只读 RAM 磁盘，新增 `XNUPANIC.BIN`；每段有独立的映射状态和传输 CRC。
-捕获器保留原始区，再按匹配内核解码 panic 文本和 stackshot。
-ARM64 PID1 编译和包含真实 QEMU panic 的 FAT 导出/提取已通过；这些结果不代替实机 USB、重启后 RAM 保留的验收。
+旧 DarwinBoot `NEXTLOG.BIN`、`CAPxxxxx` 及 Linux RAM reader 依赖重启后 RAM 保留。
+它们没有通过本轮实机捕获验收，不能与已通过的 `SHENGLOG.BIN` 周期写入混为一谈。
+实现与失败记录保存在[历史调试记录](history/debugging-before-panic-qr.md)。

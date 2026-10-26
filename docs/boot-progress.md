@@ -11,7 +11,8 @@ LOG committed gen=73 bytes=59551 drops=0 error=0 lost=0
 ```
 
 每个格子只表示对应事件曾实际到达，位置固定，不是百分比。
-中间的`-`表示该事件尚未观察到；后面的事件可能先出现，不补齐未发生的格子。
+中间的`-`表示该事件尚未记录；后面的事件可能先出现，状态竞争也可能使标记丢失。
+它不表示曾有的`#`被撤回，也不能单凭缺格判断对应服务没有运行。
 
 | 格子 | 事件与边界 |
 | --- | --- |
@@ -45,7 +46,7 @@ Recovery Springboard、lsd、coreservicesd、loginwindow和diskarbitrationd。
 
 `LOG`显示日志工作线程状态：off、opening、verified、committed或stopped。
 `gen`只在实际提交后更新，`bytes`和`drops`来自保留环形日志。
-`error`为存储错误值，`lost`记录未能取得诊断状态写入锁的事件。
+`error`为存储错误值，`lost`记录未能取得诊断状态写入锁的尝试，包含定时刷新，不等于丢失的服务事件总数。
 存储写入没有成功时不会显示committed；该字段不能证明最后时刻或整个运行历史已保存。
 日志文件仍使用现有两个预分配槽，不改GPT、FAT或其他文件。
 
@@ -56,4 +57,5 @@ Recovery Springboard、lsd、coreservicesd、loginwindow和diskarbitrationd。
 
 主机测试覆盖重复事件、退出重启、旧PID、时间倒退和有界格式化。
 独立ARM64 QEMU测试验证实际字体像素、停留时间、panic优先和诊断像素交接。
-这些测试不等于配套完整内核或sheng实测，后两项另行记录。
+构建40319163123已在QEMU到达十个阶段；sheng本轮记录到开屏后panic，尚无首次复制证据。
+完整结果见[移植状态](status.md)，崩溃后的画面布局见[首次panic二维码](panic-qr.md)。

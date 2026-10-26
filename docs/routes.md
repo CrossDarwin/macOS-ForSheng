@@ -1,95 +1,42 @@
-# macOS 26 配对与启动路线
+# 原生 EL1 启动路线
 
-当前系统基线为 macOS 26.5 / 25F71。内核、恢复卷与系统用户空间都取自同一 IPSW。
-不把 macOS 26 内核与 macOS 27 用户空间拼接，也不把 Darwin 23 的硬件实验当作系统启动。
+sheng 当前通过 ABL 和 UEFI 临时启动自构建 SHENG 内核，交接级别为 EL1。
+系统输入统一使用 macOS 26.5 / 25F71，不混用旧 iPadOS 内核或 macOS 27 用户空间。
 
-Apple 的 [macOS 26.5 源码清单](https://github.com/apple-oss-distributions/distribution-macOS/tree/macos-265)
-固定 XNU 12377.121.6。2026-10-23 检查官方发布与标签，尚未取得 macOS 27 / XNU 13432 对应公开源码。
-这是当前源码发布范围，不是 XNU 能支持的系统版本上限。
-版本号相近不能证明内核、私有驱动、dyld 与 launchd 的 ABI 兼容。配对输入也不能替代硬件适配。
+## 启动链
 
-同一个 25F71 IPSW 包含下列身份。BuildManifest 中三者的 BaseSystem、OS 与 SystemOS 路径一致，内核不同。
+```text
+ABL → UEFI / UniXNU → DarwinBoot → SHENG ARM64E XNU
+    → UFS / APFS BaseSystem → dyld → launchd → Recovery 服务
+```
 
-| 候选 | 身份与内核 | 源码依据 | 当前判断 |
-| --- | --- | --- | --- |
-| M1 | j313ap / mac13g / T8103 | T8103 不在 `SPTM_ENABLED_SOCS_MacOSX` 列表中 | 优先研究原生 EL1 适配；仍需处理 Apple CPU、页表、异常及驱动依赖 |
-| MacBook Neo | j700ap / mac17p / T8140 | 清单含 TXM，较新的 Apple CPU 与安全启动要求 | 保留对照，不能直接套用 Snapintosh 27 的固定地址和哈希 |
-| 虚拟 Mac | vma2macosap / vma2 / VMAPPLE | `NO_MONITOR`、GICv3；仍有 HVC PAC 密钥请求及其他虚拟设备契约 | 当前没有自主管理的 EL2，不能直接运行原版 VM 内核 |
+临时启动使用 `fastboot boot`，不是把实验内核刷入日常 Android 启动分区。
+DarwinBoot 按 16 KiB 页表要求准备映像，内核 VA/PA 的低 25 位必须同余。
+根卷位于独立 macosroot 分区，ISC 使用现有实验角色卷；日志写入专用 macoslog 文件。
+设备布局和已通过范围见[构建与设备操作](bringup.md)及[移植状态](status.md)。
 
-以上优先级来自依赖数量与已知 EL1 入口，尚无实机 macOS 成功率数据。
-M1 缺少 SPTM 配置不代表原版内核可直接运行于 sheng。
+## 平台选择
 
-源码锚点来自固定提交 `ac9718fb1af618d5ce8678d0dc6e8a58f252216f`：
+25F71 的 M1/T8103 输入用于配套组件和 ABI 参考；SHENG 使用原生平台实现。
+M1 不在配套源码的 SPTM 启用列表中，但仍包含 Apple CPU、驱动和安全组件依赖，不能直接运行原版内核。
+Neo/T8140 和 VMAPPLE 保留为对照，不作为已支持的 sheng 机型。
 
-- [MakeInc.def](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/makedefs/MakeInc.def)：Mac SoC 与 SPTM 启用集合
-- [VMAPPLE.h](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/pexpert/pexpert/arm64/VMAPPLE.h)：虚拟平台特性契约
-- [machine_routines_apple.c](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/osfmk/arm/machine_routines_apple.c)：VMAPPLE PAC 密钥 HVC 路径
-
-先以 UniXNU 的 XNU 10063.141.1 验证退出 UEFI、异常入口、定时器和初始页表。
-完整基线包含全部上游驱动，但测试参数未启用 UFS 控制器；不含 macOS 用户空间。
-实机已通过控制台、IOKit、BSD 初始化，并在根设备查找前按设计复位。
-随后将确有运行证据的平台实现移到 12377.121.6，处理该版本的 CPU、引导参数和驱动 ABI。
-恢复卷、launchd、WindowServer 的验收从配对的 25F71 开始。
-
-Snapintosh 的 SPTM/TXM 与客体兼容代码继续作为参考；当前 EL1 入口无法运行其现有 EL2 监控层。
-发现原生路线不能满足的具体依赖时，记录函数、异常与寄存器，再判断需要内核改动还是新的固件入口。
-
-## Snapintosh 实现对照（2026-10-23）
-
-已另行浅克隆组织仓库，固定在 `config/snapintosh-reference-sources.json`，不更新原有构建依赖。
-Snapintosh 提交为 `2c60b47a950f6d98caed6b2551adc227f8ced4c9`，q1n1 为 `b72baceeafbdc28c866838e000146455a9f4a653`。
-
-上游使用配套 26A428 的原版 J700 kernelcache、设备树、SPTM/TXM 输入，不重新编译 XNU。
-EL2 监控层实现 SPTM/TXM 调用，维护 16 KiB 客体表和 4 KiB 实际影子表；NV2 将客体的 EL2 寄存器访问重定向到 VNCR。
-硬件驱动通过 KDK 和 kmutil 链接到 AuxKC。少量可选内核补丁用于已测得的陷入成本，不提供 sheng 的 EL1 实现。
-依据：[启动链](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/docs/BOOT-CHAIN.md)、
-[构建说明](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/docs/BUILDING.md)。
-
-| 条件 | 上游实际实现 | sheng 的依据与处理 |
+| 参考项目 | 可复用内容 | 当前边界 |
 | --- | --- | --- |
-| EL2 入口 | q1n1 的 A16 实机记录为固件直接进入 EL2；`HostRuntime.from_q1n1` 拒绝 EL1 | 已有 UEFI 探针 CPU0 为 EL1；更换 q1n1 不会自行获得 EL2 |
-| NV2 | `probes/xnuboot/prepare.c` 设置 HCR.NV/NV2 和 VNCR | CPU0 MMFR2=`0x1221011110101011`，NV=0；不是其已支持的主机 |
-| 16 KiB | A16 的区分性 `AT S1E1R` 实测失败，所以使用影子表 | sheng MMFR0 的 TGran16=1 仅是能力声明；需要真正页表执行，不能直接运行上游需要 EL2 的探针 |
-| arm64e/PAC | `compat/pauth-domain.c` 派生兼容密钥域，`pauth-switch.S` 在用户返回前安装密钥、异常进入后恢复；汇编检查 CurrentEL=2 | Android PACIA/AUTIA 往返只证明指令可用；必须适配 EL1 的密钥保存/恢复、进程切换和用户返回 |
-| 存储 | `compat/ans.c` 将 Apple ANS 接到实际 NVMe 后端 | sheng 使用 UFS；复用 UniXNU 的硬件实现，不能沿用 A16 的 NVMe 寄存器 |
+| UniXNU | sheng 的 UEFI、EL1 平台、UFS、显示及构建实现 | 旧内核 ABI 与 25F71 不同，需要配套适配 |
+| Snapintosh | 组件加载、PAC 域、启动日志与驱动依赖的实现思路 | 固定版本依赖 EL2/NV2 监控层，不能在当前 EL1 直接部署 |
+| DroidVM | 配套组件、用户态诊断、帧交换和软件显示路径 | 虚拟存储、VirtIO 输入和宿主 GPU 桥不等于 sheng 物理驱动 |
 
-q1n1 的可选 slbounce 是 Qualcomm PC Secure Launch/QHEE 路径，依赖签名 tcblaunch 和对应固件协议。
-A16 已记录的成功启动没有使用它。当前没有 sheng 的 Gunyah 支持该协议的证据，不能将它当作通用 EL1→EL2 跳板。
-依据：[A16 EL2 实机记录](https://github.com/Snapintosh/q1n1/blob/b72baceeafbdc28c866838e000146455a9f4a653/docs/A16-FIRST-EL2-BOOT.md)、
-[slbounce 原理](https://github.com/TravMurav/slbounce/blob/c090a8cdafa25e4c99df90f8d6f73f3805d9b397/theory_of_operation.md)。
+当前没有取得真实 EL2 控制权，也没有实机证据把某次停顿归因于 Gunyah。
+不能通过删除 XNU 组件、启动 UEFI 应用或更换 GBL 宣称已关闭 Gunyah。
+边界与寄存器陷入对照见[EL1 适配边界](native-el1-boundary.md)。
 
-当前路线保留配套 macOS 26 的原生 EL1 实验，但尚未形成可启动用户空间的方案。
-后续实现先处理两个实际条件：sheng 的 16 KiB/47 位页表执行，以及 arm64e 用户空间的密钥生命周期。
-后者需要同时处理 `do_cpuid`、`ml_grade_binary`、PAC 密钥初始化、上下文切换与异常返回。
-目前未定义 HAS_APPLE_PAC 的 SHENG 会报告 ARMv8，并拒绝 arm64e 二进制；不能只修改 subtype 放行或直接定义 Apple PAC。
-参考 Snapintosh 的密钥域和切换语义，采用适合 EL1 的实现；其需要 HCR_EL2 的汇编不直接搬入。
-只有这些条件成立，才继续恢复卷、launchd 和新版驱动集合；不以旧内核继续增加检查点或把归档成功当作系统启动。
+## 已跨过的阶段与下一项
 
-## 社区与高通固件入口补充（2026-10-23）
+16 KiB 页表、高位代码执行、基础 PAC 密钥访问、配套内核、原版用户态和实机根卷挂载均已有对应运行证据。
+当前阻断位于显示初始化后的物理地址转换；具体候选、panic 和修正见[当前状态](status.md)。
+这些结果不代表全部 PAC 生命周期、图形 Recovery 或日常桌面已经验收。
+原始路线比较及固件入口调查见[历史记录](history/routes-20261026.md)。
 
-重新检索时发现高通自己的开源固件已有另一条 EL2 入口，不能把上述 slbounce 边界扩大成所有高通设备均无法退出 Gunyah。
-EDK2 `KodiakHelper.S` 在早期 PEI 阶段调用 TrustZone：服务 ID `0x02000121`、参数 ID `0x23`，退出参数为 1。
-其说明包括退出 Gunyah并清理 SMMU 配置；它改变当前执行环境，不能在普通 UEFI 应用中照抄后返回。
-高通 U-Boot 的对应实现也放在 `start.S` 配置 EL 寄存器之前，PR #64 修正了本来已处于 EL2 时的分支。
-
-这证明部分高通固件提供该机制，不证明 sheng 的量产 TrustZone 实现支持它。
-目前未在 sheng 调用该服务，也未获得其可用性查询结果。
-后续先按 Qualcomm SCM 的 INFO/IS_CALL_AVAIL 契约区分“服务存在”与“实际允许退出”，再决定是否制作独立早期入口。
-即使取得 EL2，CPU0 已测 NV=0 仍与 Snapintosh 当前 NV2 后端不匹配；两项条件分别处理。
-
-来源：[EDK2 早期入口](https://github.com/tianocore/edk2-platforms/blob/master/Silicon/Qualcomm/KodiakPkg/Library/KodiakLib/KodiakHelper.S)、
-[服务参数](https://github.com/tianocore/edk2-platforms/blob/master/Silicon/Qualcomm/KodiakPkg/Library/KodiakLib/KodiakHelper.h)、
-[U-Boot 原始讨论](https://lists.u-boot-project.org/pipermail/u-boot/2026-May/618654.html)、
-[高通修正 PR](https://github.com/qualcomm-linux/u-boot/pull/64)、
-[SCM 可用性查询](https://github.com/torvalds/linux/blob/v6.12/drivers/firmware/qcom/qcom_scm.c#L318)。
-
-当前原生探针改为闲置 TTBR1 高地址窗口的真实页表遍历，保留 UEFI 的 TTBR0/TG0、MAIR 和 SCTLR。
-这是解决 MMU 关闭阶段显示干扰的实验设计，不是已经证明 sheng 可执行 16K 内核代码。
-
-## 原生 EL1 条件实测结果
-
-2026-10-23，36 位窗口的 16K 区分性遍历与五类 EL1 PAC 密钥库切换均通过实机，原固件状态恢复。
-随后 47 位 TTBR1 实验在 0xffff800000004000 和预定 SHENG 链接地址 0xfffffe0007004000 执行了同一段 16K RX 映射代码，
-独立 RW 数据页读回 0x5757，写代码拒绝、未映射地址及固件恢复控制全部通过。
-这解决了启动核页粒度、测试高地址指令执行和基础 PAC 密钥访问的硬件疑问。
-不代表 XNU 完整 pmap、Apple 密钥语义、EL0 切换或 macOS 用户空间已运行；下一阶段是实际内核链接与接入。
+源码依据：[配套 XNU 平台配置](https://github.com/apple-oss-distributions/xnu/blob/ac9718fb1af618d5ce8678d0dc6e8a58f252216f/makedefs/MakeInc.def)、
+[Snapintosh 固定启动链](https://github.com/Snapintosh/Snapintosh/blob/2c60b47a950f6d98caed6b2551adc227f8ced4c9/docs/BOOT-CHAIN.md)。

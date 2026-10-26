@@ -1,180 +1,85 @@
-# macOS 26 / sheng 开发入口
+# 构建与设备操作
 
-系统目标是 macOS 26.5 / 25F71；硬件是 sheng / SM8550 / Adreno 740。
-内核、恢复系统和用户空间必须来自同一系统构建。上游 iPadOS 17 内核只验证硬件交接。
-候选客体优先 M1/T8103，Neo/T8140 和 VMAPPLE 用于对照，见 [路线依据](routes.md)。
+当前目标是 macOS 26.5 / 25F71、XNU 12377.121.6 ARM64E 和 sheng / SM8550。
+以下命令在仓库根目录执行。构建不自动部署，封装不代表实机运行通过。
+已有缓存和观察结果只在相关输入变化时重新验证，不执行无关全量构建。
 
-## 获取源码
+## 准备源码与输入
+
+需要 Git、Python、uv 和具备本仓库访问权限的 GitHub CLI。
+固定提交来自锁文件；Apple 输入留在忽略目录，不上传仓库或第三方服务。
 
 ```sh
 python3 scripts/sources.py fetch --group all
 python3 scripts/sources.py fetch --lock config/macos26-sources.json --group macos26
 python3 scripts/apply_patches.py
-python3 scripts/sources.py verify --group all
-```
-
-现有目录只在 HEAD 匹配时复用，不重置用户改动。主仓库只管理原创代码、补丁和锁文件。
-`sources.lock.json` 固定上游提交，Git 子模块仍采用各父仓库的 gitlink。
-UEFI 的深层构建依赖可用 `git -C uefi-sheng submodule update --init --recursive --depth=1 --jobs=4` 补齐。
-两套 Mesa 保留独立提交，尚未应用各自补丁或配置编译。
-
-## Apple 输入
-
-```sh
 python3 scripts/fetch_inputs.py --config config/macos26.json --jobs 8
 uv venv --python 3.13 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
-.venv/bin/python scripts/inspect_macos26.py
-python3 scripts/prepare_macos26_recovery.py --ipsw-tool out/tools/ipsw-3.1.739/ipsw
 ```
 
-IPSW 来自 Apple CDN，下载后验证固定大小、SHA-256、版本与板型。哈希记录在 `config/macos26.json`。
-提取工具同时检查 M1、Neo 和 VMAPPLE 的正式擦除身份，保存各自内核、设备树和共同的恢复输入。
-所有 Apple 二进制留在忽略目录。恢复工具版本与归档/可执行文件哈希固定在 `config/ipsw-tool.json`。
-恢复卷通过 AEA 解密，验证 SystemVersion 与 ARM64e launchd/dyld，验收记录保存在私有目录。
+获取器核对固定版本、大小和 SHA-256。恢复卷还需通过 `prepare_macos26_recovery.py` 使用固定 ipsw 工具解密和检查。
+macOS 编译使用配套 KDK，其签名、内核 UUID 与输入约束见 `config/macos26.json`。
+不能用版本相近的 KDK 或其他板型符号代替匹配输入。
 
-旧 `config/guest.json`、`extract_guest.py`、`check_apple.py` 仅服务 macOS 27 / J700 参考合同。
-已有 26A428 KDK 的签名与 UUID 检查不适用于 25F71；25F71 KDK 单独固定在 `config/macos26.json`，下载使用 `fetch_inputs.py --config config/macos26.json --kind kdk`。
-下载哈希通过后仍需 Mac 检查 Apple 包签名与对应内核 UUID。
+## 当前构建入口
 
-## 设备探测
+GitHub Actions 的 `bringup.yml` 只接受手动触发。原生内核及配套实验驱动使用：
 
 ```sh
-mkdir -p out/probes
-aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -static probes/cpu_id.c -o out/probes/cpu-id
-python3 scripts/capture_device.py --cpu-probe out/probes/cpu-id
+gh workflow run bringup.yml --repo CrossDarwin/macOS-ForSheng --ref main \
+  -f target=macos26-kernel -f native_arch=arm64e \
+  -f native_ufs=true -f native_gop=true -f native_input=true
 ```
 
-只将探针放到 `/data/local/tmp`，运行后删除。不会请求 root、重启或写入分区。
-EL0 的 ID 值可能由 Linux 模拟，不能据此确认 NV2 不存在或宣告监控层可运行。
-采样范围由当前进程 CPU affinity 决定，不能把部分 CPU 结果扩展到整机。
+`native_input` 构建 QEMU VirtIO HID 驱动，不表示 sheng 触控可用。
+UFS、GOP 和输入路径默认关闭，运行时由对应设备描述和参数启用。
 
-UEFI 探针在已有 ShengPreflight 上扩展，补丁位于 `patches/ShengPreflight/`。
-MP Services 可用时读取已启用的 AP，不擅自启动禁用核心。协议不可用时只报告启动核。
-输出包括 CurrentEL、ID 寄存器、定时器频率、所有 UEFI 内存描述符和 GOP。
-它只读取特性声明，不执行 NV2、PAC、页表切换或调试陷入测试，不退出 Boot Services。
+具备配套 macOS 工具链和 KDK 的主机可执行同一构建脚本：
 
 ```sh
-CLANG_BIN=/path/to/llvm/bin/ bash scripts/build_preflight.sh
-python3 scripts/gates.py private/device/preflight.log --output private/device/assessment.json
+python3 scripts/build_macos26_xnu.py --arch arm64e --link-kernel \
+  --build-ufs-driver --build-gop-display --build-recovery-input \
+  --kdk-root /path/to/paired-kdk -j 4
 ```
 
-独立 EFI 应用不是 Android 启动镜像。部署前需要可读的原始 GPT、boot/recovery 备份，
-以及已验证的恢复路径。没有这些条件不写入 UEFI 或分区。
-评估程序即使接受寄存器声明，仍会拒绝缺少行为验证记录的环境。
+`/path/to/paired-kdk` 是占位路径，必须替换。脚本记录工具链、源码、补丁、UUID、dSYM 和链接 map。
+当前完整内核编译主要使用 Actions；Linux 本地用于准备输入、重定位、封装和 QEMU 运行。
+`sheng-xnu` 与 `reference-xnu` 属于旧 XNU 10063.141.1 硬件参考，不用于启动当前用户空间。
 
-在已开启 root ADB 的 sheng Recovery 中备份：
+## 组件生成与封装
 
-```sh
-python3 scripts/backup_device.py --output private/backups/run-name
-```
+`scripts/emit_macos26_security.py` 将配套组件及驱动连接到本次内核，保留 PAC 元数据。
+模块集合、目标目录和存储驱动必须来自同次构建，不能复用另一个内核的 UUID 或符号记录。
+生成后的初始化和运行结果见[安全组件说明](macos26-security.md)。
 
-保存六个 UFS LUN 的两份 GPT，验证头部及分区数组 CRC 和副本一致性。
-保存两套 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta、vbmeta_system、uefi，
-并将本地文件哈希与设备重新读取的哈希核对。这不包含 Android 用户数据。
+常规硬件封装入口为 `scripts/package_macos26_ufs.py`。
+它要求内核引导、根卷、默认关闭路径、磁盘部署及所启用功能的匹配观察记录。
+参数以脚本 `--help` 为准；缺失记录时不生成虚构的通过结果。
+本轮诊断候选按用户要求复用已有固件、设备树和磁盘，只替换 RAM 包中的内核及诊断参数。
+复用范围和未重复的验收项必须单独记录，不能把旧内核证据改成新内核证据。
 
-## 完整 UEFI 固件
+## 设备布局与临时启动
 
-```sh
-python3 scripts/build_firmware.py --llvm-bin /path/to/llvm/bin --iasl-bin /path/to/iasl/bin --fetch-firmware
-```
+当前实验设备已按授权划出 64 GiB `macosroot`，剩余空间重建 Android userdata。
+旧 userdata 已清除，恢复旧 GPT 不会恢复原数据。这个重分区操作不是日常启动步骤。
 
-复用上游的固定厂商包、DTS、模块导入、固件构建和 FV 检查，不执行刷写。
-厂商包约 7 GiB，先验证上游固定 MD5 及完整 SHA-256，再提取所需文件。
-UEFIExtract 源码版本也在锁文件中；需要 CMake 3.22+，或由 uvx 获取固定 CMake 3.31.6。
-默认板级配置为 `SHENG_VENDOR_HW=0`，FV 检查的厂商模块覆盖数必须按实际配置解读，
-不能把 0 个厂商模块参与检查说成全部厂商模块均已验证。
-加 `--bootimg` 可以封装只含 UEFI 的 Android 容器，验证 header、gzip、FD 和追加 DTB 的往返一致性。
-无 QEMU 时明确记录执行测试未运行。它不含 macOS 内核或用户态，也没有证明 ABL 会接受该镜像。
+| 分区 | 当前用途 |
+| --- | --- |
+| `macosroot` | LUN0 的独立根盘窗口，承载配套 BaseSystem |
+| `macoslog` | LUN4 的 64 MiB FAT16 日志分区，内核更新预分配文件 |
+| Android userdata | 重建后的 Android 数据，独立于上述实验分区 |
 
-实机探针采用 `--bootimg --preflight-only --boot-header 4 --compression none`，并通过
-`--boot-template private/backups/run-name/boot_a.img` 传入当前槽的已验证备份。
-此模板只提供 loader metadata，不附带 Android 内核；必须拒绝声称包含但未提供的 ramdisk 和签名。
-本机 ABL 已证实会因缺少可用安全补丁元数据且 header OS 字段为 0 而拒绝 RAM 启动。
-ARM64 Image 的 text_offset 与 FD 目标地址分开维护，本机采用 text_offset=0、flags=0xA。
-独立探针保存在 FV，通过原有 UniXNU 菜单入口进入，摘要等待新按键后才返回菜单。
+主备 GPT、引导分区和当前恢复材料保存在本地 `private/backups/`。
+UFS 根卷读取、BaseSystem 挂载和日志文件读回已有实机结果，详见[当前状态](status.md)。
+实验继续使用临时 `fastboot boot`。启动前核对当前槽和可启动状态；返回 `Booting OKAY` 只说明 ABL 接受交接，
+是否执行内核和服务需要屏幕或日志确认。不得因此自动刷写 boot、Recovery 或厂商固件分区。
 
-在 root Recovery 中捕获固件日志：
+## 日志与验证
 
-```sh
-python3 scripts/capture_boot_logs.py --serial DEVICE_SERIAL --output private/device/boot-logs-run-name
-```
+运行时记录 UUID、实际加载地址和最后画面，原始数据仅保留在本地。
+从 Android Recovery 读回日志的方法见[日志与崩溃诊断](debugging.md)。
 
-工具只读取 logfs、xbl_sc_logs 和 rawdump 前 1 MiB，比较设备与本地 SHA-256，
-并从 FAT 日志卷中提取固定的 UefiLog0..4.txt。文件编号不能当作绝对时间顺序。
-离线解析可使用 `--decode-only private/device/saved-raw-capture`；不会覆盖既有解析文件。
-rawdump 可能残留旧启动，必须用版本和具体启动记录建立关联。
-
-## 完整 sheng 基线
-
-`config/sheng_defconfig` 与固定提交的 `UniXNU-sheng/configs/sheng_defconfig` 字节一致。
-35 项配置和 `board.toml` 的 19 个归档步骤全部保留，没有覆盖项。
-构建前检查配置和 board 哈希；上游依赖缺失时保留原开关并报告缺项。
-
-```sh
-python3 scripts/build_reference_xnu.py --upstream-sheng --prepare-only
-.venv/bin/python scripts/fetch_sheng_inputs.py
-# Mac / Actions 的完整上游构建，保留原版预链接阶段
-python3 scripts/build_reference_xnu.py --upstream-sheng -j 4
-```
-
-手动工作流 `sheng-xnu` 使用完整配置；`reference-xnu` 保留为此前纯源码定位实验。
-两者使用独立构建目录。不能将精简实验的通过说成完整 sheng 配置已通过。
-完整基线仍属于 iPadOS 17 ABI；Apple 输入单独存放在 `private/apple/sheng-reference`，不与 macOS 26 配对。
-
-上游完整构建还需要重建存储 ABI 观测、PMGR/Legacy 原始组件候选、验证后的 VirtIO 和 VerifiedRoot 归档。
-`out/sheng-xnu/build.json` 记录当前已观察到的缺项；这不是已经完成的全量依赖审计。
-这些输入不能用空归档、未验证地址或关闭相关选项替代。
-
-已重建的私有输入由 `config/sheng-reconstructed-inputs.json` 固定整个归档及文件清单的哈希。
-完整构建自动下载该私有缓存，需要具备本仓库读取权限的 `gh` 登录；Actions 使用当前仓库的只读 token。
-缓存包括原版组件、实际 QEMU 观察记录、完整签名哈希表及公开信任锚，不包括所有者私钥。
-编译记录生成后，仍会重新编译存储注解对象、执行全部 ABI 审计，并从源码编译两个外部归档。
-
-在 Linux 上重新生成两卷策略：
-
-```sh
-PATH=/path/to/llvm/bin:$PATH python3 scripts/rebuild_sheng_policies.py --openssl-prefix /usr
-```
-
-此步骤需要 `7z`、OpenSSL 开发库以及支持 ARM64 Mach-O 的 clang。
-它从完整原始映像读取 APFS UUID，以实际 C 验证器验证 RSA3072 签名和每个块。
-OS 的 UDIF 先还原完整磁盘，包含主备 GPT；SystemOS 使用原始 APFS 字节。
-新所有者密钥会改变签名和缓存哈希，不能把新输入冒充现有固定归档。
-
-重新观察固定 ABI 候选，不连接设备：
-
-```sh
-python3 scripts/observe_sheng_abi.py --output out/sheng-abi-replay-new \
-  --firmware /path/to/qemu/share/qemu/edk2-aarch64-code.fd
-```
-
-要求 QEMU 支持 Cortex-A710、GICv3 和实际 UEFI 启动。已验证版本为 10.2.1。
-脚本重新预链接并核对候选字节，实际停在 `bsd_init` 读取存储元类，
-再跟踪 Legacy 元类构造函数返回。超时、错误候选、错误父类/大小或非 4 KiB 页表均拒绝。
-此结果只证明相应 QEMU ABI 观察，不能代替实机启动或 macOS 用户空间兼容性。
-
-## 构建与状态
-
-GitHub Actions 只接受手动触发。`check` 运行输入拒绝测试；`preflight` 构建 EFI；
-`monitor` 在 `xcode-27` 上构建上游监控层，不含 sheng 硬件资格认证。
-旧 `kext`、`xnu` 入口仍检查 macOS 27 参考合同，不作为 macOS 26 构建入口。
-`reference-xnu` 另行构建 UniXNU 的 XNU 10063.141.1，用于 EL1 硬件实验，不加载系统用户空间。
-它记录实际 Xcode/SDK、源码、补丁和内核哈希，并检查初始页表粒度。
-这些入口没有部署动作，不能用构建结果替代实机启动记录。
-
-当前移植阶段仍是输入和硬件入口验证。尚无 sheng 的 SPTM/TXM 实机运行、macOS 启动、
-Adreno 740 macOS 驱动或双系统安装结果。
-
-## 双系统
-
-当前设备按用户明确选择划分64 GiB给macosroot，其余约168.4 GiB重建Android userdata。
-userdata内容已按授权丢弃，Android重新创建加密F2FS后正常启动，槽位仍为a。
-macosroot位于LUN0/sda30，GUID为66ac0996-e1bb-4e93-8ffe-c90ed97a61ff。
-配套BaseSystem已写入，完整1579155456字节读回一致；尚未证明XNU能从UFS挂载它。
-
-`scripts/repartition_macos26_root.py`只接受已核对的设备及原布局，主备GPT先保存再逐范围写入和读回。
-它拒绝重复应用、已有macosroot或任何准备后的GPT变化，不是日常启动步骤。
-`scripts/install_macos26_ufs_root.py`只在root Recovery中向匹配GUID的macosroot写入，要求先完成缩小后的userdata清除。
-当前GPT恢复材料保留在private/backups/20261025-macosroot-64g；恢复旧GPT不会恢复已丢弃的Android数据。
-XBL、ABL、TZ、HYP、boot、Recovery及UEFI分区没有改写。内核实验继续使用临时fastboot boot。
+验证按修改范围选择：地址修正检查实际指令，panic 二维码检查 ARM64 画屏和解码，
+显示与用户态变化再观察对应服务和帧提交。构建通过、断点命中和驱动注册分别不能代替指令执行、界面显示和实机验收。
+旧固件、探针和分区操作记录见[历史构建说明](history/bringup-20261026.md)。

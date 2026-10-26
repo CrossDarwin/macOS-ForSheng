@@ -1,166 +1,38 @@
-# 原生内核早期异常
+# 控制台建立前的异常诊断
 
-sheng 的三段加载器交接已实机完成，尚无 XNU 控制台文字。
-原 LowExceptionVectorBase 只会循环停机，较晚的 locore 日志不能覆盖这里。
+早期诊断在 XNU 控制台、调度器和普通栈尚不可用时，将启动状态与首次异常寄存器写入已验证的帧缓冲区域。
+它只覆盖内核交接和 VM 初始化，不用于判断 Recovery 服务是否完成；当前启动进度见[固定阶段进度](boot-progress.md)。
 
-0023 在 SHENG 冷启动入口建立低位向量后，使用 boot_args 的已验证 framebuffer 显示寄存器。
-首行 `XNU=1` 证明内核汇编入口已执行；`XNU=2` 表示低位异常向量捕获异常并停机。
-`XNU=3` 表示控制台建立前，正式 EL1 同步异常向量捕获了 MMU 开启时的异常。
-随后各行分别是 ELR、ESR、FAR、SPSR、SCTLR、TCR、TTBR0、TTBR1、MAIR。
-入口状态下的 ELR/ESR/FAR 只是寄存器原值，只有状态 2/3 才作为本次异常解释。
+## 状态与阶段
 
-处理器不依赖栈或 C 初始化。首次异常记录后再次异常会停机，保留第一份记录。
-记录还保存 SP、MPIDR、boot_args、LR 和启动映射的 x22-x25。
-代码、字形和记录都在原 4 KiB 向量页内，由汇编 .org 限制大小，复制后保持 PC 相对寻址。
-OSLAR 访问移到建立向量之后，使该访问引起的异常也能保留。
-0024 在控制台建立前接入正式同步异常向量，保留故障时的控制寄存器。
-SHENG未启用KTRR，配套 arm_vm_init.c 不裁剪原 bootstrap_pagetables 的 V=P 映射。
-诊断路径只替换 TTBR0，保留当前 TTBR1，通过原始启动表切到物理取指地址，再关闭 MMU 显示故障现场。
-ELR/ESR/FAR/SPSR/SCTLR/TCR/TTBR0/TTBR1/MAIR 保存的是切换前的故障状态。
-这是控制台建立前的终止式诊断；该阶段遇到首个同步异常时停机，不能作为可恢复异常的处理实现。
-
-0027增加MMU关闭阶段的`STAGES 0123456789ABCDEF`条。绿色格子表示该标记的显存写入已完成，灰色表示未标记。
-所有标记都在首次开启MMU之前，不把C格变绿记作MMU已成功开启。
-不依赖栈、函数调用、固件、串口或高位framebuffer映射；仅使用当前启动路径不再持有的x16-x18和NZCV。
-首次异常记录的偏移184保留最后阶段，复制后的4 KiB向量页仍完整包含现场。
-
-| 格子 | 已执行到的位置 |
+| 屏幕状态 | 含义 |
 | --- | --- |
-| 0 | 入口寄存器页返回 |
-| 1 | 读取启动参数 |
-| 2 | 线程寄存器、启动栈和C入口地址准备完成 |
-| 3 | 启动页表池清零完成 |
-| 4 | V=P映射建立完成 |
-| 5 | 高位KVA映射建立完成 |
-| 6 | 即将写TCR |
-| 7 | TCR写入返回 |
-| 8 | TTBR0写入返回 |
-| 9 | TTBR1写入返回 |
-| A | MAIR写入返回 |
-| B | 初始TLBI和I-cache维护指令返回 |
-| C | 即将写SCTLR开启MMU |
-| D | SCTLR开启MMU后的ISB返回 |
-| E | 高位正式VBAR写入及ISB完成 |
-| F | 高位交接代码已执行，即将返回arm_init |
+| `XNU=1` | 内核汇编入口已执行，ELR/ESR/FAR 仍可能只是交接原值 |
+| `XNU=2` | 低位异常向量捕获异常并停止 |
+| `XNU=3` | 控制台建立前的同步异常诊断已捕获异常 |
+| 绿色 `0–F` | 汇编启动标记，F 表示高位交接代码执行 |
+| 青色 `0–F` | arm_init 早期 C 路径，至 arm_vm_init 调用前 |
+| 紫色 `0–F` | VM、I/O 映射和控制台创建路径 |
 
-标记本身增加显存写入和DSB，可能改变时序；若只出现半格，不将它当作完整阶段通过。
-0028在MMU开启前为阶段条建立临时TTBR0 identity映射。
-范围限定为阶段条所在的至多两个32 MiB块，使用Device-nGnRnE和PXN/UXN，不覆盖已有映射。
-已有L2必须在原生bootstrap页表池内；缺少L2时使用独立16 KiB页，不侵占内核映射。
-映射就绪时D–F先显示蓝色，执行到各阶段才变绿；灰色表示诊断映射未准备，不能据此认定MMU卡死。
-标记不依赖栈，不切回MMU关闭状态，不修改EL2或固件。
-定向负对照把framebuffer放入已有内核32 MiB块，映射状态保持拒绝，原L2项0x40000701未被修改。
-F只能证明高位交接代码执行，尚不证明arm_init中的PAC、重定位或C初始化完成。
-arm_vm_init按原流程替换TTBR1并停用TTBR0，后续控制台使用其原有映射。
-PE_create_console完成后关闭该开关，恢复原有分发，locore保留日志继续工作。
-0025修正首次开启MMU时的向量交接：先保留V=P向量，SCTLR写入和ISB完成后才安装高位正式向量。
-低位入口遇到MMU已开启时，直接进入无栈的物理恢复路径，不先写入可能只读的向量页。
-这样能够覆盖高位页表失效、异常栈不可用而V=P映射仍有效的首次取指异常。
-若V=P映射本身也失效、异常被更高异常级截获或代码无异常地循环，屏幕路径仍无法保证输出。
-背景按完整矩形覆盖，清除原 UEFI 文字，保留顶部交接色条。
-这不是 KDP 传输，也不证明跨重启 RAM 保留。
+格子只记录对应写入，不能推断下一条指令成功。
+旧阶段条不会因后续服务运行自动更新，也不是图形界面进度。
+各字符的原始对应表保存在[早期调查记录](history/native-early-exception-20261026.md)。
 
-独立执行测试使用与内核相同的汇编头文件，验证入口返回、复制后的向量捕获 BRK、16K高位执行且TTBR0关闭时的同步异常，以及关闭诊断开关后的正常分发。
-MMU开启测试实际捕获ELR=0xffff8000402000e0、ESR=0xf2000124，显示原TTBR0=0与EPD0=1，没有用调试器直接填写故障记录。
-新增首次翻译故障测试：实际清空TTBR1并将SP置零，向高位地址取指触发异常。
-捕获XNU=3、ELR/FAR=0xffff800040000000、ESR=0x86000005，原TTBR1和SP均为0。
+## 异常与映射边界
 
-```sh
-python3 scripts/test_native_early_exception.py \
-  --clang /home/rinnrei/Project/uwuAOSP/prebuilts/clang/host/linux-x86/clang-r596125/bin/clang \
-  --qemu out/qemu-root/usr/bin/qemu-system-aarch64
-```
+低位向量诊断不依赖正常栈或 C 初始化，保存首次 ELR、ESR、FAR、SPSR、控制寄存器及来源栈。
+MMU 切换诊断先保留 V=P 向量，再切换正式高位向量。
+若 V=P 映射也失效、异常被更高异常级截获或代码没有触发异常，屏幕不能保证输出。
 
-独立 QEMU 测试已通过；完整 XNU 目标编译、真实内核启动与 sheng 实机结果分别记录。
+临时 framebuffer identity 映射只服务启动阶段，不覆盖已有内核映射。
+正式 VM 接管 TTBR1、撤销 TTBR0 后，诊断改用原生 I/O 映射，不延长旧 identity 映射寿命。
+像素使用对齐的 32 位 I/O 读写，不使用可能包含 SIMD 或 DC ZVA 的普通内存填充。
 
-`scripts/observe_native_bootstrap.py`补充实际链接内核的高物理地址观察。
-使用sheng照片中的kernel PA `0x881004000`，boot_args PA按本版内核末尾向上对齐16 KiB计算，与DarwinBoot保持一致。
-通过GDB在`arm_init`第一条指令前停止，同时核对实际指令、启动参数和控制寄存器。
-该观察不经过UEFI，不提供设备树或framebuffer，不执行C初始化，也不模拟Gunyah或sheng设备。
-QEMU配置34 GiB稀疏客体RAM，仅为覆盖该物理地址；XNU收到的owned window仍是512 MiB。
-`--framebuffer-trace`提供sheng的0xB8000000、3048×2032、stride12192几何，实际读取16个标记像素并要求全绿。
-完整UEFI QEMU当前GOP为800×600，低于诊断页高度要求，跳过阶段条映射是预期行为。封装时另外要求同一内核在sheng几何下到达C入口、映射就绪且16个实际像素全绿；两份观察分别记录。
-它用于验证新映射及显存写入，仍不模拟真实显示控制器或Gunyah。
+## 验证与限制
 
-```sh
-python3 scripts/observe_native_bootstrap.py \
-  --kernel-build private/ci/macos26-arm64e-kernel-39987628332 \
-  --clang /home/rinnrei/Project/uwuAOSP/prebuilts/clang/host/linux-x86/clang-r596125/bin/clang \
-  --qemu out/qemu-root/usr/bin/qemu-system-aarch64 \
-  --output out/native-bootstrap-high-pa-39987628332
-```
+独立 ARM64 测试覆盖入口返回、BRK、正式高位同步异常和失效页表下的首次取指异常。
+sheng 已越过这段早期路径，原版 launchd 与恢复服务已有实机证据。
+早期诊断保留用于故障回归，不重复作为当前用户态阻断。
 
-0029在同一行增加早期C阶段条。汇编阶段仍为绿色，进入C后先清成灰色，已执行的C阶段改为青色。这只记录到`arm_vm_init`调用前；其后不访问临时identity framebuffer映射。
-
-| C字符 | 已完成的执行点 |
-|---|---|
-| 0 | `arm_init`函数序言之后、指针重定位之前 |
-| 1 | `arm_slide_rebase_and_sign_image`返回 |
-| 2 | 保留日志初始化返回 |
-| 3 | `arm_static_if_init`返回 |
-| 4 | 启动参数复制及`cpu_data_init`返回 |
-| 5 | `PE_init_platform(FALSE)`返回 |
-| 6 | 早期CPU寄存器与超时配置返回 |
-| 7 | CPU拓扑解析返回 |
-| 8 | 启动线程及当前线程设置完成 |
-| 9 | `cpu_bootstrap`返回 |
-| A | `rtclock_early_init`返回 |
-| B | `kernel_startup_bootstrap`返回 |
-| C | 定时器调用和`cpu_init`返回 |
-| D | `processor_bootstrap`返回 |
-| E | 内存启动参数和早期特性配置完成 |
-| F | DRAM设备树读取完成，即将调用`arm_vm_init` |
-
-`sheng_bootstrap_c_stage`独立记录最后C阶段，不改写原汇编阶段记录。显示要求原临时映射就绪；800×600 QEMU仍只记录阶段值。辅助函数强制内联，在重定位之前不调用运行时函数。ARM64E对象定向编译已确认无调用指令，完整目标编译和运行结果另行记录。
-
-0030增加VM至控制台阶段条，紫色与先前C阶段的青色区分。
-它沿用UniXNU在VM入口/返回处记录进度、在控制台映射后重新绑定framebuffer的思路。
-正式VM仍按原顺序替换TTBR1、撤销TTBR0；撤销之前清除诊断物理指针，盲区期间只写保留阶段值。
-`arm_vm_init`返回后，使用原生`ml_io_map`的启动期分配路径映射阶段条所在页面。映射按16 KiB对齐，最多1 MiB，不映射整块DRAM，不更改EL2或延长identity映射寿命。
-800×600 QEMU的高度足够容纳568–579行，允许在VM返回后单独映射这行，不要求此前的启动汇编面板映射已启用。
-
-| VM字符 | 已完成的执行点 |
-|---|---|
-| 0 | `arm_vm_init`进入 |
-| 1 | 物理内存、physmap与动态区几何计算 |
-| 2 | invalid与kernel页表根分配 |
-| 3 | 初始kernel及physmap页表层级建立 |
-| 4 | `arm_vm_prot_init`返回 |
-| 5 | `arm_vm_physmap_init`返回 |
-| 6 | TTBR1切换返回，TTBR0仍为旧identity |
-| 7 | 即将撤销TTBR0，之后停用物理地址写屏 |
-| 8 | TLB刷新完成，新页表指针重定位完成 |
-| 9 | `pmap_bootstrap`返回 |
-| A | `arm_vm_init`返回，即将建立诊断I/O映射 |
-| B | 诊断I/O映射步骤完成 |
-| C | `serial_init`返回 |
-| D | `STARTUP_SUB_KPRINTF`初始化返回 |
-| E | 第一条`kprintf`返回 |
-| F | `PE_create_console`返回 |
-
-映射无效时仍记录阶段，不宣称写屏成功。`sheng_bootstrap_vm_witness`只在实际写入并读回当前紫色像素后设置对应位；封装要求完整QEMU的B–F读回均通过。
-
-0031为当前原生早期实验增加保留日志文字面板，不再依赖色条定位控制台后的执行。
-它复用XNU的ISO Latin-1字体，使用已实机通过的原生`ml_io_map`路径映射至多4 MiB的面板页面。
-sheng面板从第640行开始，8行、2倍字体；小型QEMU GOP从第32行开始，使用1倍字体。原始阶段行保留。
-字符由原保留日志writer串行绘制，不申请内存，不等待控制台锁；重入仍只增加原日志的dropped计数。
-面板启用后视频字符回调不再重复绘制同一字符，避免两个渲染器覆盖。文字面板仅用于当前早期内核实验，图形显示所有权交接尚未实现。
-首个panic会重新开始面板并固定原因所在行，剩余行循环显示后续回溯；环形RAM日志与标准panic区继续完整保存。
-`sheng_panel_witness`仅在实际写入并读回一个字体前景像素后置位，完整QEMU还须确认绑定成功、字符已输出及可读的panic原因。
-
-0031实机只保留紫色0–F，未出现面板。0033在已验证的原生VM阶段行上显示末函数文字，避免将新面板依赖误当作内核后续执行结果。
-该通路只覆盖现有映射内的352×12像素，使用同一字体缩至12行，最多44字符，不等待日志writer，也不申请额外映射。它用于cpus=1的启动诊断，不是多核控制台。
-`sheng_status_message`保留当前摘要，`sheng_status_witness`表示实际字体像素读回；首个panic固定摘要，完整原因仍从原RAM日志及标准panic区域读取。
-面板参数、映射、绑定和后续函数通过同一文字行报告；kernel_bootstrap_log沿用UniXNU的函数进度接入方式。若这条文字也不可见，仍不能从旧入口寄存器判断后续异常。
-
-0033实机显示存在遮挡，不能依赖12像素高的共用阶段行辨读。0034替换这一布局：sheng标题区位于x=224、y=608，正文从y=640开始，均为2倍8×16字体，黑底白字，共704×64像素；旧阶段条在y=568–579。
-小型GOP从第32行开始使用1倍字体。阶段行与文字区由原诊断的一次ml_io_map同时覆盖，范围分别计算后取并集，上限2 MiB；状态指针仍只在原生VM返回后赋值。
-该布局不再调用0031的大面板绑定路径。PE_create_console调用前后分别绘制摘要，初始化清屏后能够恢复；启用状态区时普通视频字符回调暂停，保留日志继续记录。
-定向运行必须覆盖阶段条重画不改变文字、控制台清屏后的重绘，以及面板之外像素不变。最终仍以对应内核的完整QEMU截图和实机照片区分验证结果。
-
-0034实机已确认独立文字可读，显示`PE_create_console enter`。0035/0036把映射范围扩至同一文字区下方六行，标题与末函数仍保留；每行按屏宽限制为最多88字符，sheng共256像素高，映射上限4 MiB。
-在VM返回后的原映射建立处启用字符镜像，回放有界RAM尾部，后续日志随记录持续绘制。滚动用对齐32位I/O读写，不调用可能使用SIMD或DC ZVA的内存例程。
-`sleh_synchronous`和SP1同步异常在原有处理前打印首个内核异常寄存器。它使用已保存上下文，无需日志writer；不更改原异常分发，也不保证在到达C异常入口之前故障时能够显示。
-首次异常的四行寄存器固定，后续尾部在剩余区域滚动；完整原始日志布局和汇编首异常寄存器仍保留。该功能不等于KDP、USB导出或内部存储自动落盘。
-
-`PE_init_printf`、CPU idle、平台中断、调试初始化、CPU PIO、时基、FIQ、栈保护熵和`machine_startup`入口增加直接保留日志，不将缺少文字直接解释成函数未执行。
+普通保留日志、首次 panic 和磁盘快照分别取证，见[日志与崩溃诊断](debugging.md)。
+本实现不是 KDP，不证明 USB 传输或跨重启 RAM 保留。
