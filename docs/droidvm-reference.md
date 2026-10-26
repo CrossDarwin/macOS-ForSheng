@@ -1,5 +1,30 @@
 # DroidVM参考与sheng接入顺序
 
+## 2026-10-26桌面路径复核
+
+本次直接核对固定提交
+[`031c35a`](https://github.com/Droid-VM/macOS-DroidVM/tree/031c35a57c89946977e51a1d64e009062faaed19)，
+上游main当时也位于该提交。下面区分实际采用、待接入和完整系统阶段使用的机制。
+
+| 机制 | 上游实际实现 | sheng当前处理 |
+| --- | --- | --- |
+| 系统与Data布局 | [SystemOS](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/scripts/make-macos-systemos.sh)承载只读资源，[Data种子](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/scripts/make-macos-data-seed.sh)从安装模板创建可写目录与链接 | 当前BaseSystem已运行自身临时Data流程。完整系统阶段按25F71模板准备Data、firmlink目标和持久存储，复用其依赖梳理方式 |
+| 进入登录会话 | [stage-gpu-plugin.py](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/scripts/stage-gpu-plugin.py)支持.AppleSetupDone、SkipSetupItems、本地用户和按标签禁用服务 | 这是完整系统登录路线；当前图形Recovery继续验收原版Language Chooser与Recovery Springboard，后续安装系统再采用对应会话配置 |
+| 持久Data身份 | [run-macos-vm.py](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/scripts/run-macos-vm.py)有DataStore时移除ephemeral-storage，避免usermanagerd跳过persona manager | 对持久Data配置采用同一语义；当前ISC角色卷RAM写入层仍是临时存储，不伪称持久Data |
+| 帧交换 | [DroidVMDisplay](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp)从4个活动层选最大完整画面，避免登录过渡时复制小指针层 | 已接入有尺寸、比例和像素格式检查的4层选择。40301287790首次捕获800×600 BGRA第0层，实际选择正确；会话转换后的窗口显示仍待验 |
+| CPU呈现 | 同一显示实现通过readBytes逐行读取IOSurface | 本轮实际CPU栈确认该路径反复建立物理拷贝窗口，候选改为每帧一次有界只读映射，失败回退逐行读取。效果须由新内核运行确认 |
+| Metal发现与执行 | [NativeAdrenoMetalPlugin](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/overlay/metal/NativeAdrenoMetalPlugin.mm)经IOGPUMetalDevice注册，连接NativeBridge、Turnip及GPU用户客户端 | 已核对发现、设备包装及对象状态契约。当前先完成软件Recovery；原生Adreno的内存、提交和同步仍需实际后端支持 |
+| 用户态诊断 | [0009诊断补丁](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/patches/xnu-12377/0009-bring-up-diagnostics-stderr-log-sc-trace-sample-pid-.patch)按参数镜像stdout/stderr并采样线程；stage脚本可运行log show、log stream及定时sample命令 | 当前QEMU有只读线程栈，macoslog已通过同候选两次提交读回。下一项补充按进程筛选的用户态输出及统一日志，明确记录截断与丢失，减少仅靠屏幕判断 |
+
+本轮实际等待链为RecoveryOS Agent的LaunchServices注册，lsd正在读取应用本地化资源。
+这与此前已到达Springboard的运行分开记录，不能将本轮启动阶段黑屏当作同一建窗故障。
+服务裁剪依据实际缺失硬件及重试/崩溃记录，沿用上游按标签集中配置的方式；
+应用注册、显示服务、Data和日志服务仍保留，避免把必要依赖一并移除。
+
+新内核的顺序为：确认CPU拷贝窗口开销下降，真实选择简体中文并继续，
+确认恢复主程序经过预期初始化并显示窗口，再封装sheng可恢复临时启动候选。
+QEMU运行与sheng实测、源码存在与实际通过分别记录。
+
 ## 2026-10-26补充核对
 
 另行核对[DroidVM 59659e4](https://github.com/Droid-VM/macOS-DroidVM/tree/59659e407eb25b77fabd1d3298337683340d1357)
