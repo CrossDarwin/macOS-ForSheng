@@ -2123,3 +2123,9 @@ WindowServer实际呈现苹果标志和进度条，截图保留本地；尚未�
 IOPMrootDomain在启动完成事件中读取该属性，checkSystemSleepAllowed保留原版拒绝逻辑。
 设备树相关10项测试通过，包含默认不启用、开发环境限制、冲突拒绝及幂等；
 运行时是否实际读到该策略以及后续语言窗口仍在验证。
+
+下一轮已从配套链接地址读到原版gSleepDisabledFlag为1。
+Language Chooser的两个控制器查询调用点均完成校验和读回；
+后续现场位于原版CFRunLoopRunInMode超时循环，已离开CBPairingAgent同步请求，
+并从setupStateMachine推进到logStateMachineSkipValuesWithAutoAdvanceState。
+这证明无控制器路径在执行，尚不证明语言窗口已经创建或可见。
