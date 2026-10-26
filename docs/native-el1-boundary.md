@@ -1,7 +1,7 @@
 # sheng 的 EL1 适配边界
 
 当前 ABL/UEFI 链路将启动核交接到 EL1。SHENG 在此级别执行原生内核，不控制 Gunyah 所在的真实 EL2。
-尚无实机证据把当前显示后的 panic 归因于 Gunyah；已记录的错误见[移植状态](status.md)。
+本页说明该交接级别下的平台职责、受限寄存器及已有陷入对照。
 
 ## 可用机制与缺失控制
 
@@ -14,8 +14,8 @@
 | Gunyah 退出 | 没有已确认适用于 sheng 的退出接口 |
 | KDP | 内核保留实现，实机双向轮询后端尚未接通 |
 
-不适用的 Apple 功能可以从源码配置排除；地址翻译和中断等启动必需机制不能用空实现替代。
-删除某个 XNU 路径不等于修改 HYP/TZ，也不等于关闭 Gunyah。
+SHENG 配置排除不适用的 Apple 功能，并保留地址翻译、中断及定时器等实际平台实现。
+这些源码改动不修改 HYP/TZ 或外层监控程序的状态。
 
 ## 调试陷入对照
 
@@ -26,7 +26,7 @@ EL1 没有对应异常记录。移除该次早期解锁后，同一策略下内�
 地址、寄存器和旧候选记录见[历史对照](history/native-el1-boundary-20261026.md)。
 
 GBL 是 UEFI 应用，执行级别由上游固件交接决定；应用本身不会把 EL1 提升为 EL2。
-当前无需等待新的 EL2 入口才能继续已经运行的原生用户态路线。
+当前实现沿用原生 EL1 用户态路线，运行状态见[移植状态](status.md)。
 
 参考：[AOSP GBL 部署说明](https://source.android.com/docs/core/architecture/bootloader/generic-bootloader/gbl-dev)、
 [Arm EBBR 的 AArch64 执行级别](https://github.com/ARM-software/ebbr/blob/main/source/chapter2-uefi.rst#aarch64-exception-levels)、

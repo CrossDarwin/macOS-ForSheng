@@ -1,7 +1,14 @@
-# 启动进度与日志
+# 启动进度诊断
 
-`sheng-boot-progress=1`开启独立底部诊断区，默认关闭，要求`cpus=1`。
-示例：
+启动进度诊断在滚动日志下方显示固定阶段、服务事件和日志提交状态。
+它根据实际记录的事件更新，适用于 `cpus=1` 的启动调试。
+
+## 启用诊断
+
+在已启用屏幕控制台的候选中添加 `sheng-boot-progress=1`。未指定时关闭。
+封装器 `scripts/package_macos26_ufs.py` 的 `--boot-progress` 选项同时启用有界 WindowServer 输出采集。
+
+以下为字段格式示例，不是某次设备运行记录：
 
 ```text
 BOOT [#####-#---] - WindowServer exec
@@ -10,52 +17,76 @@ WindowServer pid=85 starts=2 exits=1 wait-status=256
 LOG committed gen=73 bytes=59551 drops=0 error=0 lost=0
 ```
 
-每个格子只表示对应事件曾实际到达，位置固定，不是百分比。
-中间的`-`表示该事件尚未记录；后面的事件可能先出现，状态竞争也可能使标记丢失。
-它不表示曾有的`#`被撤回，也不能单凭缺格判断对应服务没有运行。
+## 阶段格
 
-| 格子 | 事件与边界 |
+十个格子从左到右固定对应下表。`#` 表示事件已记录，`-` 表示尚未记录。
+位图只设置、不清除；后面的阶段先出现时，中间可以保留 `-`。
+事件竞争丢失也会留下空格，因此缺格本身不能证明某个进程没有执行。
+
+| 位置 | 屏幕名称 | 记录条件 |
+| --- | --- | --- |
+| 0 | `Kernel` | 内核到达控制台创建路径 |
+| 1 | `VM ready` | VM 初始化后到达控制台创建路径 |
+| 2 | `IOKit entry` | 进入 `PE_lockdown_iokit` |
+| 3 | `Root mounted` | `vfs_mountroot` 成功返回 |
+| 4 | `launchd exec` | 装载 launchd 映像 |
+| 5 | `Recovery exec` | 装载 recoveryosd 或 RecoveryOS Agent 映像 |
+| 6 | `WindowServer exec` | 装载 WindowServer 映像 |
+| 7 | `Display on` | 原版帧缓冲队列完成开屏通知 |
+| 8 | `First swap` | 首次交换请求进入驱动验证路径 |
+| 9 | `First frame` | 驱动完成首帧 CPU 复制和写入屏障 |
+
+这些条件分别覆盖路径入口、映像装载和显示交换。进程映像装载后仍需执行初始化，
+首帧复制后仍需检查图像内容；语言选择器显示结果单独记录在[移植状态](status.md)。
+
+## 服务和停留时间
+
+新阶段或首次出现的目标服务会更新最后进展时间。重复阶段、普通日志和同名服务重启不重置该时间。
+底部服务行显示最近记录的目标服务，以及以下字段：
+
+| 字段 | 含义 |
 | --- | --- |
-| 0 | 原生内核已进入控制台创建路径 |
-| 1 | 已经过VM初始化，到达控制台创建路径 |
-| 2 | 进入PE_lockdown_iokit，尚不表示IOKit全部服务已启动 |
-| 3 | vfs_mountroot实际返回成功 |
-| 4 | launchd映像已装载，不等于main或服务初始化完成 |
-| 5 | recoveryosd或RecoveryOS Agent映像已装载 |
-| 6 | WindowServer映像已装载，不等于显示连接成功 |
-| 7 | 原版帧缓冲队列完成开屏通知 |
-| 8 | 第一次交换请求已进入驱动验证路径，不等于呈现成功 |
-| 9 | 驱动已完成第一帧CPU复制及写入屏障，不等于语言选择器内容已验收 |
+| `pid` | 最近一次已记录启动的 PID |
+| `starts` | 该服务已记录的启动次数 |
+| `exits` | 该服务已记录的退出次数 |
+| `wait-status` | 最近一次有效退出的原始 wait status |
 
-新格子或首次观察到的目标服务更新停留时间。重复阶段、同一服务重新执行和普通刷屏均不重置。
-日志记录目标服务的映像装载、退出、PID和原始wait status，底部显示最近目标服务。
-计数范围是本次启动内观察到的目标服务；旧PID退出不会覆盖新PID的显示状态。
-目标包括launchd、recoveryosd、RecoveryOS Agent、WindowServer、Language Chooser、
-Recovery Springboard、lsd、coreservicesd、loginwindow和diskarbitrationd。
+旧 PID 的退出不会覆盖新实例状态。目标范围包括 launchd、recoveryosd、RecoveryOS Agent、
+WindowServer、Language Chooser、Recovery Springboard、lsd、coreservicesd、loginwindow 和 diskarbitrationd。
+进程名按内核短名称匹配，屏幕中的 `Recovery Springb` 对应 Recovery Springboard。
 
-独立内核线程每2秒刷新，持久日志最多每30秒补一份停留摘要，新阶段立即记录。
-计时器在根卷成功挂载后启动；此之前若停止，格子保留，但秒数不保证继续刷新。
-定时线程无法获得CPU或内核整体停止时，显示也会停止，不能把静止画面单独判定为死循环。
-早期时钟尚未初始化时返回0，不执行未就绪的时间换算。
+根卷成功挂载后，独立线程每 2 秒刷新一次停留时间；早期时钟未就绪时返回 0。
+新阶段立即写入进度摘要，未变化状态每 30 秒补写一次。
+线程无法调度或内核停止时，计时显示也会停止。停留时间只表示没有记录到新进展，不判定死循环。
 
-底部使用已映射panic区中未使用的四行，与滚动日志区分开。
-实际panic可以覆盖该区域并保留错误文本。第一次图形帧复制接管后停止诊断像素写入，
-首次复制失败会恢复诊断区所有权，防止因错误路径永久隐藏面板。
-每条像素扫描线短暂屏蔽中断并复查所有权，避免单核抢占后旧诊断写入覆盖图形帧。
-日志和服务事件仍可继续保存。
+## 日志提交字段
 
-`LOG`显示日志工作线程状态：off、opening、verified、committed或stopped。
-`gen`只在实际提交后更新，`bytes`和`drops`来自保留环形日志。
-`error`为存储错误值，`lost`记录未能取得诊断状态写入锁的尝试，包含定时刷新，不等于丢失的服务事件总数。
-存储写入没有成功时不会显示committed；该字段不能证明最后时刻或整个运行历史已保存。
-日志文件仍使用现有两个预分配槽，不改GPT、FAT或其他文件。
+| 字段 | 含义 |
+| --- | --- |
+| `LOG` | `off`、`opening`、`verified`、`committed` 或 `stopped` |
+| `gen` | 日志工作线程最近一次提交的代数 |
+| `bytes` | RAM 字符记录累计接收的字节数 |
+| `drops` | 字符 writer 忙时丢失的字节数 |
+| `error` | 存储路径返回的错误值 |
+| `lost` | 未取得诊断状态写入锁的尝试次数，包含定时刷新 |
 
-封装的`--boot-progress`同时开启有界WindowServer stdout/stderr采集。
-普通write和writev均记录尝试输出，每次最多159字节、最多检查16个iovec，超过上限标注截断。
-用户地址读取失败时忽略该次诊断，原写入参数、UIO游标、错误和返回值保持原行为。
-统一日志数据库、任意进程输出、完整历史和最终panic不在这项采集保证内。
+`lost` 与 `drops` 来自不同记录路径，前者不能换算成丢失的服务事件数。
+`committed` 只确认已有一次磁盘提交。周期快照的格式和导出方式见[日志与崩溃诊断](debugging.md)。
 
-主机测试覆盖重复事件、退出重启、旧PID、时间倒退和有界格式化。
-独立ARM64 QEMU测试验证实际字体像素、停留时间、panic优先和诊断像素交接。
-构建40319163123已在QEMU到达十个阶段；sheng本轮记录到开屏后panic，尚无首次复制证据。
-完整结果见[移植状态](status.md)，崩溃后的画面布局见[首次panic二维码](panic-qr.md)。
+## 显示交接与输出范围
+
+诊断区占用已映射 panic 区的底部四行，与普通滚动日志分开。
+发生 panic 时由[首次 panic 面板和二维码](panic-qr.md)覆盖。
+第一次图形复制成功后，诊断器停止写入像素；复制失败时恢复诊断区所有权。
+单核模式下，每条扫描线短暂屏蔽中断并复查所有权，防止旧诊断刷新覆盖接管后的图形帧。
+
+WindowServer 采集分别覆盖 `write` 和 `writev` 的尝试输出，每次最多记录 159 字节，
+向量写入最多检查 16 个 iovec。超限时标注截断，读取用户地址失败时跳过该次诊断。
+原写入参数、UIO 游标、错误值和返回值保持原有行为。
+该采集范围不包含统一日志数据库或其他任意进程的完整输出。
+
+## 实现位置
+
+状态模型位于 `platform/sheng/macos26/log/boot_progress.h`，内核接入位于同目录的 `boot_progress_kernel.h`。
+`process_output.h` 提供有界输出采集。主机状态测试和 ARM64 像素测试分别验证事件语义及显示交接，
+各完整内核和实机运行的结果统一记录在[移植状态](status.md)。

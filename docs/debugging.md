@@ -1,7 +1,7 @@
 # 日志与崩溃诊断
 
-本页说明 sheng 原生 XNU 的屏幕日志、macoslog 快照和崩溃取证边界。
-当前实机结果见[移植状态](status.md)。用户照片、录像、原始日志和内存快照仅保存到本地 `private/`。
+sheng 原生 XNU 同时提供屏幕诊断、RAM 保留日志和 macoslog 周期快照。
+本文说明各来源保存的内容、快照导出方法和崩溃后的读取限制。实测结果见[移植状态](status.md)。
 
 ## 日志来源
 
@@ -15,7 +15,7 @@
 | macoslog 文件 | 定期提交的 RAM 日志快照 | 不保存无限历史，不保证最后时刻或最终 panic |
 
 `LOG committed` 只说明一次提交成功。panic 发生后，工作线程、调度器或存储驱动未必能继续运行。
-因此屏幕已有 panic 而磁盘没有对应文本并不矛盾；不能从最后一次快照推断具体停止时刻。
+磁盘可能只保留崩溃前的快照，最终 panic 的文字需另从屏幕或独立 panic 区取证。
 普通字符 writer、首次 panic 文本和 panic 像素区分别管理。普通 writer 忙时，首次 panic 仍可显示。
 
 RAM 头的 `panic_state=3` 表示首次 EL1 同步异常，可能来自此前可恢复的异常。
@@ -40,29 +40,51 @@ PARTUUID 为 `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
 ## 从 Android Recovery 导出
 
 设备需处于已验证的 root Android Recovery，电脑需有 ADB。
-以下命令从已核对的 `macoslog` 读取固定 64 MiB，不挂载、不写入，也不自动重启。
-`DEVICE_SERIAL`、`CAPTURE` 和 `KERNEL_UUID` 必须替换为本次设备、未使用的捕获名称和实际内核 UUID。
+以下步骤只读取当前布局中的 64 MiB `macoslog` 分区，不挂载文件系统，也不重启设备。
+在仓库根目录执行，并替换这些参数：
 
-1. 确认设备及分区身份：
+| 参数 | 取值 |
+| --- | --- |
+| `DEVICE_SERIAL` | `adb devices -l` 中的目标设备序列号 |
+| `CAPTURE` | 尚不存在的本地捕获目录名 |
+| `KERNEL_UUID` | 本次实际选择的内核 UUID |
+
+1. 检查设备及日志分区：
 
    ```sh
    adb devices -l
-   adb -s DEVICE_SERIAL shell 'readlink -f /dev/block/by-name/macoslog; blockdev --getsize64 /dev/block/by-name/macoslog'
+   adb -s DEVICE_SERIAL shell 'id -u; getprop ro.product.device; readlink -f /dev/block/by-name/macoslog; blockdev --getsize64 /dev/block/by-name/macoslog'
    ```
 
-   本项目已配置设备的分区为 `sde78`，尺寸应为 `67108864`。
-   名称或尺寸不符时停止，核对 GPT，不改用其他块设备。
+   当前实验布局应返回 root 身份、设备 `sheng`、块设备 `sde78` 和尺寸 `67108864`。
+   结果不符时先核对设备与 GPT，不改用其他块设备。
 
-2. 读取原始分区。目标目录必须不存在：
+2. 读取原始分区。程序以排他方式创建目录和文件，已存在的捕获记录不会被覆盖：
 
    ```sh
-   mkdir private/device/CAPTURE
-   adb -s DEVICE_SERIAL exec-out \
-     'dd if=/dev/block/by-name/macoslog bs=4096 count=16384 status=none' \
-     > private/device/CAPTURE/macoslog.img
+   python3 - DEVICE_SERIAL private/device/CAPTURE <<'PY'
+   from pathlib import Path
+   import subprocess
+   import sys
+
+   serial, directory = sys.argv[1], Path(sys.argv[2])
+   directory.mkdir(parents=True, exist_ok=False, mode=0o700)
+   image = directory / 'macoslog.img'
+   with image.open('xb') as output:
+       result = subprocess.run([
+           'adb', '-s', serial, 'exec-out',
+           'dd if=/dev/block/by-name/macoslog bs=4096 count=16384 status=none',
+       ], stdout=output, stderr=subprocess.PIPE, timeout=90)
+   (directory / 'capture-stderr.txt').write_bytes(result.stderr)
+   result.check_returncode()
+   if image.stat().st_size != 67108864:
+       raise SystemExit('incomplete macoslog image; partial capture retained')
+   PY
    ```
 
-3. 在仓库根目录解码。脚本会拒绝截断镜像、错误 FAT、保护块、UUID 或提交 CRC：
+   成功时生成 64 MiB 的 `macoslog.img`。读取失败时保留已有字节及错误输出，使用新目录重新捕获。
+
+3. 解码匹配内核的最新有效槽：
 
    ```sh
    PYTHONPATH=scripts python3 - private/device/CAPTURE KERNEL_UUID <<'PY'
@@ -83,8 +105,10 @@ PARTUUID 为 `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
    PY
    ```
 
-导出后保留原始分区、二进制、文本、解码元数据及同次内核的 UUID、dSYM、链接 map 和加载地址。
-读回后才根据下一次测试需要重启。已有快照槽会被后续运行轮换，不作为归档使用。
+解码器拒绝截断镜像、错误 FAT、保护块或无匹配提交的输入。
+`console.json` 记录所选槽、代数、内核 UUID 和丢失计数；`console.txt` 只包含该快照中可恢复的文本。
+同时保留原始分区、本次内核、dSYM、链接 map 和实际加载地址。
+后续启动会轮换日志槽，磁盘快照不能代替本地归档。
 
 ## panic 与二维码
 
@@ -93,7 +117,7 @@ PARTUUID 为 `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
 二维码不存放 URL，也不会自动提交报告。编码失败或显示区域不足时保留文字面板。
 若屏幕或映射本身损坏，二维码也可能无法绘制。
 
-最终 panic 目前没有同步 UFS 写入路径。不要在 panic 中直接调用依赖工作线程或中断的常规文件系统接口。
+最终 panic 目前没有同步 UFS 写入路径。现有常规文件系统接口依赖调度或中断，不适用于该崩溃路径。
 Linux DRM panic 的参考机制及本项目编码范围见[panic 二维码](panic-qr.md)。
 
 ## 其他调试路径
@@ -108,3 +132,5 @@ ADB 和 fastboot 分别属于 Android 与 ABL，不能充当已停止的 XNU 的
 旧 DarwinBoot `NEXTLOG.BIN`、`CAPxxxxx` 及 Linux RAM reader 依赖重启后 RAM 保留。
 它们没有通过本轮实机捕获验收，不能与已通过的 `SHENGLOG.BIN` 周期写入混为一谈。
 实现与失败记录保存在[历史调试记录](history/debugging-before-panic-qr.md)。
+
+原始照片、录像、分区镜像和运行日志仅保存在本地 `private/`，不提交仓库或上传 CI。
