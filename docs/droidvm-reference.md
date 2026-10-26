@@ -12,17 +12,20 @@
 | 进入登录会话 | [stage-gpu-plugin.py](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/scripts/stage-gpu-plugin.py)支持.AppleSetupDone、SkipSetupItems、本地用户和按标签禁用服务 | 这是完整系统登录路线；当前图形Recovery继续验收原版Language Chooser与Recovery Springboard，后续安装系统再采用对应会话配置 |
 | 持久Data身份 | [run-macos-vm.py](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/scripts/run-macos-vm.py)有DataStore时移除ephemeral-storage，避免usermanagerd跳过persona manager | 对持久Data配置采用同一语义；当前ISC角色卷RAM写入层仍是临时存储，不伪称持久Data |
 | 帧交换 | [DroidVMDisplay](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp)从4个活动层选最大完整画面，避免登录过渡时复制小指针层 | 已接入有尺寸、比例和像素格式检查的4层选择。40301287790首次捕获800×600 BGRA第0层，实际选择正确；会话转换后的窗口显示仍待验 |
-| CPU呈现 | 同一显示实现通过readBytes逐行读取IOSurface | 本轮实际CPU栈确认该路径反复建立物理拷贝窗口，候选改为每帧一次有界只读映射，失败回退逐行读取。效果须由新内核运行确认 |
+| CPU呈现 | 同一显示实现通过readBytes逐行读取IOSurface | 实际CPU栈确认逐行读取反复建立物理拷贝窗口，已改为每帧一次有界只读映射，失败回退逐行读取。40305570169的60次样本未再命中该窗口路径 |
 | Metal发现与执行 | [NativeAdrenoMetalPlugin](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/overlay/metal/NativeAdrenoMetalPlugin.mm)经IOGPUMetalDevice注册，连接NativeBridge、Turnip及GPU用户客户端 | 已核对发现、设备包装及对象状态契约。当前先完成软件Recovery；原生Adreno的内存、提交和同步仍需实际后端支持 |
 | 用户态诊断 | [0009诊断补丁](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/patches/xnu-12377/0009-bring-up-diagnostics-stderr-log-sc-trace-sample-pid-.patch)按参数镜像stdout/stderr并采样线程；stage脚本可运行log show、log stream及定时sample命令 | 当前QEMU有只读线程栈，macoslog已通过同候选两次提交读回。已接入默认关闭的进程输出镜像，支持stderr、stdout/stderr及精确进程名筛选，159字节以上明确标注截断。边界测试、配套编译及原版dyld/launchd实际输出已验证；统一日志采集仍待接入 |
 
-本轮实际等待链为RecoveryOS Agent的LaunchServices注册，lsd正在读取应用本地化资源。
-这与此前已到达Springboard的运行分开记录，不能将本轮启动阶段黑屏当作同一建窗故障。
+本轮已通过RecoveryOS Agent的LaunchServices注册及Language Chooser蓝牙等待。
+实际输入使简体中文选择保留，并让原版状态机从6进入4、随后进入8；Recovery Springboard进程已出现。
+最后的只读栈为Springboard向WindowServer查询显示状态，WindowServer仍有软件合成工作；
+未取得恢复工具窗口的显示证据，不能仅凭进程出现宣称窗口可用。
 服务裁剪依据实际缺失硬件及重试/崩溃记录，沿用上游按标签集中配置的方式；
 应用注册、显示服务、Data和日志服务仍保留，避免把必要依赖一并移除。
 
-新内核的顺序为：确认CPU拷贝窗口开销下降，真实选择简体中文并继续，
-确认恢复主程序经过预期初始化并显示窗口，再封装sheng可恢复临时启动候选。
+用户已明确本轮以语言选择器显示和输入为验收点，恢复工具窗口不再阻塞sheng测试。
+封装接入同候选的显示源、UI页策略、6张原始截图、中文状态、真实输入事件和调试器写入审计。
+实机只启用GOP和UI策略，不加入QEMU VirtIO输入节点；物理输入、GPU加速和恢复工具窗口均保留未通过状态。
 QEMU运行与sheng实测、源码存在与实际通过分别记录。
 
 构建40305570169实际运行中，原版语言列表与中文标题已显示，真实点击后只读字段为zh-Hans。
