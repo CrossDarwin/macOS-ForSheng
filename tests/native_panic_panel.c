@@ -6,6 +6,7 @@ typedef struct { Boot_Video Video; } boot_args;
 
 volatile uint64_t panic_test_checks;
 volatile uint64_t snapshot_test_checks;
+volatile uint64_t writer_scope_test_checks;
 static struct sheng_log_record snapshot;
 static uint64_t progress_clock = 120;
 uint64_t sheng_boot_progress_seconds(void) { return progress_clock; }
@@ -35,6 +36,22 @@ void run_trace(void)
         12192, 88, (unsigned)sheng_console_rows, 2);
     sheng_log_bind_panic_panel(sheng_status_pixels + (32 + 16 * sheng_console_rows) *
         sheng_status_scale * sheng_bootstrap_vm_stride, 12192, 88, (unsigned)sheng_console_panic_rows, 2);
+    uint64_t before_total = sheng_log_buffer.total, before_dropped = sheng_log_buffer.dropped;
+    uint64_t before_pixels = sheng_panel_characters, original_daif, observed_daif;
+    __asm__ volatile("mrs %0, daif\nmsr daifclr, #7" : "=r"(original_daif) :: "memory");
+    sheng_log_panel_writer = 1;
+    sheng_log_putc('R');
+    __asm__ volatile("mrs %0, daif" : "=r"(observed_daif));
+    if (sheng_log_buffer.total == before_total + 1 && sheng_log_buffer.dropped == before_dropped &&
+        sheng_panel_characters == before_pixels && !sheng_log_buffer.writer &&
+        sheng_log_buffer.tail[before_total % SHENG_LOG_TAIL] == 'R') writer_scope_test_checks |= 1;
+    if (sheng_log_snapshot_copy(&snapshot, sizeof(snapshot)) == sizeof(snapshot) &&
+        snapshot.total == before_total + 1 && !snapshot.writer) writer_scope_test_checks |= 2;
+    uint64_t after_snapshot;
+    __asm__ volatile("mrs %0, daif\nmsr daif, %1" : "=&r"(after_snapshot) : "r"(original_daif) : "memory");
+    if (observed_daif == (original_daif & ~0x1c0ULL) && after_snapshot == observed_daif)
+        writer_scope_test_checks |= 4;
+    sheng_log_panel_writer = 0;
     sheng_boot_progress_enabled = 1;
     for (unsigned stage = 0; stage < 4; stage++) sheng_boot_checkpoint(stage);
     sheng_boot_service("launchd", 1, 0, 0);
@@ -59,6 +76,7 @@ void run_trace(void)
     /* Simulate a recoverable fault occupying the RAM header and a normal writer interrupted before panic. */
     sheng_log_buffer.panic_state = 3;
     sheng_log_buffer.writer = 1;
+    sheng_log_panel_writer = 1;
     if (!sheng_log_snapshot_copy(&snapshot, sizeof(snapshot)) && sheng_log_buffer.writer == 1)
         snapshot_test_checks |= 1;
     sheng_log_panic(0x112233, reason);
@@ -72,6 +90,7 @@ void run_trace(void)
     panic_ready();
     /* A resumed interrupted writer may touch only the normal pixel region. */
     sheng_log_buffer.writer = 0;
+    sheng_log_panel_writer = 0;
     for (unsigned n = 0; n < 80; n++) sheng_log_stage("ordinary log after first panic");
     sheng_log_panic(0x998877, "SECOND PANIC MUST NOT REPLACE FIRST");
     if (sheng_panic_writer_busy == 1 && sheng_first_panic_text[0] == 'U') panic_test_checks |= 4;

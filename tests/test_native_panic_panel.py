@@ -106,6 +106,10 @@ class NativePanicPanel(unittest.TestCase):
                             near = sorted((address, name) for name, address in symbols.items() if address <= values[0])[-4:]
                             self.fail(f'ELR/ESR/FAR={values}, symbols={near}')
                         self.assertEqual(int.from_bytes(registers[32 * 8:33 * 8], 'little'), symbols['progress_ready'])
+                        retained = memory(symbols['sheng_log_buffer'], 82048)
+                        self.assertIn(b'SHENG-PROGRESS: Language Chooser pid=0 starts=0 exits=0 wait-status=0', retained)
+                        self.assertIn(b'SHENG-PROGRESS: RecoveryOS Agent pid=0 starts=0 exits=0 wait-status=0', retained)
+                        self.assertIn(b'SHENG-PROGRESS: WindowServer pid=85 starts=1 exits=0 wait-status=0', retained)
                         progress_base = 0x44000000 + (608 + 64 + 24 * 32 + 12 * 32) * 12192 + 896
                         progress_pixels = memory(progress_base, 128 * 12192)
                         glyphs = memory(symbols['sheng_panel_font'], 4096)
@@ -154,6 +158,7 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertTrue(request('c').startswith(('T05', 'S05')))
                         self.assertEqual(number('panic_test_checks'), 15)
                         self.assertEqual(number('snapshot_test_checks'), 7)
+                        self.assertEqual(number('writer_scope_test_checks'), 7)
                         self.assertEqual(before, memory(base, len(before)))
                         self.assertEqual(memory(symbols['sheng_qr_payload'], 640).split(b'\0', 1)[0].decode('ascii'), payload)
                         import zxingcpp
@@ -166,6 +171,9 @@ class NativePanicPanel(unittest.TestCase):
                         output.mkdir(parents=True, exist_ok=True)
                         (output / 'result.json').write_text(json.dumps(dict(
                             writer_not_stolen=True, first_panic_text_preserved=True,
+                            panel_contention_keeps_ram_log=True, panel_contention_allows_snapshot=True,
+                            ram_writer_restores_interrupt_mask=True,
+                            periodic_service_inventory_verified=True,
                             actual_font_pixels_verified=True, ordinary_tail_lines=80,
                             progress_age_and_segments_verified=True, handoff_stops_progress_pixels=True,
                             panic_qr_decoded_from_arm_pixels=True, panic_qr_payload=payload,

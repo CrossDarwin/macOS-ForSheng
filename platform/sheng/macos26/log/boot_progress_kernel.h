@@ -82,8 +82,17 @@ void sheng_boot_progress_tick(void)
         sheng_boot_progress_reported = now;
         sheng_boot_progress_reported_mask = sheng_boot_progress_state.mask;
     }
+    struct sheng_boot_progress snapshot = sheng_boot_progress_state;
     sheng_boot_unlock();
-    if (report) for (unsigned i = 0; i < 4; i++) sheng_boot_emit(lines[i]);
+    if (report) {
+        for (unsigned i = 0; i < 4; i++) sheng_boot_emit(lines[i]);
+        /* A bounded inventory survives missing individual exec lines; zero starts means unobserved. */
+        for (unsigned i = 0; i < SHENG_BOOT_SERVICES; i++) {
+            snapshot.last_service = i;
+            sheng_boot_format(&snapshot, 0, 0, lines);
+            sheng_boot_emit(lines[2]);
+        }
+    }
 }
 
 void sheng_boot_checkpoint(unsigned stage)

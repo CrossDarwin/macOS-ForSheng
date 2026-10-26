@@ -8,8 +8,14 @@
  */
 static int sheng_process_output_enabled(struct proc *process, int fd, unsigned mode, const char *name)
 {
-    return mode && mode <= 2 && (fd == 2 || (mode == 2 && fd == 1)) &&
-        (!name[0] || !strncmp(process->p_comm, name, MAXCOMLEN + 1));
+    if (!mode || mode > 2 || (fd != 2 && (mode != 2 || fd != 1))) return 0;
+    if (!strncmp(name, "recovery-ui", MAXCOMLEN + 1)) {
+        const char *const services[] = {"recoveryosd", "RecoveryOS Agent", "Language Chooser", "Recovery Springb"};
+        for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
+            if (!strncmp(process->p_comm, services[i], MAXCOMLEN + 1)) return 1;
+        return 0;
+    }
+    return !name[0] || !strncmp(process->p_comm, name, MAXCOMLEN + 1);
 }
 
 static void sheng_process_output_text(struct proc *process, int fd, char text[160], size_t count, int truncated)

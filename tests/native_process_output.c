@@ -92,5 +92,16 @@ int main(void)
     }
     sheng_process_outputv(&process, 2, (uio_t)(void *)&vectors, 1, "WindowServer");
     assert(copies == 16 && strstr(output, "[truncated]"));
+    const char *const names[] = {"recoveryosd", "RecoveryOS Agent", "Language Chooser", "Recovery Springb",
+                                "WindowServer", "recoveryosdExtra", "launchd"};
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        strcpy(process.p_comm, names[i]);
+        for (unsigned mode = 0; mode < 4; mode++) for (int fd = 0; fd < 4; fd++) {
+            reset();
+            sheng_process_output(&process, fd, (uintptr_t)text, sizeof(text), mode, "recovery-ui");
+            int enabled = i < 4 && ((mode == 1 && fd == 2) || (mode == 2 && (fd == 1 || fd == 2)));
+            assert(copies == enabled && (output[0] != 0) == enabled);
+        }
+    }
     return 0;
 }

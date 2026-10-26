@@ -52,14 +52,37 @@ static void sheng_log_clean(const volatile void *address, size_t bytes)
 #endif
 }
 
+static uint32_t sheng_log_panel_writer;
+
+static uint64_t sheng_log_mask_async(void)
+{
+    uint64_t state = 0;
+#if defined(__aarch64__)
+    __asm__ volatile("mrs %0, daif\nmsr daifset, #7" : "=r"(state) :: "memory");
+#endif
+    return state;
+}
+
+static void sheng_log_restore_async(uint64_t state)
+{
+#if defined(__aarch64__)
+    __asm__ volatile("msr daif, %0" :: "r"(state) : "memory");
+#else
+    (void)state;
+#endif
+}
+
 void sheng_log_putc(char byte)
 {
     struct sheng_log_record *r = &sheng_log_buffer;
+    /* Do not let a same-CPU preemption hold the RAM writer across another thread's output. */
+    uint64_t interrupt_state = sheng_log_mask_async();
     uint32_t expected = 0;
     if (!__atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
                                      __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
         __atomic_fetch_add(&r->dropped, 1, __ATOMIC_RELAXED);
         sheng_log_clean(&r->dropped, sizeof(r->dropped));
+        sheng_log_restore_async(interrupt_state);
         return;
     }
     uint64_t total = r->total;
@@ -73,10 +96,18 @@ void sheng_log_putc(char byte)
         r->tail[total % SHENG_LOG_TAIL] = (uint8_t)byte;
         sheng_log_clean(&r->tail[total % SHENG_LOG_TAIL], 1);
         __atomic_store_n(&r->total, total + 1, __ATOMIC_RELEASE);
-        sheng_panel_putc((unsigned char)byte);
     }
     __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
     sheng_log_clean(r, 64);
+    sheng_log_restore_async(interrupt_state);
+    /* Slow display updates may be skipped; they must not hold the retained-log writer. */
+    expected = 0;
+    if (total != UINT64_MAX && sheng_panel_ready &&
+        __atomic_compare_exchange_n(&sheng_log_panel_writer, &expected, 1, 0,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        sheng_panel_putc((unsigned char)byte);
+        __atomic_store_n(&sheng_log_panel_writer, 0, __ATOMIC_RELEASE);
+    }
 }
 
 volatile uint64_t sheng_panel_bound_rows;
@@ -87,14 +118,19 @@ unsigned sheng_log_snapshot_copy(void *destination, unsigned bytes)
 {
     sheng_boot_progress_tick();
     struct sheng_log_record *r = &sheng_log_buffer;
+    if (!destination || bytes != sizeof(*r)) return 0;
+    uint64_t interrupt_state = sheng_log_mask_async();
     uint32_t expected = 0;
-    if (!destination || bytes != sizeof(*r) ||
-        !__atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
-                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return 0;
+    if (!__atomic_compare_exchange_n(&r->writer, &expected, 1, 0,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        sheng_log_restore_async(interrupt_state);
+        return 0;
+    }
     /* Copy RAM only; never issue storage commands or render while holding the writer. */
     __builtin_memcpy(destination, r, sizeof(*r));
     ((struct sheng_log_record *)destination)->writer = 0;
     __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+    sheng_log_restore_async(interrupt_state);
     return sizeof(*r);
 }
 
@@ -119,7 +155,26 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     uint32_t expected = 0;
     if (!address || stride < 2560 || stride > 65536 || columns < 32 || columns > 100 ||
         (rows < 6 || rows > 24) || (scale != 1 && scale != 2) || columns * 8 * scale * 4 > stride ||
-        !__atomic_compare_exchange_n(&r->writer, &expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
+        !__atomic_compare_exchange_n(&sheng_log_panel_writer, &expected, 1, 0,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
+    uint8_t history[512];
+    unsigned count = 0;
+    uint64_t interrupt_state = sheng_log_mask_async();
+    expected = 0;
+    if (!__atomic_compare_exchange_n(&r->writer, &expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        sheng_log_restore_async(interrupt_state);
+        __atomic_store_n(&sheng_log_panel_writer, 0, __ATOMIC_RELEASE);
+        return;
+    }
+    const uint64_t total = r->total;
+    uint64_t start = total > sizeof(history) ? total - sizeof(history) : 0;
+    if (start) {
+        while (start < total && r->tail[start % SHENG_LOG_TAIL] != '\n') start++;
+        if (start < total) start++;
+    }
+    for (; start < total; start++) history[count++] = r->tail[start % SHENG_LOG_TAIL];
+    __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+    sheng_log_restore_async(interrupt_state);
     sheng_panel.base = address;
     sheng_panel.stride = stride;
     sheng_panel.columns = columns;
@@ -129,14 +184,8 @@ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns,
     sheng_panel_ready = 1;
     sheng_panel_reset();
     /* Replay only a bounded tail; pin the first panic line separately so long backtraces cannot overwrite it. */
-    const uint64_t total = r->total;
-    uint64_t start = total > 512 ? total - 512 : 0;
-    if (start) {
-        while (start < total && r->tail[start % SHENG_LOG_TAIL] != '\n') start++;
-        if (start < total) start++;
-    }
-    for (; start < total; start++) sheng_panel_putc(r->tail[start % SHENG_LOG_TAIL]);
-    __atomic_store_n(&r->writer, 0, __ATOMIC_RELEASE);
+    for (unsigned i = 0; i < count; i++) sheng_panel_putc(history[i]);
+    __atomic_store_n(&sheng_log_panel_writer, 0, __ATOMIC_RELEASE);
 }
 
 void sheng_log_repaint_panel(void)
