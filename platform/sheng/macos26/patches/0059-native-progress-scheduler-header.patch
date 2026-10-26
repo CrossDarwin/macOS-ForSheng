@@ -1,0 +1,7 @@
+--- a/pexpert/arm/pe_kprintf.c
++++ b/pexpert/arm/pe_kprintf.c
+@@ -1,3 +1,4 @@
+ #if SHENG
+ #include <kern/clock.h>
++#include <kern/sched_prim.h>
+ #include <kern/thread.h>
