@@ -1,0 +1,58 @@
+--- a/osfmk/kern/exception.c
++++ b/osfmk/kern/exception.c
+@@ -135,6 +135,30 @@
+ 
+ #if SHENG && defined(MACH_BSD)
+ #include <arm/thread.h>
++#include <libkern/copyio.h>
++#include <mach/arm/exception.h>
++#include <vm/vm_shared_region_xnu.h>
++
++static uint64_t
++sheng_windowserver_translation(uint64_t address, uint64_t *sctlr)
++{
++	uint64_t daif, saved_par, control, result;
++	/* Keep the query and PAR read on one CPU; restore the interrupted register state. */
++	__asm__ volatile(
++	    "mrs %0, daif\n"
++	    "msr daifset, #7\n"
++	    "mrs %1, par_el1\n"
++	    "mrs %2, sctlr_el1\n"
++	    "at s1e0w, %4\n"
++	    "isb\n"
++	    "mrs %3, par_el1\n"
++	    "msr par_el1, %1\n"
++	    "msr daif, %0\n"
++	    : "=&r"(daif), "=&r"(saved_par), "=&r"(control), "=&r"(result)
++	    : "r"(address) : "memory");
++	*sctlr = control;
++	return result;
++}
+ 
+ void sheng_windowserver_stop(unsigned exception, uint64_t code, uint64_t subcode);
+ void
+@@ -150,6 +174,24 @@
+ 	if (!state || !is_saved_state64(state))
+ 		panic("SHENG WS EXCEPTION pid=%d type=%x code=%llx sub=%llx state=unavailable",
+ 		    proc_selfpid(), exception, (unsigned long long)code, (unsigned long long)subcode);
++	if (exception == EXC_BAD_ACCESS && code == EXC_ARM_DA_ALIGN) {
++		uint64_t pc = get_saved_state_pc(state), far = get_saved_state_far(state);
++		uint32_t instruction = 0, slide = ~0u;
++		/* Fault-safe access preserves a useful report when the instruction cannot be read. */
++		int read_error = copyin((user_addr_t)pc, &instruction, sizeof(instruction));
++		vm_shared_region_t region = vm_shared_region_get(current_task());
++		if (region) {
++			slide = region->sr_slide;
++			vm_shared_region_deallocate(region);
++		}
++		uint64_t sctlr, par = sheng_windowserver_translation(far, &sctlr);
++		/* Keep the complete alignment record within the 256-byte QR reason limit. */
++		panic("SHENG WS ALIGN p=%d pc=%llx lr=%llx sp=%llx esr=%x far=%llx sc=%llx par=%llx i=%x/%d slide=%x",
++		    proc_selfpid(), (unsigned long long)pc, (unsigned long long)get_saved_state_lr(state),
++		    (unsigned long long)get_saved_state_sp(state), (unsigned)get_saved_state_esr(state),
++		    (unsigned long long)far, (unsigned long long)sctlr, (unsigned long long)par,
++		    instruction, read_error, slide);
++	}
+ 	/* Stop before exception delivery; the first exception may still be recoverable. */
+ 	panic("SHENG WS EXCEPTION pid=%d type=%x code=%llx sub=%llx pc=%llx lr=%llx sp=%llx esr=%llx far=%llx",
+ 	    proc_selfpid(), exception, (unsigned long long)code, (unsigned long long)subcode,
