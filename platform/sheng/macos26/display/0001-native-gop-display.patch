@@ -688,3 +688,22 @@
 -bool DroidVMDisplay::are_timings_enabled() const {return false;}
 +IOReturn NativeGOPDisplay::notify_crc_ready_gated(unsigned int) {return kIOReturnSuccess;}
 +bool NativeGOPDisplay::are_timings_enabled() const {return false;}
+--- a/IOMobileFramebufferABI.h
++++ b/IOMobileFramebufferABI.h
+@@ -141,6 +141,7 @@
+     virtual bool is_power_on_pending();                                                                                            // 368 0xcf25
+     virtual IOReturn ap_power_debug_trace(iomfb_power_trace_event_t, unsigned int, unsigned int, unsigned int, unsigned int);      // 369 0x5554
+     virtual IOReturn get_ap_power_debug_trace(void*, unsigned long, unsigned long) const;                                          // 370 0x3a25
++    uint8_t iomfbState[0x90 - sizeof(IOService)];   // Includes the hardware-started byte at offset 140
+ };
+ 
+ class IOMobileFramebufferLegacy : public IOMobileFramebuffer {
+@@ -343,7 +344,7 @@
+     virtual IOReturn trigger_pswap_dependent_thread();                                                                             // 470 0x106a
+     virtual IOReturn send_clamshell_state();                                                                                       // 471 0xf761
+     virtual IOReturn get_shared_disp_property();                                                                                   // 472 0xc09c
+-    uint8_t iomfbLegacyState[0x1af8 - sizeof(IOService)];   // the instance size of its MetaClass
++    uint8_t iomfbLegacyState[0x1af8 - sizeof(IOMobileFramebuffer)];   // the instance size of its MetaClass
+ };
+ 
+ static_assert(sizeof(IOMobileFramebufferLegacy) == 0x1af8, "IOMobileFramebufferLegacy instance size");
