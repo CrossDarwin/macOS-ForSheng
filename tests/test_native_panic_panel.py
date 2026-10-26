@@ -29,6 +29,13 @@ class NativePanicPanel(unittest.TestCase):
                                    ('boot_progress.h', 'pe_sheng_boot_progress.h'),
                                    ('boot_progress_kernel.h', 'pe_sheng_boot_progress_kernel.h')):
                 shutil.copy2(ROOT / 'platform/sheng/macos26/log' / source, work / target)
+            sys.path.insert(0, str(ROOT / 'scripts'))
+            from native_panic_qr import render
+            encoder, _ = render(ROOT)
+            (work / 'pe_sheng_qr_encoder.h').write_text(encoder)
+            for source, target in (('panic_qr.h', 'pe_sheng_panic_qr.h'),
+                                   ('qr/runtime.h', 'pe_sheng_qr_runtime.h'), ('qr/qrcodegen.h', 'qrcodegen.h')):
+                shutil.copy2(ROOT / 'platform/sheng/macos26/log' / source, work / target)
             shutil.copy2(font, work / 'pe_sheng_font.h')
             (work / 'entry.S').write_text('.text\n.global _start\n_start:\n msr daifset,#15\n'
                 ' adr x0, vectors\n msr vbar_el1,x0\n isb\n'
@@ -126,11 +133,15 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertEqual(number('sheng_panic_panel_bound_rows'), 16)
                         text = memory(symbols['sheng_first_panic_text'], 4096)
                         self.assertIn(b'PAYLOAD_END_AFTER_511_BYTES', text)
+                        payload = memory(symbols['sheng_qr_payload'], 640).split(b'\0', 1)[0].decode('ascii')
+                        self.assertIn('CALLER=0000000000112233\n', payload)
+                        self.assertIn('REGS=panic-hook\nREASON=UFS ROOT FAILURE:', payload)
+                        self.assertTrue(payload.endswith('\nTRUNCATED=1'))
                         # Compare title and body pixels against the actual font instead of relying only on the ready flag.
                         base = 0x44000000 + (608 + 64 + 24 * 32) * 12192 + 896
                         before = memory(base, 16 * 32 * 12192)
                         glyphs = memory(symbols['sheng_panel_font'], 4096)
-                        for line, expected in enumerate(('SHENG - PANIC DETAIL', 'UFS ROOT FAILURE: root window volume not found')):
+                        for line, expected in enumerate(('SHENG - PANIC DETAIL', 'UFS ROOT FAILURE: root')):
                             for column, char in enumerate(expected):
                                 for y in range(32):
                                     bits = glyphs[ord(char) * 16 + y // 2]
@@ -144,12 +155,20 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertEqual(number('panic_test_checks'), 15)
                         self.assertEqual(number('snapshot_test_checks'), 7)
                         self.assertEqual(before, memory(base, len(before)))
+                        self.assertEqual(memory(symbols['sheng_qr_payload'], 640).split(b'\0', 1)[0].decode('ascii'), payload)
+                        import zxingcpp
+                        panic_image = Image.frombytes('RGBX', (3048, 512), before, 'raw', 'BGRX').convert('RGB').crop(
+                            (0, 0, 1408, 512))
+                        codes = zxingcpp.read_barcodes(panic_image)
+                        self.assertEqual(len(codes), 1)
+                        self.assertEqual(codes[0].text, payload)
                         output = ROOT / 'out/native-panic-writer-validation'
                         output.mkdir(parents=True, exist_ok=True)
                         (output / 'result.json').write_text(json.dumps(dict(
                             writer_not_stolen=True, first_panic_text_preserved=True,
                             actual_font_pixels_verified=True, ordinary_tail_lines=80,
                             progress_age_and_segments_verified=True, handoff_stops_progress_pixels=True,
+                            panic_qr_decoded_from_arm_pixels=True, panic_qr_payload=payload,
                             panic_rows=16, normal_rows=24, hardware_executed=False), indent=2) + '\n')
                         from PIL import Image
                         raw = memory(0x44000000 + 608 * 12192 + 896, (64 + 40 * 32) * 12192)

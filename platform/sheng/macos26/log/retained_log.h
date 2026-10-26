@@ -32,6 +32,7 @@ volatile uint64_t sheng_bootstrap_vm_stage = UINT64_MAX;
 volatile uint64_t sheng_bootstrap_vm_pixels;
 uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
 volatile uint64_t sheng_bootstrap_vm_witness;
+#include "pe_sheng_panic_qr.h"
 #include "pe_sheng_panel.h"
 
 void sheng_bootstrap_capture_end(void)
@@ -249,9 +250,24 @@ void sheng_log_panic(uint64_t caller, const char *message)
         for (; message && message[n] && n < sizeof(sheng_first_panic_text) - 1; n++)
             sheng_first_panic_text[n] = message[n];
         sheng_first_panic_text[n] = 0;
+        struct sheng_panic_qr_capture capture = {
+            .caller = caller, .physical_base = r->physical_base, .image_va = r->image_va,
+            .total = __atomic_load_n(&r->total, __ATOMIC_RELAXED),
+            .dropped = __atomic_load_n(&r->dropped, __ATOMIC_RELAXED),
+        };
+        for (unsigned i = 0; i < 16; i++) capture.uuid[i] = r->kernel_uuid[i];
+#if defined(__aarch64__)
+        __asm__ volatile ("mov %0, sp" : "=r"(capture.sp));
+        __asm__ volatile ("mrs %0, elr_el1" : "=r"(capture.elr));
+        __asm__ volatile ("mrs %0, esr_el1" : "=r"(capture.esr));
+        __asm__ volatile ("mrs %0, far_el1" : "=r"(capture.far));
+#endif
         sheng_log_clean(sheng_first_panic_text, sizeof(sheng_first_panic_text));
         __atomic_store_n(&sheng_panic_text_state, 2, __ATOMIC_RELEASE);
         sheng_log_clean(&sheng_panic_text_state, sizeof(sheng_panic_text_state));
+        /* Publish the text fallback before encoding; keep earlier exception registers separate. */
+        sheng_panic_panel_render();
+        sheng_qr_prepare(&capture, sheng_first_panic_text);
         sheng_panic_panel_render();
     }
     {

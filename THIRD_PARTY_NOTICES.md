@@ -18,7 +18,14 @@ recorded below and in sources.lock.json, config/ and the patch headers. A link o
 a credit does not replace compliance with the source component's license.
 
 Upstream checkouts retain their own licenses and authorship; they are not
-vendored into this repository.
+vendored into this repository except for the QR encoder listed below.
+
+- Nayuki QR-Code-generator: MIT. Unmodified `qrcodegen.c` and `qrcodegen.h`
+  at revision 3c6d0b3cefb4e049dc337e82237c9644399716a8 are vendored under
+  platform/sheng/macos26/log/qr/ with their complete copyright and license
+  notices. The pinned hashes are in config/macos26-panic-qr.json. The build
+  adapter replaces libc and assertion callbacks with freestanding helpers;
+  it preserves the upstream notices in generated code.
 
 - UniXNU and UniXNU-sheng: BSD-2-Clause-Patent. The ShengPreflight patch extends
   `UniXNU/UniXNU-sheng` at the commit recorded in `sources.lock.json` and retains

@@ -30,6 +30,11 @@ static void sheng_panic_panel_render(void)
             y * sheng_panic_panel.stride);
         for (unsigned x = 0; x < sheng_panic_panel.columns * 8 * scale; x++) pixels[x] = 0xff000000u;
     }
+    const unsigned width = sheng_panic_panel.columns * 8 * scale;
+    const unsigned height = sheng_panic_panel.rows * 16 * scale;
+    unsigned qr_scale = 0, qr_extent = sheng_qr_extent(width, height, &qr_scale);
+    const unsigned text_columns = qr_extent ? (width - qr_extent - 8 * scale) / (8 * scale)
+        : sheng_panic_panel.columns;
     unsigned row = 0, column = 0;
     for (unsigned part = 0; part < 2; part++) {
         const char *text = part ? sheng_first_panic_text : "SHENG - PANIC DETAIL\n";
@@ -46,9 +51,10 @@ static void sheng_panic_panel_render(void)
                 for (unsigned x = 0; x < 8 * scale; x++)
                     pixels[x] = bits & (1u << (x / scale)) ? 0xffffffffu : 0xff000000u;
             }
-            if (++column == sheng_panic_panel.columns) { column = 0; row++; }
+            if (++column == text_columns) { column = 0; row++; }
         }
     }
+    sheng_qr_draw(sheng_panic_panel.base, sheng_panic_panel.stride, width, height);
     __asm__ volatile ("dsb sy" ::: "memory");
 }
 

@@ -231,6 +231,17 @@ def prepare() -> dict:
     stage_file(panel_console, source / 'pexpert/arm/pe_sheng_panel.h')
     panel_font = source / 'osfmk/console/iso_font.c'
     stage_file(panel_font, source / 'pexpert/arm/pe_sheng_font.h')
+    from native_panic_qr import render as render_panic_qr
+    qr_encoder, qr_contract = render_panic_qr(ROOT)
+    qr_generated = OUT / 'pe_sheng_qr_encoder.h'
+    if not qr_generated.exists() or qr_generated.read_text() != qr_encoder:
+        qr_generated.write_text(qr_encoder)
+    stage_file(qr_generated, source / 'pexpert/arm/pe_sheng_qr_encoder.h')
+    panic_qr = ROOT / 'platform/sheng/macos26/log/panic_qr.h'
+    qr_runtime = ROOT / 'platform/sheng/macos26/log/qr/runtime.h'
+    stage_file(panic_qr, source / 'pexpert/arm/pe_sheng_panic_qr.h')
+    stage_file(qr_runtime, source / 'pexpert/arm/pe_sheng_qr_runtime.h')
+    stage_file(ROOT / 'platform/sheng/macos26/log/qr/qrcodegen.h', source / 'pexpert/arm/qrcodegen.h')
     early_exception = ROOT / 'platform/sheng/macos26/log/early_exception.h'
     stage_file(early_exception, source / 'osfmk/arm64/sheng_early_exception.h')
     bootstrap_sync = ROOT / 'platform/sheng/macos26/log/bootstrap_sync.h'
@@ -262,7 +273,9 @@ def prepare() -> dict:
                     'pexpert/arm/pe_sheng_io_zero.h', 'osfmk/vm/sheng_recovery_ui.h',
                     'osfmk/vm/sheng_recovery_ui_kernel.h', 'osfmk/vm/sheng_recovery_ui_pages.h',
                     'bsd/kern/sheng_process_output.h', 'pexpert/arm/pe_sheng_boot_progress.h',
-                    'pexpert/arm/pe_sheng_boot_progress_kernel.h'], check=True)
+                    'pexpert/arm/pe_sheng_boot_progress_kernel.h', 'pexpert/arm/pe_sheng_panic_qr.h',
+                    'pexpert/arm/pe_sheng_qr_encoder.h', 'pexpert/arm/pe_sheng_qr_runtime.h',
+                    'pexpert/arm/qrcodegen.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -282,6 +295,11 @@ def prepare() -> dict:
                       max_bytes_per_write=159, max_iovecs=16, vector_writes=True,
                       source_sha256=sha(process_output),
                       records_attempted_output=True, runtime_qualified=False),
+                  panic_qr=dict(contract=qr_contract, source_sha256=sha(panic_qr),
+                      runtime_sha256=sha(qr_runtime), encoder_sha256=sha(qr_generated),
+                      heap_allocation=False, disk_writes=False, network=False,
+                      registers='panic hook, separate from earlier EL1 exception',
+                      hardware_qualified=False),
                   panel_console_source_sha256=sha(panel_console),
                   panel_font_source_sha256=sha(panel_font),
                   early_exception_source_sha256=sha(early_exception),
