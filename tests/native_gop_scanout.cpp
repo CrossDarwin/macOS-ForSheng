@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cassert>
 #include <cstdint>
+#include <vector>
 #include "../platform/sheng/macos26/display/gop_scanout.h"
 
 int main()
@@ -26,4 +27,20 @@ int main()
     assert(output[1] == 0xffff8000);
     nativeGopScanoutRow(output, 2, rgba, 2, table);
     assert(output[0] == 0xffff8000 && output[1] == 0xff0000ff);
+
+    // The physical sheng panel is 3048x2032; exercise its doubled backing rows and padded scanout.
+    constexpr uint64_t panelWidth = 3048, panelHeight = 2032;
+    constexpr uint64_t backingWidth = panelWidth * 2, backingHeight = panelHeight * 2;
+    std::vector<uint32_t> backing(backingWidth), scanout(panelWidth + 16, 0xdeadbeef);
+    const uint64_t rows[] = {0, 1, panelHeight / 2, panelHeight - 1};
+    for (uint64_t y : rows) {
+        uint64_t sourceY = y * backingHeight / panelHeight;
+        for (uint64_t x = 0; x < backingWidth; x++)
+            backing[x] = 0xff000000 | static_cast<uint32_t>((sourceY * backingWidth + x) & 0xffffff);
+        nativeGopScanoutRow(scanout.data() + 8, panelWidth,
+                            reinterpret_cast<uint16_t *>(backing.data()), backingWidth, nullptr);
+        for (uint64_t x = 0; x < panelWidth; x++) assert(scanout[x + 8] == backing[x * 2]);
+        for (uint64_t x = 0; x < 8; x++)
+            assert(scanout[x] == 0xdeadbeef && scanout[x + panelWidth + 8] == 0xdeadbeef);
+    }
 }

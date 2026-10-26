@@ -1,0 +1,24 @@
+--- a/osfmk/vm/vm_fault.c
++++ b/osfmk/vm/vm_fault.c
+@@ -8901,6 +8901,10 @@
+ 	return FALSE;
+ }
+ 
++#if SHENG && (DEVELOPMENT || DEBUG)
++#include <vm/sheng_recovery_ui_kernel.h>
++#endif
++
+ void
+ vm_page_validate_cs_mapped_slow(
+ 	vm_page_t       page,
+@@ -8948,6 +8952,10 @@
+ 	page->vmp_cs_validated |= validated;
+ 	page->vmp_cs_tainted |= tainted;
+ 	page->vmp_cs_nx |= nx;
++
++#if SHENG && (DEVELOPMENT || DEBUG)
++	sheng_recovery_ui_page(page, vnode, mo_offset);
++#endif
+ 
+ #if CHECK_CS_VALIDATION_BITMAP
+ 	if (page->vmp_cs_validated == VMP_CS_ALL_TRUE &&

@@ -1,0 +1,166 @@
+{
+  "schema": "sheng-recovery-ui-pages-v1",
+  "build": "25F71",
+  "architecture": "arm64e",
+  "default_off": true,
+  "disk_writes": false,
+  "authentication_success_fabricated": false,
+  "original_signature_validation_required": true,
+  "boot_argument": "sheng-recovery-ui=1",
+  "runtime_qualified": false,
+  "hardware_admitted": false,
+  "pages": [
+    {
+      "file": "dyld_shared_cache_arm64e.01",
+      "file_offset": 113344512,
+      "edits": [
+        {
+          "offset": 10444,
+          "before": "ff4302d1f65706a9f44f07a9fd7b08a9",
+          "after": "ff2303d5c0035fd61f2003d51f2003d5",
+          "policy": "native-no-metal-scaled-plan-40270321747"
+        }
+      ],
+      "before_sha256": "9cfd4ca98b039f3e0ac34a2735320c79e45fb103ed2bff91efc5b1e355741e02",
+      "after_sha256": "ac698fc1e7cec605c96d195522052e3de4390b08d7cb959efcc4814f4a20c172"
+    },
+    {
+      "file": "dyld_shared_cache_arm64e.01",
+      "file_offset": 170082304,
+      "edits": [
+        {
+          "offset": 15076,
+          "before": "e923bc6df65701a9f44f02a9fd7b03a9",
+          "after": "20488a52e048a872ff2303d5c0035fd6",
+          "policy": "native-bgra-framebuffer"
+        }
+      ],
+      "before_sha256": "398906874fd54ec79b0021329e78725c0cb2049a4b1642528797902953c2d9da",
+      "after_sha256": "bd573d310df1a21d4dee36f344b9996547d8f7c19d4cb1aaaecf0b8ed506dafc"
+    },
+    {
+      "file": "dyld_shared_cache_arm64e.01",
+      "file_offset": 1720320,
+      "edits": [
+        {
+          "offset": 7744,
+          "before": "ffc301d1fa6702a9f85f03a9f65704a9",
+          "after": "ff2303d5c0035fd61f2003d51f2003d5",
+          "policy": "legacy-syslog"
+        }
+      ],
+      "before_sha256": "28179a526441d929db4ec089ff4f9dc58cc5520798528d69aa169a793bde2b2c",
+      "after_sha256": "98789395b79348b091b3ef56d16fc5183c5c1a7d55ba87a77d42cf5372def69f"
+    },
+    {
+      "file": "dyld_shared_cache_arm64e.01",
+      "file_offset": 1687552,
+      "edits": [
+        {
+          "offset": 3848,
+          "before": "ff8304d1fc6f0ca9fa670da9f85f0ea9",
+          "after": "ff2303d5c0035fd61f2003d51f2003d5",
+          "policy": "activity-stream"
+        }
+      ],
+      "before_sha256": "aa9b042bc95817055a8fb447ffcea93738d02247ba6c11856797e28e4f1fe4ec",
+      "after_sha256": "505cec1b5532d6c074705a8f393d6a9a915ec4a1898db32ca69e21f9f311ebcf"
+    },
+    {
+      "file": "dyld_shared_cache_arm64e.01",
+      "file_offset": 115212288,
+      "edits": [
+        {
+          "offset": 8108,
+          "before": "f40300aa",
+          "after": "140a80d2",
+          "policy": "software-pool-bgra"
+        }
+      ],
+      "before_sha256": "51d8609f1fc19bd1cd482a2906b795b30f2d958ce279db2e3eb8cb280b92eec2",
+      "after_sha256": "9a06a727aeb1948551187e05bbd93d058d5703d5ec921ef5d7f34aed9afd5514"
+    },
+    {
+      "file": "dyld_shared_cache_arm64e.01",
+      "file_offset": 687915008,
+      "edits": [
+        {
+          "offset": 4412,
+          "before": "f403889a",
+          "after": "f40308aa",
+          "policy": "recovery-guest-fallback"
+        }
+      ],
+      "before_sha256": "30011a3a0da84d45c5ed7c8e899dbc2831f000e2c77f48926f88514d58ed529a",
+      "after_sha256": "6f798dbcc6887fef2bf064b5a3f5826f7ac84bd3726d556d9c8f4f69aa027158"
+    },
+    {
+      "file": "diskarbitrationd",
+      "file_offset": 98304,
+      "edits": [
+        {
+          "offset": 636,
+          "before": "730400b4",
+          "after": "23000014",
+          "policy": "fskit-unavailable-before-request"
+        }
+      ],
+      "before_sha256": "2d8e1893d1e39988560e6e1c3dd13e9e10781072afc9f933b4a58aeb8ad9a7dc",
+      "after_sha256": "c948a6cd6720f1be18e9f41c53c9cac6c7403048e6873ce13fbf829a5637b78f"
+    },
+    {
+      "file": "RecoveryOS Agent",
+      "file_offset": 0,
+      "edits": [
+        {
+          "offset": 12800,
+          "before": "0f000014",
+          "after": "2b000014",
+          "policy": "aqua-open-error-ui-continuation"
+        },
+        {
+          "offset": 12860,
+          "before": "c80000b0",
+          "after": "1c000014",
+          "policy": "aqua-unlock-error-after-cleanup"
+        }
+      ],
+      "before_sha256": "08216b1b9cbcc1fdb93703c9a3c3d512e7fb043ffbdc021dd0126e643b33bdf9",
+      "after_sha256": "c94b2d6cea227500dc755d132d5147220b7d590a4aee7cf1d37acca0274f1565"
+    },
+    {
+      "file": "recoveryosd",
+      "file_offset": 0,
+      "edits": [
+        {
+          "offset": 6576,
+          "before": "c20f0094",
+          "after": "08000014",
+          "policy": "omit-optional-keychain-login"
+        }
+      ],
+      "before_sha256": "a82410bfd5ac857b2622d8b5978532dd538bc296ed3e7f7db6e9d5766007fc62",
+      "after_sha256": "98de980f4fb08e49d2ea65c5506e0384360ec2b497861200c7227912c7c0340e"
+    },
+    {
+      "file": "Language Chooser",
+      "file_offset": 65536,
+      "edits": [
+        {
+          "offset": 3732,
+          "before": "a3340094",
+          "after": "000080d2",
+          "policy": "language-chooser-no-controller"
+        },
+        {
+          "offset": 4164,
+          "before": "37340094",
+          "after": "000080d2",
+          "policy": "language-chooser-no-controller"
+        }
+      ],
+      "before_sha256": "203804db0b02df6d610cc4ed9bc96937b66c820338d215f48ac4660cbab0afab",
+      "after_sha256": "f6c5345d5f6b98e0864826eba701c84df6d40871fd14abdd37e324ffbb6275da"
+    }
+  ]
+}

@@ -76,6 +76,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0051-native-multiline-panic-panel.patch',
     ROOT / 'platform/sheng/macos26/patches/0052-native-independent-panic-surface.patch',
     ROOT / 'platform/sheng/macos26/patches/0053-development-dyld-commpage.patch',
+    ROOT / 'platform/sheng/macos26/patches/0054-development-recovery-ui-pages.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -229,12 +230,24 @@ def prepare() -> dict:
     stage_file(vm_trace, source / 'osfmk/arm64/sheng_vm_trace.h')
     crypto_image = ROOT / 'platform/sheng/macos26/crypto/native_image.h'
     stage_file(crypto_image, source / 'osfmk/prng/sheng_crypto_image.h')
+    from native_recovery_ui import render as render_recovery_ui
+    recovery_ui = ROOT / 'platform/sheng/macos26/recovery/ui_policy.h'
+    recovery_ui_kernel = ROOT / 'platform/sheng/macos26/recovery/ui_policy_kernel.h'
+    recovery_ui_manifest = ROOT / 'config/macos26-recovery-ui-pages.json'
+    recovery_ui_generated = OUT / 'sheng_recovery_ui_pages.h'
+    rendered = render_recovery_ui(json.loads(recovery_ui_manifest.read_text()))
+    if not recovery_ui_generated.exists() or recovery_ui_generated.read_text() != rendered:
+        recovery_ui_generated.write_text(rendered)
+    stage_file(recovery_ui, source / 'osfmk/vm/sheng_recovery_ui.h')
+    stage_file(recovery_ui_kernel, source / 'osfmk/vm/sheng_recovery_ui_kernel.h')
+    stage_file(recovery_ui_generated, source / 'osfmk/vm/sheng_recovery_ui_pages.h')
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
                     'osfmk/arm64/sheng_c_trace.h', 'osfmk/arm64/sheng_vm_trace.h',
                     'pexpert/arm/pe_sheng_panel.h', 'pexpert/arm/pe_sheng_font.h',
-                    'pexpert/arm/pe_sheng_io_zero.h'], check=True)
+                    'pexpert/arm/pe_sheng_io_zero.h', 'osfmk/vm/sheng_recovery_ui.h',
+                    'osfmk/vm/sheng_recovery_ui_kernel.h', 'osfmk/vm/sheng_recovery_ui_pages.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
                   deployment='macOS 26.5', sources=identities,
                   architecture=ARCH, native_el1_pac=ARCH == 'arm64e',
@@ -253,6 +266,12 @@ def prepare() -> dict:
                   bootstrap_c_trace_source_sha256=sha(c_trace),
                   bootstrap_vm_trace_source_sha256=sha(vm_trace),
                   crypto_image_source_sha256=sha(crypto_image),
+                  recovery_ui_policy=dict(default_off=True, boot_argument='sheng-recovery-ui=1',
+                      page_count=len(json.loads(recovery_ui_manifest.read_text())['pages']),
+                      manifest_sha256=sha(recovery_ui_manifest), engine_sha256=sha(recovery_ui),
+                      kernel_hook_sha256=sha(recovery_ui_kernel), generated_sha256=sha(recovery_ui_generated),
+                      original_signature_validation_required=True, disk_writes=False,
+                      runtime_qualified=False, hardware_admitted=False),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],
                   purpose='Native machine-layer source compilation; not a bootable kernel',
