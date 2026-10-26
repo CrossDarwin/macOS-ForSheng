@@ -2035,3 +2035,21 @@ RecoveryOS Agent随后实际命中AuthorizationCopyPreloginUserDatabase入口。
 该框架依次读取security.mac.asp.recovery_boot_mode、NVRAM恢复模式及__OSINSTALL_GUEST_MODE，
 recoveryosd在模式缺失时可能跳过语言选择器。当前QEMU开发控制仅选择原有guest分支，
 不伪造机器型号、ASN或授权成功；该控制点尚待实际命中。
+
+### WindowServer离屏目标仍使用RGhA
+
+长观察随后捕获真实WindowServer SIGABRT，退出消息明确为
+`Unimplemented pixel format of 1380411457 used in WSCompositeDestinationCreateWithIOSurface.`
+该数值对应RGhA。调用来自SLCADisplay::render_update，
+因此此前只约束IOMFB最终屏幕缓冲的BGRA策略还没有覆盖这条显示中间缓冲路径。
+退出现场及原版帧链均保留本地；此时RecoveryOS Agent已进入NSApplication事件循环，
+但recoveryosd已不在进程列表中，不能宣称语言选择器已经启动。
+
+配对代码显示，SLCADisplay::begin_update读取原纹理格式，用于中间SurfacePool的匹配和分配。
+新QEMU对照在匹配与分配之前选择实际BGRA8Unorm，保留原来的IOSurface格式检查和软件合成代码，
+不把已分配RGhA数据重新标记为BGRA。该分配控制正在验证，尚无窗口结果。
+
+另一个独立对照观察RecoveryOS Agent的实际SecKeychainOpen/Unlock返回值。
+仅在原调用失败时允许UI实验继续原版rc.install.done创建及完成回调，保留真实错误状态；
+打开失败后输出非空则拒绝继续，解锁失败则先执行原版CFRelease清理。
+该控制未把授权结果改为成功，亦未部署设备。
