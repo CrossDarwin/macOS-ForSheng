@@ -1,0 +1,67 @@
+--- a/osfmk/kern/exception.c
++++ b/osfmk/kern/exception.c
+@@ -132,6 +132,32 @@
+ extern int      proc_selfpid(void);
+ extern char     *proc_name_address(struct proc *p);
+ #endif /* MACH_BSD */
++
++#if SHENG && defined(MACH_BSD)
++#include <arm/thread.h>
++
++void sheng_windowserver_stop(unsigned exception, uint64_t code, uint64_t subcode);
++void
++sheng_windowserver_stop(unsigned exception, uint64_t code, uint64_t subcode)
++{
++	void *process = get_bsdtask_info(current_task());
++	if (!process || strncmp(proc_name_address(process), "WindowServer", sizeof("WindowServer"))) return;
++	unsigned enabled = 0;
++	if (!PE_parse_boot_argn("sheng-windowserver-stop", &enabled, sizeof(enabled)) || enabled != 1) return;
++	static uint32_t stopping;
++	if (__atomic_exchange_n(&stopping, 1, __ATOMIC_ACQ_REL)) return;
++	arm_saved_state_t *state = get_user_regs(current_thread());
++	if (!state || !is_saved_state64(state))
++		panic("SHENG WS EXCEPTION pid=%d type=%x code=%llx sub=%llx state=unavailable",
++		    proc_selfpid(), exception, (unsigned long long)code, (unsigned long long)subcode);
++	/* Stop before exception delivery; the first exception may still be recoverable. */
++	panic("SHENG WS EXCEPTION pid=%d type=%x code=%llx sub=%llx pc=%llx lr=%llx sp=%llx esr=%llx far=%llx",
++	    proc_selfpid(), exception, (unsigned long long)code, (unsigned long long)subcode,
++	    (unsigned long long)get_saved_state_pc(state), (unsigned long long)get_saved_state_lr(state),
++	    (unsigned long long)get_saved_state_sp(state), (unsigned long long)get_saved_state_esr(state),
++	    (unsigned long long)get_saved_state_far(state));
++}
++#endif
+ 
+ #if (DEVELOPMENT || DEBUG)
+ TUNABLE_WRITEABLE(unsigned int, exception_log_max_pid, "exception_log_max_pid", 0);
+@@ -922,6 +948,9 @@
+ 	task_t   task   = current_task();
+ 
+ 	assert(codeCnt > 0);
++#if SHENG && defined(MACH_BSD)
++	sheng_windowserver_stop((unsigned)exception, code[0], codeCnt > 1 ? code[1] : 0);
++#endif
+ 
+ 	if (VM_MAP_PAGE_SIZE(task->map) < PAGE_SIZE) {
+ 		DEBUG4K_EXC("thread %p task %p map %p exception %d codes 0x%llx 0x%llx\n",
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -138,6 +138,9 @@
+ #include <os/system_event_log.h>
+ 
+ #include <pexpert/pexpert.h>
++#if SHENG
++extern void sheng_windowserver_stop(unsigned exception, uint64_t code, uint64_t subcode);
++#endif
+ 
+ #include <kdp/kdp_dyld.h>
+ 
+@@ -2103,6 +2106,9 @@
+ 				    proc_getpid(p), proc_name, WEXITSTATUS(rv));
+ 			}
+ 		}
++#endif
++#if SHENG
++		if (p == current_proc()) sheng_windowserver_stop(EXC_CRASH, code, subcode);
+ #endif
+ 		kr = task_exception_notify(EXC_CRASH, code, subcode, /* fatal */ false);
+ 		/* Nobody handled EXC_CRASH?? remember to make corpse */
