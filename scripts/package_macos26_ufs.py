@@ -18,6 +18,7 @@ from package_reference_xnu import vendor_dtbs
 from native_devtree import configure_native_text_state
 from build_macos26_storage import PROTOCOL_CHARACTERISTICS
 from native_log_file import CONTRACT as LOG_CONTRACT, BLOCK as LOG_BLOCK, decode as decode_log_file
+from recovery_ui_evidence import qualify_language_selector
 
 
 def qualify(build, observation, bootstrap, default_off, installed, plan, root_build, *, with_isc=False):
@@ -133,13 +134,44 @@ def qualify_isc_overlay(build, observation, identity, root_uuid):
     values = observed.get('observed_globals', {})
     console = (observation / 'console.txt').read_text()
     recovery = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())
+    mounts = ['mount-complete volume ' + name for name in recovery['isc']['volumes']]
+    if any(marker not in console for marker in mounts) and (observation / 'stream-console.jsonl').exists():
+        # A later ring tail may no longer contain successful early role mounts.
+        # Accept their actual streamed bytes only with this snapshot's accounting.
+        snapshot = json.loads((observation / 'gdb-stop.json').read_text())
+        stream = snapshot.get('retained_log_stream', {})
+        decoded = json.loads((observation / 'console.json').read_text())
+        samples = [json.loads(line) for line in (observation / 'stream-console.jsonl').read_text().splitlines()]
+        raw = (observation / 'stream-console.bin').read_bytes()
+        expected_bytes = cursor = dropped = 0
+        for sample in samples:
+            position = cursor
+            for chunk in sample['chunks']:
+                if chunk['start'] != position or chunk['bytes'] <= 0:
+                    raise ValueError('invalid retained ISC stream chunk extent')
+                position += chunk['bytes']
+            if (sample['start'] != cursor or sample['end'] < cursor or sample['missing_bytes'] != 0
+                    or sample['guest_dropped_bytes'] < dropped
+                    or position != sample['end']):
+                raise ValueError('invalid retained ISC stream accounting')
+            expected_bytes += sample['end'] - cursor
+            if sample['guest_dropped_bytes'] > dropped:
+                expected_bytes += len(f'\n[... {sample["guest_dropped_bytes"] - dropped} bytes dropped by guest writer ...]\n'.encode())
+            cursor, dropped = sample['end'], sample['guest_dropped_bytes']
+        if (snapshot.get('kernel_sha256') != identity['kernel_sha256'] or decoded.get('uuid') != identity['uuid']
+                or stream.get('ready') is not True or stream.get('read_only') is not True
+                or not 1 <= len(samples) <= 256 or stream.get('samples') != len(samples)
+                or stream.get('total_bytes') != cursor or stream.get('missing_bytes') != 0
+                or stream.get('guest_dropped_bytes') != dropped or len(raw) != expected_bytes):
+            raise ValueError('requires this kernel snapshot and its actual retained ISC stream')
+        console += '\n' + raw.decode('utf-8', errors='replace')
     if (values.get('_native_ufs_isc_overlay_enabled') != '0x1'
             or values.get('_native_ufs_isc_failures') != '0x0'
             or int(values.get('_native_ufs_isc_writes', '0x0'), 16) < 1
             or int(values.get('_native_ufs_isc_syncs', '0x0'), 16) < 1
             or int(values.get('_native_ufs_isc_resident_bytes', '0x0'), 16) > 64 << 20
             or int(values.get('_native_ufs_blocks_published', '0x0'), 16) != 2
-            or any('mount-complete volume ' + name not in console for name in recovery['isc']['volumes'])):
+            or any(marker not in console for marker in mounts)):
         raise ValueError('requires exact-candidate ISC, Preboot and Hardware mounts with real writes, syncs and no overlay failures')
     return observed
 
@@ -216,11 +248,15 @@ def main():
                         help='matching native worker snapshot commits through an owned-file QEMU backend')
     parser.add_argument('--macoslog-readonly-observation', type=Path)
     parser.add_argument('--macoslog-deployment', type=Path)
+    parser.add_argument('--recovery-ui-observation', type=Path,
+                        help='audited same-kernel QEMU language selector and real input fixture')
     args = parser.parse_args()
     if args.development_no_ignition != bool(args.dyld_observation):
         parser.error('--development-no-ignition and --dyld-observation must be used together')
     if args.isc_overlay and not args.development_no_ignition:
         parser.error('--isc-overlay requires the qualified explicit development root')
+    if args.recovery_ui_observation and not args.isc_overlay:
+        parser.error('Recovery UI requires the qualified ISC development root')
     log_options = (args.macoslog_observation, args.macoslog_readonly_observation, args.macoslog_deployment)
     if any(log_options) and not all(log_options):
         parser.error('macoslog requires write, readonly and deployment evidence together')
@@ -275,6 +311,10 @@ def main():
         log_qualification = qualify_macoslog(args.kernel_build, args.macoslog_observation,
             args.macoslog_readonly_observation, args.macoslog_deployment, identity)
         boot_args += ' native-ufs-macoslog=2'
+    ui_qualification = None
+    if args.recovery_ui_observation:
+        ui_qualification = qualify_language_selector(args.kernel_build, args.recovery_ui_observation, identity)
+        boot_args += ' native-gop-display=1 sheng-recovery-ui=1'
     args.output.mkdir(parents=True, exist_ok=False)
     try:
         with tempfile.TemporaryDirectory(dir=args.output) as temporary:
@@ -290,10 +330,13 @@ def main():
                 '--os-environment', 'recoveryos',
                 '--root-match-volume-uuid', str(args.root_volume_uuid)], check=True)
             configure_native_text_state(files / 'kernel.macho.adt', development_root=True,
-                                        root_hash=root_hash, boot_volume_uuid=args.root_volume_uuid)
+                                        root_hash=root_hash, boot_volume_uuid=args.root_volume_uuid,
+                                        native_gop_display=bool(ui_qualification))
             transport_title = 'UFS+ISC' if args.isc_overlay else 'UFS'
             if log_qualification:
                 transport_title += '+LOG'
+            if ui_qualification:
+                transport_title += '+UI'
             (stage / 'unixnu.toml').write_text('version = 1\n[boot]\ntimeout = -1\nfallback_timeout = 30\ndefault = "native26ufs"\n'
                 '[kits]\nautoload = false\n[[entry]]\nid = "native26ufs"\n'
                 f'title = "SHENG macOS 26 - {transport_title} {identity["uuid"][:8]}"\ntype = "xnu"\n'
@@ -342,6 +385,8 @@ def main():
                 isc_overlay=args.isc_overlay, isc_disk_writes=False,
                 isc_overlay_persistent=False, isc_overlay_limit_bytes=(64 << 20) if args.isc_overlay else 0,
                 macoslog=log_qualification,
+                recovery_ui=ui_qualification, native_gop_display=bool(ui_qualification),
+                native_recovery_input=False, physical_input_qualified=False,
                 dyld_observation=str(args.dyld_observation.resolve()) if args.dyld_observation else None,
                 root_variant='recoveryos', recovery_transport_is_not_authentication=True,
                 deployment_scope='fastboot boot only; no boot/recovery/UEFI partition flashing')

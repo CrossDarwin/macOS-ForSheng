@@ -127,6 +127,42 @@ class UfsPackage(unittest.TestCase):
 
 
 class DevelopmentDyldPackage(unittest.TestCase):
+    def test_wrapped_mount_lines_require_same_snapshot_stream_accounting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            identity = dict(uuid='candidate', kernel_sha256='candidate-hash')
+            names = json.loads((ROOT / 'config/macos26-recovery-root.json').read_text())['isc']['volumes']
+            raw = ''.join('mount-complete volume ' + name + '\n' for name in names).encode()
+            observed = dict(observed_globals=dict(_native_ufs_isc_overlay_enabled='0x1',
+                _native_ufs_isc_failures='0x0', _native_ufs_isc_resident_bytes='0x1d000',
+                _native_ufs_blocks_published='0x2', _native_ufs_isc_writes='0xe', _native_ufs_isc_syncs='0x4'))
+            (folder / 'console.txt').write_text('Later ring tail without early mounts\n')
+            (folder / 'console.json').write_text(json.dumps(dict(uuid=identity['uuid'])))
+            (folder / 'stream-console.bin').write_bytes(raw)
+            sample = dict(start=0, end=len(raw), missing_bytes=0, guest_dropped_bytes=0,
+                          chunks=[dict(start=0, bytes=len(raw))])
+            (folder / 'stream-console.jsonl').write_text(json.dumps(sample) + '\n')
+            snapshot = dict(kernel_sha256=identity['kernel_sha256'], retained_log_stream=dict(
+                ready=True, read_only=True, samples=1, total_bytes=len(raw), missing_bytes=0, guest_dropped_bytes=0))
+            saved = folder / 'gdb-stop.json'
+            saved.write_text(json.dumps(snapshot))
+            with patch('package_macos26_ufs.qualify_development_dyld', return_value=observed):
+                self.assertEqual(qualify_isc_overlay(folder, folder, identity, 'volume'), observed)
+                (folder / 'stream-console.bin').write_bytes(raw[:-1])
+                with self.assertRaisesRegex(ValueError, 'actual retained ISC stream'):
+                    qualify_isc_overlay(folder, folder, identity, 'volume')
+                (folder / 'stream-console.bin').write_bytes(raw)
+                sample['chunks'][0]['start'] = 1
+                (folder / 'stream-console.jsonl').write_text(json.dumps(sample) + '\n')
+                with self.assertRaisesRegex(ValueError, 'chunk extent'):
+                    qualify_isc_overlay(folder, folder, identity, 'volume')
+                sample['chunks'][0]['start'] = 0
+                (folder / 'stream-console.jsonl').write_text(json.dumps(sample) + '\n')
+                snapshot['kernel_sha256'] = 'stale'
+                saved.write_text(json.dumps(snapshot))
+                with self.assertRaisesRegex(ValueError, 'actual retained ISC stream'):
+                    qualify_isc_overlay(folder, folder, identity, 'volume')
+
     def test_isc_requires_all_role_mounts_and_bounded_failure_free_overlay(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
