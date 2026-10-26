@@ -2228,7 +2228,13 @@ MobileActivationMacOS getActivationState:withError:等待同步XPC回复。
 沿用原程序现存unsupported日志、清理和返回路径；不返回activated、不生成凭据或修改激活记录。
 显式activation-lock启动模式仍在原始检查中优先处理；未修改其分支。
 原始整页摘要、两条原指令、结果摘要与实际C执行器的边界、回滚、幂等验证已通过ASan/UBSan。
-磁盘原文件读回未变。策略总计11页14处修改，内核运行结果尚待配套构建与QEMU验证。
+磁盘原文件读回未变。策略总计11页14处修改，配套构建40288806977已成功，QEMU运行结果待验。
+
+机型字符串不能解除此处等待：原版MAEActivationIsSupportedMacOS没有读取机型，固定返回1。
+更换为MacBook Neo等型号不改变这段判断，也不提供真实设备的激活证书或LocalPolicy。
+只在已有接口确实检查型号或能力时提供对应兼容属性，不把改型号当作激活实现。
+独立旧内核对照中还观察到mobileactivation进程正在libsandbox编译规则；
+尚不能把同步XPC未回复归因于缺少Apple硬件，需与新版本的原始unsupported分支结果分开记录。
 
 sheng下一轮仅安排可恢复的临时启动，不重新分区或安装完整系统。
 开始条件为：简体中文选择可用、继续后的阻断可读、画面稳定、配套内核的实机显示与macoslog封装检查通过。
