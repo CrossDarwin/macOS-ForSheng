@@ -8,7 +8,7 @@
 | 25F71 IPSW 与公开源码 | 完整 ARM IPSW 已下载且 SHA-256 通过；三套内核版本均匹配 XNU 12377.121.6，九项公开源码已固定并核对 |
 | 25F71 KDK | Actions 39925158581 通过 Apple 包签名及 M1/T8103、Neo/T8140 内核与配对 DWARF UUID 检查 |
 | 25F71 恢复卷 | AEA 解密完成；SystemVersion=26.5/25F71，launchd 与 dyld 均为 ARM64e；已在QEMU挂载恢复根卷并执行launchd |
-| 原生 25F71 ARM64E QEMU | 原版launchd及恢复服务已运行；显式软件合成开发实验已完成10帧GOP复制；省略钥匙串初始化并关闭旧日志镜像的对照已运行到原版RecoveryOS Agent设备所有者查询，截图出现等待光标；尚无LanguageChooser窗口 |
+| 原生 25F71 ARM64E QEMU | 原版语言窗口已显示；真实VirtIO HID指针已选中简体中文，原版控制器读回zh-Hans；继续后已启动Recovery Springboard，窗口创建等待MobileActivation同步回复；列表仍有偶发空白，图形Recovery尚未验收 |
 | 原生 25F71 ARM64E 实机 | 原版launchd已运行，ISC三种角色卷、临时Data和模板复制已通过，后续恢复服务持续启动；WindowServer反复exit(1)，尚无图形Recovery证据 |
 | 完整 26A428 IPSW | 旧目标参考；下载及固定 SHA-256 校验完成 |
 | J700 kernelcache / ADT / SPTM / TXM | 四项哈希与上游客体配置一致 |
@@ -2204,3 +2204,32 @@ QEMU语言窗口依赖的策略仍由调试器应用，旧ESP不能直接当作s
 构建40281611440在HID公开头的MacTypes冲突和缺失私有键定义处失败，
 已限定输入编译单元的内核头文件搜索范围，并固定对应Apple源码头。
 配套构建40282286125已成功，仍需核对重定位后的334槽HID接口并运行输入验收。
+
+
+### 真实中文选择与恢复主程序启动
+
+构建40282286125的独立输入组件已按原版IOHIDFamily核对334个虚函数槽、12个覆盖及PAC元数据。
+运行中实际发现键盘和绝对指针两个VirtIO设备，事件经过原版IOHIDDevice、IOHIDEventDriver和WindowServer。
+QMP发送真实位置、按下和释放后，原版窗口显示简体中文高亮，控制器只读字段为zh-Hans；
+继续后原版Language Chooser状态由语言选择状态6进入8。
+没有通过调试器写用户态内存、设置语言字段或移动用户态PC来制造结果。
+
+原版状态8的跳转表目标为0x100002fa4，经过原始启动选择后调用_launchSpringboard。
+实际进程表已有pid192 Recovery Springb，主线程在窗口初始化期间经
+MobileActivationMacOS getActivationState:withError:等待同步XPC回复。
+语言选择器的主线程已回到事件循环，故不能把旧窗口继续显示解释为按钮没有收到点击。
+原始25F71框架MAEActivationIsSupportedMacOS实际只有mov w0,#1与ret，
+不会识别当前非Apple开发平台。尚未确认激活服务自身未回复的底层原因。
+本轮仍有语言列表局部或整体空白，不能作为稳定图形恢复界面验收。
+本地QMP截图、输入请求和只读状态留在private/，未上传。
+
+新增第10号默认关闭的开发页面策略，限定Recovery Springboard原版0x4000文件页，
+将两个MAEActivationIsSupportedMacOS调用点改为不支持，分别用于首次建窗和退出工具后复查。
+沿用原程序现存unsupported日志、清理和返回路径；不返回activated、不生成凭据或修改激活记录。
+显式activation-lock启动模式仍在原始检查中优先处理；未修改其分支。
+原始整页摘要、两条原指令、结果摘要与实际C执行器的边界、回滚、幂等验证已通过ASan/UBSan。
+磁盘原文件读回未变。策略总计11页14处修改，内核运行结果尚待配套构建与QEMU验证。
+
+sheng下一轮仅安排可恢复的临时启动，不重新分区或安装完整系统。
+开始条件为：简体中文选择可用、继续后的阻断可读、画面稳定、配套内核的实机显示与macoslog封装检查通过。
+当前只有QEMU输入；不把VirtIO键鼠称为sheng触摸。已有Android a槽、Recovery和64 GiB根卷继续复用。

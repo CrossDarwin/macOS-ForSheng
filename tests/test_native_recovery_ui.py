@@ -53,8 +53,8 @@ class RecoveryUiPolicy(unittest.TestCase):
 
     def test_pinned_manifest_is_bounded_and_default_off(self):
         document = json.loads((ROOT / 'config/macos26-recovery-ui-pages.json').read_text())
-        self.assertEqual(len(validate(document)), 10)
-        self.assertEqual(sum(len(p['edits']) for p in document['pages']), 12)
+        self.assertEqual(len(validate(document)), 11)
+        self.assertEqual(sum(len(p['edits']) for p in document['pages']), 14)
 
     def test_actual_c_engine_refuses_partial_writes_and_is_idempotent(self):
         compiler = shutil.which('cc')

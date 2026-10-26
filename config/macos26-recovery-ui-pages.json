@@ -161,6 +161,26 @@
       ],
       "before_sha256": "203804db0b02df6d610cc4ed9bc96937b66c820338d215f48ac4660cbab0afab",
       "after_sha256": "f6c5345d5f6b98e0864826eba701c84df6d40871fd14abdd37e324ffbb6275da"
+    },
+    {
+      "file": "Recovery Springboard",
+      "file_offset": 16384,
+      "edits": [
+        {
+          "offset": 604,
+          "before": "701e0094",
+          "after": "00008052",
+          "policy": "springboard-development-activation-unsupported-after-app-quit"
+        },
+        {
+          "offset": 6740,
+          "before": "72180094",
+          "after": "00008052",
+          "policy": "springboard-development-activation-unsupported-at-window-load"
+        }
+      ],
+      "before_sha256": "bb879f48bd25cd279932f77cc818d359346151a86481f5876516b6f5c572231d",
+      "after_sha256": "b2f629e414866a61b1a4aad2fe88221f99c74d4f8899ec96548b7dbd1efde413"
     }
   ]
 }
