@@ -82,6 +82,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0057-native-vector-output-log.patch',
     ROOT / 'platform/sheng/macos26/patches/0058-native-progress-clock-ready.patch',
     ROOT / 'platform/sheng/macos26/patches/0059-native-progress-scheduler-header.patch',
+    ROOT / 'platform/sheng/macos26/patches/0060-native-progress-thread-noreturn.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

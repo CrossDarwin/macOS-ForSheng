@@ -1,0 +1,11 @@
+--- a/pexpert/arm/pe_kprintf.c
++++ b/pexpert/arm/pe_kprintf.c
+@@ -30,7 +30,7 @@
+ 	absolutetime_to_nanoseconds(uptime, &nanoseconds);
+ 	return nanoseconds / 1000000000ULL;
+ }
+-static void sheng_boot_progress_thread(__unused void *argument, __unused wait_result_t result)
++static __attribute__((noreturn)) void sheng_boot_progress_thread(__unused void *argument, __unused wait_result_t result)
+ {
+ 	for (;;) {
+ 		sheng_boot_progress_tick();

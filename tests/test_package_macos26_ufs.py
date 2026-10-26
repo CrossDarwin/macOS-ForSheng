@@ -141,7 +141,7 @@ class DevelopmentDyldPackage(unittest.TestCase):
                 patches={'platform/sheng/macos26/patches/' + name: sha('platform/sheng/macos26/patches/' + name)
                     for name in ('0055-native-process-output-log.patch', '0056-native-boot-progress.patch',
                                  '0057-native-vector-output-log.patch', '0058-native-progress-clock-ready.patch',
-                                 '0059-native-progress-scheduler-header.patch')})
+                                 '0059-native-progress-scheduler-header.patch', '0060-native-progress-thread-noreturn.patch')})
             path = folder / 'build.json'
             path.write_text(json.dumps(record))
             self.assertFalse(qualify_boot_progress(folder)['physical_qualified'])

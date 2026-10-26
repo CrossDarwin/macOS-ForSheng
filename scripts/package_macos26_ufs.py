@@ -243,7 +243,7 @@ def qualify_boot_progress(build):
             raise ValueError('compiled boot progress or output source differs')
     for name in ('0055-native-process-output-log.patch', '0056-native-boot-progress.patch',
                  '0057-native-vector-output-log.patch', '0058-native-progress-clock-ready.patch',
-                 '0059-native-progress-scheduler-header.patch'):
+                 '0059-native-progress-scheduler-header.patch', '0060-native-progress-thread-noreturn.patch'):
         path = ROOT / 'platform/sheng/macos26/patches' / name
         if compiled.get('patches', {}).get(str(path.relative_to(ROOT))) != hashlib.sha256(path.read_bytes()).hexdigest():
             raise ValueError('requires compiled service and vector-write hooks')
