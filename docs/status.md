@@ -43,7 +43,7 @@ D8D9EDA4 的二维码记录 `SHENG WS EXCEPTION`：PID 80，异常类型 `1`，�
 配套 XNU 将 `0x101` 定义为 `EXC_ARM_DA_ALIGN`；该 ESR 表示来自 EL0 的写入对齐错误。
 这些字段取自保存的用户态状态，不使用二维码通用字段中的 panic 钩子寄存器替代。
 
-对配套共享缓存按 4 KiB 步长检索允许的偏移范围，唯一匹配的向量存储候选对应偏移 `0x0bedc000`。
+对配套共享缓存按 4 KiB 步长检索允许的偏移范围，与填充调用路径一致的偏移候选为 `0x0bedc000`。
 此时 PC 位于 `__platform_memset_pattern4` 使用的公共代码块，指令为 `stp q0, q1, [x0]`；
 LR 对应 CoreGraphics 的 `_CGBlt_fillBytes` 调用返回点。
 这是结合离线指令和调用目标得到的推断，尚未从实机读取缓存偏移或故障指令。
@@ -70,6 +70,17 @@ SHENG 补丁 `0063-native-managed-ram-writecombine.patch` 额外接受 `isphysme
 
 主机检查执行实际补丁后的分支，复现原类型选择，并覆盖窗口边界及 SHENG 关闭时的行为。
 该分类错误已从源码和启动包确认；当前 WindowServer 的故障地址是否来自此类映射仍待实测。
+
+## 下一次实测候选
+
+构建 [40340632440](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/40340632440) 已完成内核和配套驱动编译。
+候选 UUID 为 `75075C49-498A-3EE2-A304-F0FBBD6BE7A5`，菜单入口为 `UFS+ISC+LOG+UI+RAM 75075C49`。
+临时启动包包含高地址 RAM 写合并修正及对齐异常取证，保留现有固件、设备树、根卷和分区布局。
+
+已核对最终链接内核包含管理范围判断、`AT S1E0W` 查询及原有物理地址宽度修正。
+16 KiB 页表下的独立查询执行检查覆盖 Normal、Device、只读和未映射地址，并确认 PAR 与 DAIF 恢复。
+二维码源码沿用 D8D9EDA4 的实机读取结果，没有重复完整 QEMU 图形启动测试。
+该候选尚未实机执行，不能将编译和封装成功作为语言选择器已经显示的证据。
 
 ### 前次 WindowServer 崩溃通知
 
