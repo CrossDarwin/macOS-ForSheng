@@ -80,9 +80,10 @@ SHENG 补丁 `0063-native-managed-ram-writecombine.patch` 额外接受 `isphysme
 已核对最终链接内核包含管理范围判断、`AT S1E0W` 查询及原有物理地址宽度修正。
 16 KiB 页表下的独立查询执行检查覆盖 Normal、Device、只读和未映射地址，并确认 PAR 与 DAIF 恢复。
 二维码源码沿用 D8D9EDA4 的实机读取结果，没有重复完整 QEMU 图形启动测试。
-该候选尚未实机执行，不能将编译和封装成功作为语言选择器已经显示的证据。
+临时启动命令已返回 `Booting OKAY`，a 槽可启动状态正常，尚待屏幕或匹配 UUID 日志确认实际内核运行。
+启动命令成功不能作为语言选择器已经显示的证据。
 
-### 前次 WindowServer 崩溃通知
+## 前次 WindowServer 崩溃通知
 
 上一候选 `2DDC876A-3B4C-3478-8B21-556B7E879EB0` 来自构建 40326900585，已临时启动并由匹配 UUID 的日志确认。
 照片显示 `Display on` 停留 503 秒，WindowServer 的启动与退出计数分别为 3、2。
