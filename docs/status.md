@@ -2078,3 +2078,17 @@ lsd正在处理应用注册，RecoveryOS Agent仍等待注册结果。
 不抢占GDB连接、不停止或重启客体。运行中读取不是原子快照，
 尤其运行线程的旧EL0寄存器和随后读取的栈可能不一致；
 因此只用于跟踪进度，不能代替异常停止时的完整现场。
+
+### 预登录查询继续等待Preboot挂载
+
+保留原始所有者查询的对照已进入AuthorizationCopyPreloginUserDatabase。
+authd的实际帧链对应PreloginUserDb::mountPrebootVolume，等待DADiskMount回调。
+DiskArbitration的两个线程则停在FSClient的installedExtensionsForUser:replyHandler:之后，
+同步等待扩展列表；原版可执行头及完整函数字节与现场映射一致。
+因此平台UUID修正已解决一个前置等待，但尚未使原始所有者查询完成。
+
+新的QEMU对照在FSKit请求建立之前，让DiskArbitration选择已有的基础设施不可用分支。
+该分支保留原版dispatch_group_leave、资源清理及后续原生文件系统探测，
+不强行唤醒已经发出的请求、不伪造挂载或认证成功，也不省略原始所有者查询。
+实际控制已命中，后续快照中的DiskArbitration线程已离开扩展列表等待，进入卷状态处理。
+authd查询完成、Aqua初始化返回及语言窗口仍待验证。
