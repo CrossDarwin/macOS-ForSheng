@@ -1,6 +1,7 @@
 --- a/pexpert/arm/pe_kprintf.c
 +++ b/pexpert/arm/pe_kprintf.c
-@@ -1,5 +1,8 @@
+@@ -21,6 +21,9 @@
+ #include <kern/thread.h>
  uint64_t sheng_boot_progress_seconds(void)
  {
 +	mach_timebase_info_data_t info;
