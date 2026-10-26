@@ -2129,3 +2129,14 @@ Language Chooser的两个控制器查询调用点均完成校验和读回；
 后续现场位于原版CFRunLoopRunInMode超时循环，已离开CBPairingAgent同步请求，
 并从setupStateMachine推进到logStateMachineSkipValuesWithAutoAdvanceState。
 这证明无控制器路径在执行，尚不证明语言窗口已经创建或可见。
+
+同一客体随后进入Core Animation绘制与窗口事务提交，WindowServer先呈现恢复背景，
+再实际显示原版Languages标题及列表边框。窗口明显被裁切，语言条目在可见区域之外，
+因此仍未完成语言选择器验收。程序随后回到原版AppKit事件循环，未捕获新的WindowServer异常。
+
+运行时驱动尺寸仍为800×600。当前blit代码只复制源与屏幕尺寸的较小部分，
+但同时向框架公布缩放能力；若根IOSurface大于scanout，会裁掉其右侧和下部。
+画面与该问题一致，当前根surface实际尺寸仍需新诊断确认，不能仅凭截图认定为2倍缩放。
+新驱动对同宽高比、1/4至4倍范围内的根surface做实际像素采样，并在尺寸改变时记录输入尺寸；
+BGRA保持字节顺序，RGhA先选源像素再转换，不修改格式标签。
+相同尺寸的BGRA保留整行复制路径。新实现尚待配套构建及QEMU实测。

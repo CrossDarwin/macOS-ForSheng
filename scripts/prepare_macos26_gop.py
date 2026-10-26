@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import urllib.request
 
@@ -46,10 +47,13 @@ def prepare(root: Path, destination: Path) -> dict:
                    cwd=destination, check=True, capture_output=True, text=True)
     source = destination / 'NativeGOPDisplay.cpp'
     (destination / 'DroidVMDisplay.cpp').replace(source)
+    scanout = root / 'platform/sheng/macos26/display/gop_scanout.h'
+    shutil.copyfile(scanout, destination / scanout.name)
     evidence = dict(reference=f'https://github.com/{repository}/tree/{revision}',
                     input_sha256=hashes, patch_sha256=digest(patch.read_bytes()),
                     source_sha256=digest(source.read_bytes()),
                     header_sha256=digest((destination / 'IOMobileFramebufferABI.h').read_bytes()),
+                    scanout_sha256=digest(scanout.read_bytes()),
                     abi=manifest['abi'],
                     build='25F71', default_off=True, boot_argument='native-gop-display=1',
                     required_cpus=1, gpu_acceleration=False, publishes_vm_identity=False,

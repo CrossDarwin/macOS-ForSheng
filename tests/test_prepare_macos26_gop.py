@@ -18,6 +18,7 @@ class PinnedDisplayInputs(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / 'config').mkdir()
         (self.root / 'platform/sheng/macos26/display').mkdir(parents=True)
+        (self.root / 'platform/sheng/macos26/display/gop_scanout.h').write_text('// scanout\n')
         self.output = self.root / 'output'
         inputs = self.output / 'inputs'
         inputs.mkdir(parents=True)
@@ -40,6 +41,8 @@ class PinnedDisplayInputs(unittest.TestCase):
             second = prepare(self.root, self.output)
         self.assertEqual(first, second)
         self.assertEqual((self.output / 'NativeGOPDisplay.cpp').read_text(), '// adapted\n')
+        self.assertEqual((self.output / 'gop_scanout.h').read_text(), '// scanout\n')
+        self.assertEqual(first['scanout_sha256'], hashlib.sha256(b'// scanout\n').hexdigest())
 
     def test_changed_source_or_header_is_rejected(self):
         for name in self.manifest['files']:
