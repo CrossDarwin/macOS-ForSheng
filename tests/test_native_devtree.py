@@ -10,6 +10,7 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from native_devtree import configure_native_text_state, seed_vm_nvram_uuid
+from prepare_macos26_qemu_ui import inspect_identity, prepare
 
 
 def node(name, properties=(), children=()):
@@ -130,6 +131,36 @@ class NativeTree(unittest.TestCase):
             with self.assertRaises(ValueError):
                 configure_native_text_state(self.path, native_gop_display=True)
             self.assertEqual(self.path.read_bytes(), before)
+
+    def test_ui_esp_requires_matching_dt_and_nvram_identity(self):
+        self.assertIsNone(inspect_identity(self.path))
+        configure_native_text_state(self.path, development_root=True, platform_uuid=self.vm)
+        self.assertEqual(inspect_identity(self.path), self.vm)
+        self.path.write_bytes(node('device-tree', children=(
+            node('chosen', (('nvram-proxy-data', empty_bank()),)),
+            node('options', (('platform-uuid', self.vm.bytes),)))))
+        with self.assertRaisesRegex(ValueError, 'differ|incomplete'):
+            inspect_identity(self.path)
+
+    def test_prepare_ui_copy_preserves_source_and_refuses_identity_replacement(self):
+        source = Path(self.temp.name) / 'source'
+        relative = Path('EFI/UniXNU/Payloads/kernel.macho.adt')
+        (source / relative).parent.mkdir(parents=True)
+        original = self.path.read_bytes()
+        (source / relative).write_bytes(original)
+        output = Path(self.temp.name) / 'ui'
+        prepare(source, output, self.vm)
+        self.assertEqual((source / relative).read_bytes(), original)
+        self.assertEqual(inspect_identity(output / relative), self.vm)
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            prepare(source, output, self.vm)
+        with self.assertRaisesRegex(ValueError, 'existing VM identity'):
+            prepare(output, Path(self.temp.name) / 'other-ui', self.root)
+        self.assertFalse((Path(self.temp.name) / 'other-ui').exists())
+        alias = Path(self.temp.name) / 'source-alias'
+        alias.symlink_to(source, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'inside the source'):
+            prepare(source, alias / 'nested', self.vm)
 
     def test_actual_sheng_recovery_tree_preserves_hardware_identity(self):
         generator = Path(__file__).resolve().parents[1] / 'UniXNU-sheng/scripts/make-sheng-adt.py'

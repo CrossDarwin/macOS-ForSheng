@@ -2053,3 +2053,17 @@ recoveryosd在模式缺失时可能跳过语言选择器。当前QEMU开发控�
 仅在原调用失败时允许UI实验继续原版rc.install.done创建及完成回调，保留真实错误状态；
 打开失败后输出非空则拒绝继续，解锁失败则先执行原版CFRelease清理。
 该控制未把授权结果改为成功，亦未部署设备。
+
+### 修正复用QEMU设备树缺失平台UUID
+
+连续现场还捕获trustd在gethostuuid中等待。
+内核快照的gIOPlatformUUIDAndSerialDone为0；实际复用的只读ESP中，
+options/platform-uuid及NVRAM代理的platform-uuid记录都不存在。
+IOBSDGetPlatformUUID会等待该IOKit资源发布，因此需要修正启动输入，不能把服务等待一律归为用户空间故障。
+
+新增scripts/prepare_macos26_qemu_ui.py，从已有QEMU ESP生成新副本，显式设置自有VM的UUID，
+核对DT属性与CHRP代理身份一致，拒绝覆盖ESP、更换既有身份或把输出写进源ESP。
+它复用原有非Apple平台UUID支持，不添加Apple chip-id/unique-chip-id。
+设备树相关9项测试通过，包含源ESP保留、身份不完整及冲突拒绝。
+修正设备树后的第一轮被观察器的原版Security入口字节校验中止，未计作系统崩溃。
+下一组保留原始预登录数据库查询，用于验证正常资源发布后该调用能否返回，尚未取得语言窗口。
