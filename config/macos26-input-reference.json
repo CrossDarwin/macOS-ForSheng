@@ -22,5 +22,27 @@
     "device_slots": 334,
     "device_bytes": 208,
     "family_text_sha256": "f6520bb511d75d1fcf2537fde1d04abe46bf6b36216a934d09a3b80d86e76803"
+  },
+  "apple_headers": {
+    "repository": "apple-oss-distributions/IOHIDFamily",
+    "revision": "e31e90a24c27ad6cbe981650d12a1a4124065b03",
+    "files": {
+      "IOHIDPrivateKeys.h": {
+        "path": "IOHIDFamily/IOHIDPrivateKeys.h",
+        "canonical_sha256": "bce56d04f39b441a33315bf6d8a459d29e9dd81b8c80454a3e5b5ca732ba3823"
+      },
+      "IOHIDProperties.h": {
+        "path": "IOHIDFamily/IOHIDProperties.h",
+        "canonical_sha256": "ea1699a5172ad33ba00733cb3200fe240c7da5c3580361b866d751763de68522"
+      },
+      "IOHIDTimeSyncKeys.h": {
+        "path": "IOHIDFamily/IOHIDTimeSyncKeys.h",
+        "canonical_sha256": "c4bd48e2da8170b6a91cf1b968a6e1d901e0ba261b6fed435439f845fc6f881c"
+      },
+      "IOHIDEventServiceKeys_Private.h": {
+        "path": "IOHIDFamily/IOHIDEventServiceKeys_Private.h",
+        "canonical_sha256": "f9e49bef394b9b1adaa72faf35fe50eb2099d0f5183ebee33c732bc107bbbed2"
+      }
+    }
   }
 }

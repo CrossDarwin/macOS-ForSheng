@@ -124,6 +124,12 @@ def build(root, out, compile_record, source, run, record, env, *, transport='vir
         input_object = destination / 'recovery-input/NativeRecoveryInput.o'
         input_command = [str(input_object) if arg == str(obj) else
                          input_driver['source'] if arg == str(wrapper) else arg for arg in command]
+        # Kernel HID's parser conditionally includes MacTypes whenever the user SDK is visible.
+        user_headers = input_command.index(str(sdk / 'usr/include'))
+        if input_command[user_headers - 1] != '-I':
+            raise ValueError('unexpected user SDK include option')
+        del input_command[user_headers - 1:user_headers + 1]
+        input_command[1:1] = ['-I', str(destination / 'recovery-input/include')]
         input_command += ['-I', str(sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/Headers')]
         run(input_command, directory + '-input-compile', record,
             cwd=Path(compile_record['directory']), env=env)
