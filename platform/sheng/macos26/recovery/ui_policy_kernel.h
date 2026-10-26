@@ -22,7 +22,7 @@ sheng_recovery_ui_digest(const void *data, size_t size, uint8_t result[32])
 }
 
 static void
-sheng_recovery_ui_page(vm_page_t page, struct vnode *vnode, uint64_t offset)
+sheng_recovery_ui_page(vm_page_t page, struct vnode *vnode, uint64_t offset, bool original_validated)
 {
     if (!sheng_recovery_ui_enabled)
         return;
@@ -42,7 +42,7 @@ sheng_recovery_ui_page(vm_page_t page, struct vnode *vnode, uint64_t offset)
         vnode_putname(name);
         // Never turn a failed signature, writable page, or production boot into an accepted image.
         if (sheng_recovery_ui_enabled != 1 || PAGE_SIZE != SHENG_UI_PAGE_BYTES ||
-            csr_check(CSR_ALLOW_UNAUTHENTICATED_ROOT) != 0 ||
+            csr_check(CSR_ALLOW_UNAUTHENTICATED_ROOT) != 0 || !original_validated ||
             page->vmp_cs_validated != VMP_CS_ALL_TRUE || page->vmp_cs_tainted != VMP_CS_ALL_FALSE ||
             page->vmp_cs_nx != VMP_CS_ALL_FALSE || page->vmp_dirty || page->vmp_wpmapped)
             panic("SHENG: Recovery UI policy %zu requires an authenticated immutable development page", i);
@@ -52,8 +52,8 @@ sheng_recovery_ui_page(vm_page_t page, struct vnode *vnode, uint64_t offset)
         if (result < 0)
             panic("SHENG: Recovery UI policy %zu page digest or instructions differ", i);
         if (result) {
-            flush_dcache64((addr64_t)bytes, PAGE_SIZE, FALSE);
-            invalidate_icache64((addr64_t)bytes, PAGE_SIZE, FALSE);
+            // Use the same physical-page coherence primitive as UniXNU's native text fixups.
+            cache_sync_page(VM_PAGE_GET_PHYS_PAGE(page));
             OSAddAtomic(1, (volatile SInt32 *)&sheng_recovery_ui_pages_applied);
             OSBitOrAtomic((uint32_t)1 << i, &sheng_recovery_ui_page_mask);
             printf("SHENG: Recovery UI policy %zu applied - authenticated memory only\n", i);

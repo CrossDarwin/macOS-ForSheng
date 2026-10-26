@@ -11,13 +11,14 @@
  void
  vm_page_validate_cs_mapped_slow(
  	vm_page_t       page,
-@@ -8948,6 +8952,10 @@
+@@ -8948,6 +8952,11 @@
  	page->vmp_cs_validated |= validated;
  	page->vmp_cs_tainted |= tainted;
  	page->vmp_cs_nx |= nx;
 +
 +#if SHENG && (DEVELOPMENT || DEBUG)
-+	sheng_recovery_ui_page(page, vnode, mo_offset);
++	sheng_recovery_ui_page(page, vnode, mo_offset,
++	    validated == VMP_CS_ALL_TRUE && tainted == VMP_CS_ALL_FALSE && nx == VMP_CS_ALL_FALSE);
 +#endif
  
  #if CHECK_CS_VALIDATION_BITMAP
