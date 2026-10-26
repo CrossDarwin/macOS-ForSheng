@@ -74,6 +74,11 @@
 输出保存在 `out/native-panic-writer-validation/`。测试被跳过时，没有产生新的执行验证。
 构建和实机读取结果见[移植状态](status.md)。
 
+构建 40332670337 的 sheng 实机已完整读出首次 panic 二维码，内核 UUID 为
+`D8D9EDA4-EC94-3EBB-A60F-FD64D818760F`，`TRUNCATED=0`。
+本次摘要包含 WindowServer 保存的用户态对齐异常；磁盘周期快照未包含该次最后停机。
+此结果确认该次实机显示和扫码链路，不保证其他崩溃都能完成绘制。
+
 ## 来源
 
 崩溃路径的绘制方式参考 [Linux DRM panic](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/drm_panic.c)。

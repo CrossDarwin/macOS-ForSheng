@@ -134,6 +134,29 @@ Linux DRM panic 的参考机制及本项目编码范围见[panic 二维码](pani
 它会改变启用后的运行流程，只用于定位本次 WindowServer 崩溃；不把主动停机当作原生内核崩溃。
 二维码通用字段中的寄存器仍来自 panic 钩子，用户态寄存器来自 `REASON` 中的定向诊断文本。
 
+## WindowServer 对齐取证
+
+同一停机开关遇到 `EXC_BAD_ACCESS`、`EXC_ARM_DA_ALIGN` 时，输出紧凑的 `SHENG WS ALIGN` 记录。
+其他异常保留原来的 `SHENG WS EXCEPTION` 格式。新增分支尚待实机验证。
+
+| 字段 | 含义 |
+| --- | --- |
+| `p` | 当前 PID，十进制 |
+| `pc`、`lr`、`sp`、`esr`、`far` | 保存的用户态异常状态，十六进制 |
+| `sc` | 查询时的 `SCTLR_EL1`，十六进制；位 1 为对齐检查位 A |
+| `par` | 对 FAR 执行 `AT S1E0W` 后读取的原始 `PAR_EL1` |
+| `i` | 故障 PC 处的 32 位指令字，以及 `/` 后十进制 `copyin` 返回值；返回 0 才表示读取成功 |
+| `slide` | 持有共享区域引用期间读取的 `sr_slide`；没有共享区域时为 `ffffffff` |
+
+取证先使用 `copyin` 读取指令，失败时保留错误值，不直接解引用用户地址。
+地址转换查询与 PAR 读取期间屏蔽异步异常，随后恢复原有 PAR 和 DAIF。
+查询只检查当前翻译环境下 EL0 写权限及 Stage 1 转换结果，不读取目标像素，也不修改映射。
+它不能证明没有 EL2 Stage 2 限制；返回值的位 0 为 1 时表示转换失败，不解析为物理地址。
+查询成功时再按 [Arm 架构手册](https://documentation-service.arm.com/static/606f045785368c4c2b1c198c)解释地址和属性字段。
+
+该摘要连同源码位置控制在二维码现有的 256 字节原因上限内。
+指令读取和区域引用发生在主动 panic 之前，不能把该机制作为任意内核崩溃路径的通用安全读接口。
+
 ## 其他调试路径
 
 QEMU 观察器 `scripts/observe_macos26_kernel.py` 可通过 GDB 读取保留日志、寄存器和独立 panic 区。
