@@ -113,8 +113,9 @@ python3 scripts/build_macos26_xnu.py --arch arm64e --link-kernel \
 
 ## 实机布局与临时启动
 
-以下布局仅描述当前已配置的实验设备，不是其他设备的分区操作指南。
-该设备已划出 64 GiB `macosroot`，其余空间重建 Android userdata；原 userdata 已清除。
+以下布局描述此前已验证的实验配置，不是其他设备的分区操作指南。
+该配置曾划出 64 GiB `macosroot`，其余空间重建 Android userdata；当时的原 userdata 已清除。
+2026-10-27 已恢复原始 GPT 边界并移除实验分区。再次测试前需重新准备匹配布局，不能仅下载启动包后直接运行。
 恢复旧 GPT 无法恢复原数据。
 
 | 分区 | 用途 |
