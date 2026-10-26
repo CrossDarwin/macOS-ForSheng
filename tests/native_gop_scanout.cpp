@@ -3,9 +3,32 @@
 #include <cstdint>
 #include <vector>
 #include "../platform/sheng/macos26/display/gop_scanout.h"
+#include "../platform/sheng/macos26/display/gop_layers.h"
 
 int main()
 {
+    NativeGopSwapLayer layers[kNativeGopSwapLayerCount] = {
+        {128, 128, 0x42475241}, {1600, 1200, 0x42475241},
+        {800, 600, 0x52476841}, {16384, 16384, 0}
+    };
+    // The cursor occupies layer zero after a session transition.
+    assert(nativeGopScanoutLayer(layers, 3, 800, 600) == 1);
+    assert(nativeGopScanoutLayer(layers, 1, 800, 600) == -1);
+    assert(nativeGopScanoutLayer(layers, 4, 800, 600) == 2);
+    assert(nativeGopScanoutLayer(layers, 15, 800, 600) == 1);
+    assert(nativeGopScanoutLayer(layers, 0xf0, 800, 600) == -1);
+    assert(nativeGopScanoutLayer(layers, 15, 0, 600) == -1);
+    layers[1].width = UINT64_MAX;
+    assert(nativeGopScanoutLayer(layers, 15, 800, 600) == 2);
+    layers[1] = {800, 600, 0x42475241};
+    assert(nativeGopScanoutLayer(layers, 6, 800, 600) == 1);
+    layers[1] = {400, 300, 0x42475241};
+    assert(nativeGopScanoutLayer(layers, 2, 800, 600) == 1);
+    layers[1] = {100, 75, 0x42475241};
+    assert(nativeGopScanoutLayer(layers, 2, 800, 600) == -1);
+    layers[1] = {6096, 4064, 0x42475241};
+    assert(nativeGopScanoutLayer(layers, 3, 3048, 2032) == 1);
+
     alignas(8) uint32_t source[] = {0xff010203, 0xff112233, 0xff445566, 0xff778899, 0xffaabbcc, 0xffddeeff};
     uint32_t output[10];
     for (auto &pixel : output) pixel = 0xdeadbeef;

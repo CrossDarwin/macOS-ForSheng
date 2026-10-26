@@ -1,6 +1,6 @@
 --- a/DroidVMDisplay.cpp
 +++ b/DroidVMDisplay.cpp
-@@ -1,21 +1,14 @@
+@@ -1,21 +1,15 @@
  // SPDX-License-Identifier: BSD-2-Clause-Patent
 -// DroidVMDisplay: the macOS display of a DroidVM guest, an IOMobileFramebufferLegacy (IOMobileGraphicsFamily) over the firmware
 -// framebuffer, as AppleParavirtDisplay (AppleParavirtGPUIOGPUFamily, the vma2 display) is over the paravirtual GPU. The family runs
@@ -17,7 +17,7 @@
 -//
 -// Offsets into IOMobileFramebufferLegacy and its swap requests are those AppleParavirtDisplay of the same kernelcache (kc265)
 -// uses; the addresses noted are its code (research/re/apd/).
-+// Adapted from Droid-VM/macOS-DroidVM@1dfb172 for native sheng GOP scanout.
++// Adapted from Droid-VM/macOS-DroidVM@031c35a for native sheng GOP scanout.
 +// Native macOS 26.5 GOP scanout using the original IOMobileGraphicsFamily swap queue.
 +// Scanout is CPU-copied; no accelerated GPU service or VM identity is published.
 +// Private object offsets follow the paired 25F71 legacy framebuffer ABI.
@@ -27,10 +27,21 @@
 +extern "C" volatile uint64_t sheng_panel_ready, sheng_status_pixels;
  #include <IOKit/IOLib.h>
 +#include "gop_scanout.h"
++#include "gop_layers.h"
  #include <IOKit/IOPlatformExpert.h>
  #include <IOKit/IOTimerEventSource.h>
  #include <IOKit/IOUserClient.h>
-@@ -85,44 +78,11 @@
+@@ -47,8 +41,7 @@
+ static constexpr size_t kSwapDropReasons = 844;    // programmed when nothing but bit 3 is set, else dropped (swap_begin_gated 0x...dbac0)
+ static constexpr size_t kSwapInfoA = 752;         // swap info words 3 and 4 (notify_swap_done_gated 0x...d93f4)
+ static constexpr size_t kSwapInfoB = 816;
+-static constexpr size_t kSwapMainSurface = 2752;   // layer i's surface at + 8 * i
+-static constexpr unsigned kSwapLayerCount = 4;
++static constexpr size_t kSwapMainSurface = 2752;   // Four surface pointers follow at pointer-size strides.
+ static constexpr size_t kSwapNext = 3192;          // TAILQ entry of the queue
+ static constexpr size_t kSwapPrev = 3200;
+ // IOMFBNotifyRequest
+@@ -86,44 +79,11 @@
      __asm("__ZN21IOAVVideoColorElement16withCapabilitiesE16IOAVStandardTypej22IOAVVideoPixelEncoding26IOAVVideoColorDynamicRange"
            "18IOAVVideoColorEOTF20IOAVVideoColorimetrybPK12OSDictionaryS7_S7_PK5OSSet");
  
@@ -80,7 +91,7 @@
  public:
      bool start(IOService *) override;
      void stop(IOService *) override;
-@@ -155,7 +115,6 @@
+@@ -156,7 +116,6 @@
  
  private:
      static constexpr uint32_t kRefreshHz = 60;
@@ -88,7 +99,7 @@
      static constexpr uint32_t kColorID = 100, kTimingID = 1000;  // AppleParavirtDisplay's IDs of its first color and timing element
  
      bool clean_queue_gated();
-@@ -171,36 +130,47 @@
+@@ -172,37 +131,48 @@
      static_assert(sizeof(SwapInfo) == 48, "IOMobileFramebufferLegacy::SwapInfoBlob");
      static constexpr unsigned kSwapInfoRing = 6;
  
@@ -103,6 +114,7 @@
 -    uint32_t fSurfaceFormat;
 -    bool fDisplayOn;
 -    uint64_t fFrames;
+-    uint64_t fLayerShape;             // bring-up: the layers of the last swap, logged when they change
 -    uint64_t fLastLit, fLastCenter;   // bring-up: lit pixels and centre pixel of the last frame shown
 -    uint64_t fTicks, fDropped, fReported;   // swap_begin_gated runs, swaps dropped, fSubmitted + fFrames + fDropped + fStalled at the last report
 -    uint64_t fWaitFailures;                 // diagnostic: swap_wait calls that failed (WindowServer's display readiness)
@@ -127,6 +139,7 @@
 +    uint64_t fSubmitted = 0, fStalled = 0;          // swaps verified, VBL ticks with a queued swap clean_queue_gated did not hand over
 +    SwapInfo fSwapInfo[kSwapInfoRing]{};   // held while kSwapInfoHeld is set, sent in order afterwards
 +    unsigned fSwapInfoRead = 0, fSwapInfoWrite = 0;
++    uint64_t fLayerShape = 0;
  };
  
 -OSDefineMetaClassAndStructors(DroidVMDisplay, IOMobileFramebufferLegacy)
@@ -158,7 +171,7 @@
          return false;
      }
      IOMemoryDescriptor *memory = IOMemoryDescriptor::withPhysicalAddress(fVideo.v_baseAddr & ~3UL, fVideo.v_rowBytes * fVideo.v_height,
-@@ -210,30 +180,22 @@
+@@ -212,30 +182,22 @@
          memory->release();
      }
      if (!fScanoutMap) {
@@ -195,7 +208,7 @@
      IOMobileFramebufferLegacy::stop(provider);
      if (fHalfToByte)
          IOFree(fHalfToByte, 65536);
-@@ -246,13 +208,13 @@
+@@ -248,13 +210,13 @@
  }
  
  // Called by IOMobileFramebufferLegacy::start before it creates the default surface and registers the service (it tests bit 0).
@@ -211,7 +224,7 @@
          OSSafeReleaseNULL(fVBL);
          return false;
      }
-@@ -265,11 +227,11 @@
+@@ -267,11 +229,11 @@
      // AppleParavirtDisplay does when the host reports its display. Unplugged (0), WindowServer kept this display disabled and composited
      // a virtual one as the main display ("get_hotplug_state - not active").
      hotPlug_notify(1);
@@ -225,7 +238,7 @@
  {
      if (fVBL) {
          fVBL->cancelTimeout();
-@@ -279,13 +241,13 @@
+@@ -281,13 +243,13 @@
      return kIOReturnSuccess;
  }
  
@@ -243,7 +256,7 @@
  {
      if (at<IOMFBSwapIORequest *>(this, kCurrentSwap) || !at<IOMFBSwapIORequest *>(this, kSwapQueueFirst))
          return false;
-@@ -298,7 +260,7 @@
+@@ -300,7 +262,7 @@
  }
  
  // AppleParavirtDisplay::swap_begin_gated: the family calls it when a swap is submitted, the VBL timer every 16 ms.
@@ -252,7 +265,7 @@
  {
      if (!fVBL)
          return kIOReturnNotReady;
-@@ -325,7 +287,7 @@
+@@ -327,7 +289,7 @@
          fStalled++;
      if (++fTicks % 625 == 0 && fSubmitted + fFrames + fDropped + fStalled != fReported) {   // about every 10 s while swaps arrive
          fReported = fSubmitted + fFrames + fDropped + fStalled;
@@ -261,7 +274,7 @@
                fSubmitted, fFrames, fDropped, fStalled, at<IOMFBSwapIORequest *>(this, kCurrentSwap), fLastLit, fLastCenter);
      }
      return fVBL->setTimeoutMS(16);
-@@ -333,11 +295,11 @@
+@@ -335,11 +297,11 @@
  
  // Diagnostic: CoreAnimation asks swap_wait, without blocking, whether its last swaps are done before it composes the next frame
  // (IOMFBDisplay::can_update_); after three swaps WindowServer found the display unready for good.
@@ -275,7 +288,7 @@
                swapID, options, timeout, result, fWaitFailures, at<uint32_t>(this, 6412), at<uint32_t>(this, kSystemPowerState),
                at<uint32_t>(this, kAPIPowerState), at<uint32_t>(this, kHardwarePowered), at<uint8_t>(this, kHardwareStarted),
                at<IOMFBSwapIORequest *>(this, kCurrentSwap), at<IOMFBSwapIORequest *>(this, kSwapQueueFirst));
-@@ -346,21 +308,21 @@
+@@ -348,52 +310,44 @@
  
  // AppleParavirtDisplay::do_power_state_change_gated: the display is on while both the system and WindowServer (setAPIPowerState)
  // want it on; each change goes to WindowServer as a power state notification, which CoreAnimation waits for before it swaps.
@@ -293,14 +306,66 @@
      return kIOReturnSuccess;
  }
  
- // AppleParavirtDisplay::program_hardware_gated (its slot 473): show the swap, then complete it. There is no cursor plane (no
- // "CursorPlane" property), so WindowServer draws the cursor into the main surface.
+-// AppleParavirtDisplay::program_hardware_gated (its slot 473): show the swap, then complete it. There is no cursor plane (no
+-// "CursorPlane" property), so WindowServer draws the cursor into the main surface.
 -void DroidVMDisplay::program_hardware_gated()
++// Copy the compatible scene before completing the swap. Cursor-only updates
++// leave scanout intact; no separate hardware cursor plane is advertised.
 +void NativeGOPDisplay::program_hardware_gated()
  {
      IOMFBSwapIORequest *swap = at<IOMFBSwapIORequest *>(this, kCurrentSwap);
-     IOSurface *surface = at<IOSurface *>(swap, kSwapMainSurface);
-@@ -384,49 +346,80 @@
+-    // Layer i's surface follows the main one (AppleParavirtDisplay: bit 1, the cursor, at main + 8). After the login transition
+-    // WindowServer swaps a 128x128 BGRA cursor where the main surface is: the screen is the largest surface of the swap, smaller
+-    // ones are not drawn over it (the screen keeps its last full frame).
+-    uint8_t layers = at<uint8_t>(swap, kSwapLayers);
+-    IOSurface *surface = nullptr;
+-    uint64_t area = 0, shape = layers;
+-    for (unsigned layer = 0; layer < kSwapLayerCount; layer++) {
+-        IOSurface *candidate = (layers >> layer & 1) ? at<IOSurface *>(swap, kSwapMainSurface + 8 * layer) : nullptr;
+-        if (!candidate)
++    uint8_t mask = at<uint8_t>(swap, kSwapLayers);
++    IOSurface *surfaces[kNativeGopSwapLayerCount]{};
++    NativeGopSwapLayer geometry[kNativeGopSwapLayerCount]{};
++    uint64_t shape = mask;
++    for (unsigned i = 0; i < kNativeGopSwapLayerCount; i++) {
++        if (!(mask & (1u << i)))
+             continue;
+-        uint64_t width = ioSurfaceWidth(candidate), height = ioSurfaceHeight(candidate);
+-        shape = shape * 31 + width * 65537 + height;
+-        if (width * height > area) {
+-            area = width * height;
+-            surface = candidate;
+-        }
+-    }
+-    if (shape != fLayerShape) {   // bring-up: each new combination of layers
++        surfaces[i] = at<IOSurface *>(swap, kSwapMainSurface + i * sizeof(IOSurface *));
++        if (!surfaces[i])
++            continue;
++        geometry[i] = {ioSurfaceWidth(surfaces[i]), ioSurfaceHeight(surfaces[i]),
++                       ioSurfacePixelFormat(surfaces[i])};
++        shape = shape * 31 + geometry[i].width * 65537 + geometry[i].height;
++    }
++    int selected = nativeGopScanoutLayer(geometry, mask, fVideo.v_width, fVideo.v_height);
++    if (shape != fLayerShape) {
+         fLayerShape = shape;
+-        IOLog("DroidVMDisplay: swap layers %#x:", layers);
+-        for (unsigned layer = 0; layer < kSwapLayerCount; layer++) {
+-            IOSurface *candidate = (layers >> layer & 1) ? at<IOSurface *>(swap, kSwapMainSurface + 8 * layer) : nullptr;
+-            if (candidate)
+-                IOLog(" %u: %llux%llu %#x", layer, ioSurfaceWidth(candidate), ioSurfaceHeight(candidate), ioSurfacePixelFormat(candidate));
+-        }
+-        IOLog("\n");
+-    }
+-    if (surface && area * 4 >= static_cast<uint64_t>(fVideo.v_width) * fVideo.v_height)   // a quarter of the screen at least
+-        copySurface(surface);
++        IOLog("NativeGOPDisplay: swap mask=%#x scanout layer=%d\n", mask, selected);
++    }
++    if (selected >= 0)
++        copySurface(surfaces[selected]);
+     swap_complete_gated();
+ }
+ 
+@@ -412,49 +366,80 @@
      return static_cast<uint8_t>((scaled + (1u << (shift - 1))) >> shift);
  }
  
@@ -402,7 +467,7 @@
                  lit += (pixels[x] & 0xffffff) != 0;
                  raw += (rgba[0] | rgba[1] | rgba[2] | rgba[3]) != 0;
                  if (y == copyHeight / 2 && x == copyWidth / 2)
-@@ -434,11 +427,13 @@
+@@ -462,11 +447,13 @@
              }
          }
      }
@@ -417,7 +482,7 @@
  }
  
  static bool appendNumber(OSDictionary *dictionary, const char *key, uint64_t value, unsigned bits = 32)
-@@ -474,16 +469,19 @@
+@@ -502,16 +489,19 @@
  
  // AppleParavirtDisplay::createDisplayAttributes, with the display of the boot framebuffer: one timing (the GOP mode) with one
  // 8-bit SDR color element. Chromaticities are sRGB's (16.16 fixed point, as the panel's EDID would give them).
@@ -439,7 +504,7 @@
      // CVT reduced blanking as IOAVFamily's sCVTTimingData has it (1280x800@60: 1440x823, 71 MHz). Sync rates are 16.16 fixed point
      // (IOAVVideoTimingGetSyncRateRounded); the table leaves the horizontal one 0.
      uint8_t timingData[80] = {};
-@@ -513,8 +511,8 @@
+@@ -541,8 +531,8 @@
          if (!colors->setObject(color) || !timingColors->setObject(color) || !timings->setObject(timing))
              break;
          ioavTimingSetColorElements(timing, timingColors);
@@ -450,7 +515,7 @@
                appendNumber(product, "WeekOfManufacture", 24) && appendNumber(product, "YearOfManufacture", 2021)))
              break;
          if (!(appendDictionary(chromaticity, "Red", point(41943, 21627)) && appendDictionary(chromaticity, "Green", point(19661, 39322)) &&
-@@ -526,8 +524,8 @@
+@@ -554,8 +544,8 @@
                attributes->setObject("Chromaticity", chromaticity) && attributes->setObject("DefaultColorSpaceIsSRGB", kOSBooleanFalse) &&
                attributes->setObject("DefaultWhitePoint", whitePoint) && attributes->setObject("SupportsStandby", kOSBooleanTrue) &&
                appendNumber(attributes, "ContinuousFrequencySupport", 3) &&
@@ -461,7 +526,7 @@
                appendNumber(attributes, "NativeFormatHorizontalPixels", width) && appendNumber(attributes, "NativeFormatVerticalPixels", height) &&
                appendNumber(attributes, "PreciseAspectRatio", (static_cast<uint64_t>(width) << 16) / height)))
              break;
-@@ -539,8 +537,8 @@
+@@ -567,8 +557,8 @@
              break;
          if (!(appendNumber(scalingLimits, "RGBLayer_MinScaleFraction", 4) && appendNumber(scalingLimits, "RGBLayer_MaxScale", 4)))
              break;
@@ -472,7 +537,7 @@
          setProperty("primary", 0ULL, 32);   // AppleParavirtDisplay's display index
          done = setProperty("DisplayAttributes", attributes) && setProperty("Transport", transport) &&
              setProperty("ColorElements", colors) && setProperty("TimingElements", timings) &&
-@@ -559,14 +557,14 @@
+@@ -587,14 +577,14 @@
      OSSafeReleaseNULL(color);
      OSSafeReleaseNULL(timing);
      if (!done || set_digital_out_mode(kColorID, kTimingID) != kIOReturnSuccess) {
@@ -489,7 +554,7 @@
  {
      if (colorID != kColorID || timingID != kTimingID)
          return kIOReturnBadArgument;
-@@ -578,55 +576,55 @@
+@@ -606,55 +596,55 @@
      return kIOReturnSuccess;
  }
  
@@ -566,7 +631,7 @@
  {
      IOMFBSwapIORequest *swap = at<IOMFBSwapIORequest *>(this, kCurrentSwap);
      if (at<uint32_t>(swap, kSwapDropReasons))
-@@ -644,7 +642,7 @@
+@@ -672,7 +662,7 @@
  }
  
  // AppleParavirtDisplay::do_swap_info_notify_gated: the request's async result is the mask, the swap ID and the words it asks for.
@@ -575,7 +640,7 @@
  {
      const SwapInfo *info = reinterpret_cast<const SwapInfo *>(blob);
      uint32_t mask = at<uint32_t>(request, kNotifyMask);
-@@ -670,5 +668,5 @@
+@@ -698,5 +688,5 @@
      return userClientSendAsyncResult(&at<io_user_reference_t>(request, kNotifyAsyncReference), kIOReturnSuccess, args, count,
                                       kIOUserNotifyOptionCanDrop);
  }

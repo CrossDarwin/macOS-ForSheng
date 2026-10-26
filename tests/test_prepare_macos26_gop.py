@@ -19,6 +19,7 @@ class PinnedDisplayInputs(unittest.TestCase):
         (self.root / 'config').mkdir()
         (self.root / 'platform/sheng/macos26/display').mkdir(parents=True)
         (self.root / 'platform/sheng/macos26/display/gop_scanout.h').write_text('// scanout\n')
+        (self.root / 'platform/sheng/macos26/display/gop_layers.h').write_text('// layers\n')
         self.output = self.root / 'output'
         inputs = self.output / 'inputs'
         inputs.mkdir(parents=True)
@@ -43,6 +44,8 @@ class PinnedDisplayInputs(unittest.TestCase):
         self.assertEqual((self.output / 'NativeGOPDisplay.cpp').read_text(), '// adapted\n')
         self.assertEqual((self.output / 'gop_scanout.h').read_text(), '// scanout\n')
         self.assertEqual(first['scanout_sha256'], hashlib.sha256(b'// scanout\n').hexdigest())
+        self.assertEqual((self.output / 'gop_layers.h').read_text(), '// layers\n')
+        self.assertEqual(first['layer_selection_sha256'], hashlib.sha256(b'// layers\n').hexdigest())
 
     def test_changed_source_or_header_is_rejected(self):
         for name in self.manifest['files']:

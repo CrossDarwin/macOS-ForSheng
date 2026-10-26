@@ -1,10 +1,10 @@
 {
-  "revision": "1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9",
+  "revision": "031c35a57c89946977e51a1d64e009062faaed19",
   "repository": "Droid-VM/macOS-DroidVM",
   "files": {
     "DroidVMDisplay.cpp": {
       "path": "overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp",
-      "canonical_sha256": "b88f0bd0b05187bbd6ecd68195c1587f5c64de77c9e0649f54fe2b041e14643e"
+      "canonical_sha256": "050ae69eec6f0340c4f3659285dfb16fce13058648a044f9149b89d40344bcac"
     },
     "IOMobileFramebufferABI.h": {
       "path": "overlay/kext/DroidVMDisplay/IOMobileFramebufferABI.h",
