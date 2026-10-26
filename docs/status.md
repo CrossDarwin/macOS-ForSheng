@@ -50,6 +50,11 @@ KDP 实机双向轮询传输、Apple 激活、系统安装和日常桌面使用�
 ARM64 独立执行测试已检查屏幕锁占用期间的 RAM 追加、快照、DAIF 恢复、首次 panic 和二维码像素解码。
 主机检查已覆盖恢复组件过滤及原有输出边界。修改尚未实机验证，不声明丢失计数已经改善。
 
+构建 [40350000836](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/40350000836) 已通过，
+临时启动入口为 `UFS+ISC+LOG+UI+REC 218FDCCE`，UUID 为 `218FDCCE-86F6-326F-9BC1-536380109D02`。
+该包保留高地址 RAM 修正，启用 `sheng-stderr-log=2 sheng-stderr-name=recovery-ui`，尚未实机运行。
+已核对编译后的日志源码身份并完成封装，未重复完整 QEMU 图形测试。
+
 ## 此前 WindowServer 异常取证
 
 | 项目 | 记录 |
