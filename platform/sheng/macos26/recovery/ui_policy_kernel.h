@@ -4,9 +4,12 @@
 #include <arm/caches_internal.h>
 #include <libkern/crypto/sha2.h>
 #include <sys/csr.h>
-#include <sys/vnode.h>
 #include <vm/sheng_recovery_ui.h>
 #include <vm/sheng_recovery_ui_pages.h>
+
+// Keep the VM translation unit independent of the BSD vnode header's type namespace.
+extern const char *vnode_getname(struct vnode *);
+extern void vnode_putname(const char *);
 
 TUNABLE(uint32_t, sheng_recovery_ui_enabled, "sheng-recovery-ui", 0);
 volatile uint32_t sheng_recovery_ui_pages_applied;
