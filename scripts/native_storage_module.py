@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Resolve a standalone ARM64E transport into the native prelink address space.
 
 Chained layouts follow the paired dyld/include/mach-o/fixup-chains.h.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Wrap paired read-only OS and optional ISC seeds inside dedicated macosroot."""
 import argparse
 import hashlib

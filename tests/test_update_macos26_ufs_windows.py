@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Keep root updates confined to ISC, with the new manifest committed last."""
 import copy
 import hashlib

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Boot one packaged native experiment from RAM, refusing an unexpected slot."""
 import argparse
 from datetime import datetime, timezone

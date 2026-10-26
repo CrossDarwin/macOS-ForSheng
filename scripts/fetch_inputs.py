@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Download a pinned Apple IPSW and verify its hash and board identity."""
 import argparse
 import hashlib

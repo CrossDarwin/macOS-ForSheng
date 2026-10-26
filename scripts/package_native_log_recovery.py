@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Package the qualified loader to recover prior RAM without starting a kernel."""
 import argparse
 import hashlib

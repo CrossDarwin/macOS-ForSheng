@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Extract the small J700 boot set, using UniXNU RangeFile and Snapintosh decoders."""
 import argparse
 import importlib.util

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Read bounded kernel thread frames; never changes guest state or authenticates PAC."""
 import struct
 

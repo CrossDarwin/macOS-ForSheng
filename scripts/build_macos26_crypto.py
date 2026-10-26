@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Build Apple's pinned module-26 C provider against the staged native XNU SDK."""
 import concurrent.futures
 import hashlib

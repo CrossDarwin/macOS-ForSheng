@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Save a native log reader's read-only USB export, then decode its kernel UUID."""
 import argparse
 import json

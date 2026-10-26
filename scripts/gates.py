@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Assess UEFI preflight evidence; this module never starts a guest or writes storage."""
 import argparse
 from dataclasses import dataclass

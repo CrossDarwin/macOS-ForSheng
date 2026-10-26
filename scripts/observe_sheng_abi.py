@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Replay the original-component ABI observations through real QEMU UEFI."""
 import argparse
 import json

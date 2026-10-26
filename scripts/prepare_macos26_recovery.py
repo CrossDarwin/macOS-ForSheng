@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Decrypt the pinned recovery volume and verify its ARM64e userspace pairing."""
 import argparse
 import hashlib

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "../platform/sheng/macos26/storage/macoslog_layout.h"
 #include <cassert>
 

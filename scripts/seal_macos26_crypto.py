@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Populate the normal source-provider POST integrity field after final link."""
 import hashlib
 import hmac

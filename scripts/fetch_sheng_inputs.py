@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Fetch the exact upstream iPadOS inputs for the sheng hardware baseline."""
 import argparse
 import hashlib

@@ -1,7 +1,24 @@
-# Third-party sources
+# Licensing and third-party sources
 
-The root MIT license covers original integration tools only. Upstream checkouts
-retain their own licenses and authorship; they are not vendored into this repository.
+Original integration tools, tests, configuration and documentation are licensed
+under GPL-3.0-or-later unless a file carries another explicit license. Copyright
+(c) 2026 macOS-ForSheng contributors. The complete GPLv3 text is in LICENSE;
+the "or later" grant applies to the project-owned work, not to third-party work.
+
+Native helpers under platform/, firmware probes under probes/, ci/preflight.dsc,
+and code applied to upstream projects retain their explicit MIT, BSD or upstream
+license. These files enter separately licensed kernel and firmware builds; the
+project GPL does not relicense XNU, UniXNU, firmware or Apple components. The
+retained MIT terms are in LICENSES/MIT.txt. Earlier MIT releases remain available
+under their original grant; this change does not revoke those permissions.
+
+Preserve existing copyright, license and source attribution notices when copying
+or adapting code. Identify modifications and retain the upstream provenance
+recorded below and in sources.lock.json, config/ and the patch headers. A link or
+a credit does not replace compliance with the source component's license.
+
+Upstream checkouts retain their own licenses and authorship; they are not
+vendored into this repository.
 
 - UniXNU and UniXNU-sheng: BSD-2-Clause-Patent. The ShengPreflight patch extends
   `UniXNU/UniXNU-sheng` at the commit recorded in `sources.lock.json` and retains

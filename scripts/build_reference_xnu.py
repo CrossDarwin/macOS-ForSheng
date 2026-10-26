@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Build isolated UniXNU references or the complete pinned upstream sheng kernel."""
 import argparse
 import hashlib

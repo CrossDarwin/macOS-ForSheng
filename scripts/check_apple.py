@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Refuse Apple component builds until exact inputs and ABI evidence exist."""
 import argparse
 import json

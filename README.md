@@ -35,3 +35,8 @@ python3 -m unittest discover -s tests -v
 上游源码、Apple 输入、设备备份、运行日志和旧研究记录均保持独立并被 Git 忽略。
 `xnu/` 保留为 iPadOS 17 参考树，不能替代 macOS 26 的配对内核。
 `config/guest.json` 和旧 J700 提取工具保留 macOS 27 / 26A428 的参考合同，不用于当前系统输入。
+
+项目原生工具、测试、配置和文档默认采用 [GPL-3.0-or-later](LICENSE)，允许商用。
+分发受 GPL 覆盖的修改版时须遵守对应源码提供、版权与许可证声明保留等要求。
+具有独立许可标记的内核辅助代码、固件探针和第三方代码保留原条款；
+来源、署名和许可范围见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

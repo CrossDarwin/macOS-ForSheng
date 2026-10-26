@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Derive bounded process-list offsets from the matching native kernel DWARF."""
 import argparse
 import json

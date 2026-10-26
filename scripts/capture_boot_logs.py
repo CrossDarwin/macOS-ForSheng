@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Capture bounded Qualcomm boot logs through root recovery ADB, or decode a saved capture."""
 import argparse
 from datetime import datetime, timezone

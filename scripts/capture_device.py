@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Capture selected sheng facts; no reboot, root transition or partition writes."""
 import argparse
 from datetime import datetime, timezone

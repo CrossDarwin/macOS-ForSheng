@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Read native ARM64/ARM64E artifacts without relaxing legacy prelink admission."""
 from pathlib import Path
 import struct

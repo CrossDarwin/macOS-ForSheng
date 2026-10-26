@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Back up or install one prepared macoslog FAT image through root Recovery."""
 import argparse
 import hashlib

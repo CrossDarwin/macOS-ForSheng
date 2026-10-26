@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Format an isolated, empty ISC test disk. Never accepts a host device."""
 import argparse
 import hashlib

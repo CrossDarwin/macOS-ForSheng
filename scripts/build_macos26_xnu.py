@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Compile the pinned macOS 26 source machine layer in an isolated SHENG tree."""
 import argparse
 import hashlib

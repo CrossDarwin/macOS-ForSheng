@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Decode XNU 12377's packed version-8 embedded panic header."""
 import json
 from pathlib import Path

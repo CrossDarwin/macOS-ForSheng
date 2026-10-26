@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Prepare an owned contiguous snapshot file inside a backed-up macoslog FAT image."""
 import argparse
 import hashlib

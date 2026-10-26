@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 if [[ $# -ne 1 ]]; then
   echo 'Usage: build_native_loader.sh /absolute/path/to/llvm/bin' >&2

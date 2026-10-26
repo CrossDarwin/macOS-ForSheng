@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise production FAT ownership checks and interrupted snapshot commits."""
 import ctypes
 import hashlib

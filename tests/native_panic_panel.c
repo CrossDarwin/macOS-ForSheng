@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "pe_sheng_log.h"
 typedef struct { uint64_t v_baseAddr, v_display, v_rowBytes, v_width, v_height, v_depth; } Boot_Video;
 typedef struct { Boot_Video Video; } boot_args;

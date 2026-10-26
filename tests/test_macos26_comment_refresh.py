@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise comment-only patch migration without changing recorded code."""
 import hashlib
 from pathlib import Path

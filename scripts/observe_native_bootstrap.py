@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Execute the linked XNU bootstrap at sheng's physical placement, stopping before C initialization."""
 import argparse
 import json

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Compile pinned, memory-only Recovery UI page policies for development XNU."""
 from __future__ import annotations
 

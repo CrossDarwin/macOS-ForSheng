@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Rebuild sheng userdata and reserve an explicitly authorized macosroot extent."""
 import argparse
 from datetime import datetime, timezone

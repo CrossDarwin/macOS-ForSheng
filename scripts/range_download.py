@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Bounded concurrent HTTP ranges with a durable resume map and final caller verification."""
 from concurrent.futures import ThreadPoolExecutor
 import json

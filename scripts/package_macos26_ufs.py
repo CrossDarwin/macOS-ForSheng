@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Package a qualified native UFS root experiment for temporary sheng RAM boot."""
 import argparse
 import gzip

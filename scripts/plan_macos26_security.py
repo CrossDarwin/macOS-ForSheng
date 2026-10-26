@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Plan native ARM64E security-module relocation without emitting a boot image."""
 import argparse
 from bisect import bisect_right

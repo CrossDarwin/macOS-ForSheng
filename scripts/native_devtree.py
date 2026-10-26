@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Publish the native EL1 text-protection state in generated Apple DTs."""
 from pathlib import Path
 import struct

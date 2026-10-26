@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Prepare the pinned, default-off macOS 26.5 GOP display companion."""
 import argparse
 import hashlib

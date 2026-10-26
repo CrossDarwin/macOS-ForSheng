@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Expand the paired Copy/Zero UDIF recovery disk for read-only QEMU block I/O."""
 import argparse
 import hashlib

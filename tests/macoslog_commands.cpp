@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 #define NATIVE_MACOSLOG 1
 #define main original_commands_main
 #pragma GCC diagnostic push

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Package the EL1 source reference into a RAM-only sheng boot candidate."""
 import argparse
 import gzip

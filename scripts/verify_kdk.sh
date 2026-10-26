@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 task_root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$task_root"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Back up GPT copies and boot partitions through root recovery ADB; never writes the device."""
 import argparse
 import hashlib

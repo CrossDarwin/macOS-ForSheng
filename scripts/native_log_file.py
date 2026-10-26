@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Validate the fixed FAT16 log file and decode its two committed snapshot banks."""
 import json
 from pathlib import Path

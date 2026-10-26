@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Replace OS scheduling and transport only; run the production worker and layout checks.
 #include <cassert>
 #include <cstdint>

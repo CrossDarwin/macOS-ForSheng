@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Append a verified ISC seed inside existing macosroot; commit its manifest last."""
 import argparse
 from datetime import datetime, timezone

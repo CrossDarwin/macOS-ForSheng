@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Write only the prepared macosroot partition from root sheng Recovery."""
 import argparse
 from datetime import datetime, timezone

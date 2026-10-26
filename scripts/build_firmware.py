@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Build and audit the pinned sheng UEFI without deploying it."""
 import argparse
 import hashlib

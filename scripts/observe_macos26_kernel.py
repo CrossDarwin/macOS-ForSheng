@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Observe the linked native macOS 26 kernel through UniXNU's QEMU entry path."""
 import argparse
 import hashlib

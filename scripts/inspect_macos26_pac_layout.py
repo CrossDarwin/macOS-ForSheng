@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Extract only native PAC counters from the matching kernel DWARF layout."""
 import argparse
 import json

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Locate the real BootKC security dependencies and their native ABI boundaries.
 
 Read-only. Format-8 chain words retain their PAC key, diversity and address

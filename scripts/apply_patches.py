@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Apply integration patches once, refusing incompatible local changes."""
 from pathlib import Path
 import subprocess

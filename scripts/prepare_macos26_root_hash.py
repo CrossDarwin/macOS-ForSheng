@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Extract the paired recovery root hash for the native APFS firmware contract."""
 import argparse
 import hashlib

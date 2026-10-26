@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Emit a QEMU-only ARM64E prelink candidate with real security components."""
 import argparse
 import copy

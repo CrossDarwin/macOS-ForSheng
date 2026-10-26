@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Execute the EL1 assembly in QEMU with a genuine 16K walk and a 4K fallback control."""
 import argparse
 import json

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise the production sparse ISC overlay against an immutable disk seed."""
 from pathlib import Path
 import shutil

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Copy a QEMU development ESP and provision its explicit native platform UUID."""
 from __future__ import annotations
 

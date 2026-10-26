@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Verify the paired macOS 26 IPSW and extract bounded bring-up inputs."""
 import argparse
 import hashlib

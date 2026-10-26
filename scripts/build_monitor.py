@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Compile Snapintosh's existing monitor without connecting to hardware."""
 import argparse
 import hashlib
