@@ -1,0 +1,23 @@
+--- a/bsd/kern/sys_generic.c
++++ b/bsd/kern/sys_generic.c
+@@ -697,9 +697,20 @@
+ 	return writev_internal(p, fd, uio, flags, puguard, retval);
+ }
+ 
++#if SHENG
++#include <kern/startup.h>
++#include "sheng_process_output.h"
++static TUNABLE(unsigned, sheng_stderr_mode, "sheng-stderr-log", 0);
++static TUNABLE_STR(sheng_stderr_name, MAXCOMLEN + 1, "sheng-stderr-name", "");
++#endif
++
+ int
+ write_nocancel(struct proc *p, struct write_nocancel_args *uap, user_ssize_t *retval)
+ {
++#if SHENG
++	sheng_process_output(p, uap->fd, uap->cbuf, uap->nbyte,
++	    sheng_stderr_mode, sheng_stderr_name);
++#endif
+ 	return write_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,
+ 	           NULL, retval);
+ }
