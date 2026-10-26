@@ -2148,3 +2148,20 @@ BGRA保持字节顺序，RGhA先选源像素再转换，不修改格式标签。
 同时只读读取原版NSApp委托、Language Chooser控制器及NSWindow.frame，窗口逻辑尺寸为800×600。
 因此已确认是2倍backing缓冲需要缩放，不能把窗口逻辑尺寸改大来代替处理。
 当前原版Language Chooser仍在完成界面绘制，完整语言列表尚待截图验收；没有实机部署。
+
+### QEMU原版语言选择器显示验收通过
+
+2026-10-26，配套ARM64E QEMU中的原版Language Chooser实际显示完整语言窗口。
+Language标题、英语及中日西文等语言条目、原版蓝色选中行和继续箭头均在800×600屏幕内。
+原版NSApp委托、LCAChoiceWindowController及NSWindow.frame现场与该窗口对应，
+由原版WindowServer和Core Animation绘制，NativeGOPDisplay将实际1600×1200根缓冲缩放到scanout。
+
+启动期间发生过一次文字清屏，随后原版应用恢复完整窗口并进入事件循环。
+之后约40秒的6次未修改QMP截图保持相同完整内容，标题、选中行和语言条目区域均通过；
+另用独立PNG解码读取选中行像素，结果一致。最终以外部QMP停止保存完整现场，停止不是客体panic。
+原始截图、控制器、配套内核和诊断数据仅保存在本地private/及out/。
+
+本次通过的是QEMU中的真实语言窗口显示，不包含输入交互、继续按钮后的恢复流程、
+Metal/GPU加速或sheng实机图形验收。仍有显式QEMU开发策略：原版软件合成路径、
+可选钥匙串失败后的原版清理与UI继续、FSKit不可用分支、guest模式、无蓝牙控制器及禁用未实现的休眠。
+原始设备所有者查询保留，未把认证错误改为成功，未部署实机。
