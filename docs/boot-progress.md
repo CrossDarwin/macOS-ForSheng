@@ -49,9 +49,9 @@ LOG committed gen=73 bytes=59551 drops=0 error=0 lost=0
 | `pid` | 最近一次已记录启动的 PID |
 | `starts` | 该服务已记录的启动次数 |
 | `exits` | 该服务已记录的退出次数 |
-| `wait-status` | 最近一次有效退出的原始 wait status |
+| `wait-status` | 当前记录的原始 wait status，新进程启动时清零 |
 
-旧 PID 的退出不会覆盖新实例状态。目标范围包括 launchd、recoveryosd、RecoveryOS Agent、
+新启动后的 `wait-status=0` 不能单独解释为正常退出。旧 PID 的退出不会覆盖新实例状态。目标范围包括 launchd、recoveryosd、RecoveryOS Agent、
 WindowServer、Language Chooser、Recovery Springboard、lsd、coreservicesd、loginwindow 和 diskarbitrationd。
 进程名按内核短名称匹配，屏幕中的 `Recovery Springb` 对应 Recovery Springboard。
 

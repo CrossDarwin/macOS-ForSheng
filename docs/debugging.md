@@ -120,6 +120,20 @@ PARTUUID 为 `4cd2ed34-2142-4ea4-abf2-ec6c51d117d7`。
 最终 panic 目前没有同步 UFS 写入路径。现有常规文件系统接口依赖调度或中断，不适用于该崩溃路径。
 Linux DRM panic 的参考机制及本项目编码范围见[panic 二维码](panic-qr.md)。
 
+## WindowServer 异常停机
+
+`sheng-windowserver-stop=1` 为定向取证开关，默认关闭。
+仅当当前进程短名称精确为 `WindowServer` 时，才在异常交付或当前进程的崩溃通知前主动 panic。
+其他进程、未指定参数或非 `1` 的取值保留原有处理流程。
+
+主动停机原因以 `SHENG WS EXCEPTION` 开头，记录 PID、原始异常类型、两个代码值，
+以及保存的用户态 PC、LR、SP、ESR 和 FAR。字段使用十六进制，文本同时进入首次 panic 面板与二维码。
+缺少 ARM64 保存状态时明确输出 `state=unavailable`。
+
+该开关在用户异常服务器处理前停止，因此命中的异常可能原本可以恢复。
+它会改变启用后的运行流程，只用于定位本次 WindowServer 崩溃；不把主动停机当作原生内核崩溃。
+二维码通用字段中的寄存器仍来自 panic 钩子，用户态寄存器来自 `REASON` 中的定向诊断文本。
+
 ## 其他调试路径
 
 QEMU 观察器 `scripts/observe_macos26_kernel.py` 可通过 GDB 读取保留日志、寄存器和独立 panic 区。
