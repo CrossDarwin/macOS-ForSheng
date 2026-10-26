@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | 内核和用户空间 | 原版 dyld、launchd 和恢复服务已执行 | 原版 launchd 和恢复服务已执行 |
 | 根卷和辅助卷 | BaseSystem、ISC 角色卷和临时 Data 已挂载 | UFS 读取、BaseSystem 和 ISC 挂载已通过 |
-| 图形 Recovery | 语言选择器已显示，真实输入选中简体中文；后续工具窗口未验收 | 已记录首帧提交，用户报告左上角有指针；尚无语言选择器画面 |
+| 图形 Recovery | 语言选择器已显示，真实输入选中简体中文；后续工具窗口未验收 | 218FDCCE 入口运行后的照片已显示 Language 窗口、许可文字和继续箭头；语言列表为空，选择操作未验收 |
 | 日志分区 | 双槽提交、CRC 和保护范围验证通过 | 双槽读回通过；75075C49 快照保留首帧后的进度 |
 | panic 二维码 | 实际绘制像素解码通过 | D8D9EDA4 首次 panic 摘要完整读出 |
 | 输入 | VirtIO HID 已用于选择语言 | 触控和 USB HID 未验收 |
@@ -52,8 +52,13 @@ ARM64 独立执行测试已检查屏幕锁占用期间的 RAM 追加、快照、
 
 构建 [40350000836](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/40350000836) 已通过，
 临时启动入口为 `UFS+ISC+LOG+UI+REC 218FDCCE`，UUID 为 `218FDCCE-86F6-326F-9BC1-536380109D02`。
-该包保留高地址 RAM 修正，启用 `sheng-stderr-log=2 sheng-stderr-name=recovery-ui`，尚未实机运行。
+该包保留高地址 RAM 修正，启用 `sheng-stderr-log=2 sheng-stderr-name=recovery-ui`。
 已核对编译后的日志源码身份并完成封装，未重复完整 QEMU 图形测试。
+
+临时启动已返回 `Booting OKAY`。用户选择该入口后的照片显示原版 `Language` 窗口、许可文字和继续箭头，
+列表框内尚无可见语言名称。用户另报告此前出现 Apple 标志加载画面。
+该次匹配 UUID 的磁盘日志尚未读回；照片证明部分窗口内容已显示，不代表语言选择及后续恢复工具已经可用。
+启动耗时尚无完整测量，单核及 CPU 全屏复制为现有实现限制，不能单独用于确定等待时间的主要来源。
 
 ## 此前 WindowServer 异常取证
 
