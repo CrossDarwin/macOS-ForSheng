@@ -22,21 +22,23 @@ KDP 实机双向轮询传输、Apple 激活、系统安装和日常桌面使用�
 
 | 项目 | 记录 |
 | --- | --- |
-| 内核 UUID | `2DDC876A-3B4C-3478-8B21-556B7E879EB0` |
-| 构建 | [40326900585](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/40326900585)，内核、UFS、GOP 和输入组件编译成功 |
-| 菜单入口 | `UFS+ISC+LOG+UI+QR 2DDC876A` |
-| 修改 | 高位物理地址转换修正、首次 panic 二维码 |
-| 部署方式 | 临时 `fastboot boot`，复用已有固件、设备树和根卷 |
-| 已取得结果 | 临时启动并读回匹配 UUID 的日志，屏幕停在 `Display on` |
-| 当前阻断 | WindowServer 崩溃，未记录首次交换和首帧 |
+| 内核 UUID | `D8D9EDA4-EC94-3EBB-A60F-FD64D818760F` |
+| 构建 | [40332670337](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/40332670337)，内核及配套驱动编译成功 |
+| 菜单入口 | `UFS+ISC+LOG+UI+WS D8D9EDA4` |
+| 目的 | 保存 WindowServer 的首个异常或崩溃通知现场 |
+| 参数 | 显式开启 `sheng-windowserver-stop=1` |
+| 部署方式 | 已封装临时启动包，复用已有固件、设备树和根卷 |
+| 实机结果 | 尚未执行 |
 
-该候选产物的反汇编已确认地址移位使用 64 位寄存器。
-独立 ARM64 测试已从实际帧缓冲像素解码二维码，载荷与首次 panic 消息一致。
-本次没有重复完整 QEMU 用户态和语言选择器测试，已有其他内核的运行记录保持原归属。
+定向停机代码的主机检查覆盖默认关闭、进程名精确匹配、保存状态缺失及重复调用。
+检查直接执行应用补丁后的辅助函数，未代替完整内核运行。
+启用该参数后，目标异常交付前会主动 panic；这属于取证流程，尚未修复 WindowServer。
+已有二维码像素执行证据按相同源码复用，本次没有重复完整 QEMU 用户态及语言选择器测试。
 
 ## 实机日志与当前阻断
 
-2DDC876A 的照片显示 `Display on` 停留 503 秒，WindowServer 的启动与退出计数分别为 3、2。
+上一候选 `2DDC876A-3B4C-3478-8B21-556B7E879EB0` 来自构建 40326900585，已临时启动并由匹配 UUID 的日志确认。
+照片显示 `Display on` 停留 503 秒，WindowServer 的启动与退出计数分别为 3、2。
 尚未记录 `First swap`、`First frame` 或语言选择器画面，照片未见内核 panic。
 
 Android Recovery 只读读回的两个有效日志槽为 149、150，均匹配本次 UUID。
