@@ -243,7 +243,7 @@ Actions 39925158581 成功，原始签名日志和配对 UUID 报告已下载并
 25F71 KDK 实际验证结果：Apple 包签名通过，M1/T8103 UUID `DA4C776A-B10A-38B6-997B-BD66671C5D52`、
 Neo/T8140 UUID `6F5E696D-EDA7-3AA0-91DC-24B13CF58148` 均与各自 IPSW 内核及 KDK DWARF 一致。
 这建立了配对调试输入，不等于私有 IOKit ABI 或 sheng 硬件适配已通过。
-[验证工作流](https://github.com/Jelly10086/macOS-ForSheng/actions/runs/39925158581)。
+[验证工作流](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/39925158581)。
 
 ## macOS 26 原生平台源码构建
 

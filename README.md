@@ -1,5 +1,7 @@
 # macOS-ForSheng
 
+Repository: [CrossDarwin/macOS-ForSheng](https://github.com/CrossDarwin/macOS-ForSheng)
+
 请注意，这个项目未曾被公开 如果你在 X(推特) 等地方发现了这个项目的宣传 皆为冒假
 Please note that this project has never been publicly announced. If you find any promotion for this project on platforms like Twitter, it is a scam.
 
