@@ -33,13 +33,17 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
                                 boot_volume_uuid: uuid.UUID | None = None,
                                 platform_uuid: uuid.UUID | None = None,
                                 qemu_disable_sleep: bool = False,
-                                native_gop_display: bool = False) -> None:
+                                native_gop_display: bool = False,
+                                qemu_virtio_input: bool = False) -> None:
     data = path.read_bytes()
     chosen = asmb = auth = options = proxies = 0
     arm_io = gop_nodes = 0
     defaults = 0
+    input_nodes = 0
     if qemu_disable_sleep and not development_root:
         raise ValueError('sleep policy is restricted to the development fixture')
+    if qemu_virtio_input and not development_root:
+        raise ValueError('VirtIO input is restricted to the development fixture')
     if root_hash is not None and not 16 <= len(root_hash) <= 16384:
         raise ValueError('invalid raw root-hash payload size')
 
@@ -52,7 +56,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
         raise ValueError('synthetic platform UUID is restricted to the development fixture')
 
     def node(at: int, parents: tuple[str, ...] = ()) -> tuple[bytes, int]:
-        nonlocal chosen, asmb, auth, options, proxies, arm_io, gop_nodes, defaults
+        nonlocal chosen, asmb, auth, options, proxies, arm_io, gop_nodes, defaults, input_nodes
         if len(parents) > 32 or at + 8 > len(data):
             raise ValueError('invalid generated device-tree node')
         count, children = struct.unpack_from('<II', data, at)
@@ -89,6 +93,16 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
                                value + bytes(-len(value) % 4))
                 count += 1
 
+        if qemu_virtio_input and location == ('device-tree',):
+            if properties.get('model') != b'qemu-entry-fixture\0':
+                raise ValueError('VirtIO input requires the owned QEMU tree')
+            ensure('#address-cells', struct.pack('<I', 2))
+            ensure('#size-cells', struct.pack('<I', 2))
+        if qemu_virtio_input and location == ('device-tree', 'native-recovery-input'):
+            input_nodes += 1
+            ensure('compatible', b'sheng,qemu-virtio-input\0')
+            ensure('reg', struct.pack('<QQ', 0x4010000000, 0x100000))
+
         if platform_uuid is not None and location == ('device-tree', 'options'):
             options += 1
             ensure('platform-uuid', platform_uuid.bytes)
@@ -123,6 +137,17 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
         for _ in range(children):
             child, at = node(at, location)
             descendants.extend(child)
+        if qemu_virtio_input and location == ('device-tree',) and not input_nodes:
+            # Bus 0 occupies the first MiB of QEMU virt's default high ECAM window.
+            entries = (('name', b'native-recovery-input\0'),
+                       ('compatible', b'sheng,qemu-virtio-input\0'),
+                       ('reg', struct.pack('<QQ', 0x4010000000, 0x100000)))
+            descendants.extend(struct.pack('<II', len(entries), 0))
+            for key, value in entries:
+                descendants.extend(struct.pack('<32sI', key.encode(), len(value)) +
+                                   value + bytes(-len(value) % 4))
+            children += 1
+            input_nodes += 1
         if qemu_disable_sleep and location == ('device-tree',) and not defaults:
             entries = (('name', b'defaults\0'), ('sleep-disabled', struct.pack('<I', 1)))
             descendants.extend(struct.pack('<II', len(entries), 0))
@@ -165,6 +190,7 @@ def configure_native_text_state(path: Path, *, development_root: bool = False,
             or root_hash is not None and auth != 1
             or platform_uuid is not None and (options != 1 or proxies != 1)
             or qemu_disable_sleep and defaults != 1
+            or qemu_virtio_input and input_nodes != 1
             or native_gop_display and (arm_io != 1 or gop_nodes != 1)):
         raise ValueError('requires one complete generated /chosen node')
     path.write_bytes(result)

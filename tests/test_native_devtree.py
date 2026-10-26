@@ -62,6 +62,24 @@ class NativeTree(unittest.TestCase):
         self.root = uuid.UUID('808eac5e-8275-478d-814c-2229d8eb8d07')
         self.vm = uuid.UUID('7e8b064b-8ddb-54c4-b332-6fe0c34f937c')
 
+    def test_input_ecam_is_explicit_and_cannot_enter_hardware_tree(self):
+        original = self.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'development fixture'):
+            configure_native_text_state(self.path, qemu_virtio_input=True)
+        with self.assertRaisesRegex(ValueError, 'owned QEMU'):
+            configure_native_text_state(self.path, development_root=True, qemu_virtio_input=True)
+        self.assertEqual(self.path.read_bytes(), original)
+        self.path.write_bytes(node('device-tree', (('model', b'qemu-entry-fixture\0'),),
+                                  (node('chosen'),)))
+        configure_native_text_state(self.path, development_root=True, qemu_virtio_input=True)
+        before = self.path.read_bytes()
+        tree = read_tree(before)
+        props = tree[('device-tree', 'native-recovery-input')]
+        self.assertEqual(props['reg'], struct.pack('<QQ', 0x4010000000, 0x100000))
+        self.assertEqual(props['compatible'], b'sheng,qemu-virtio-input\0')
+        configure_native_text_state(self.path, development_root=True, qemu_virtio_input=True)
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_recovery_volume_and_vm_identity_use_distinct_abis(self):
         options = dict(development_root=True, root_hash=bytes(range(32)),
                        boot_volume_uuid=self.root, platform_uuid=self.vm)

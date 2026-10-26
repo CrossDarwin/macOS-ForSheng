@@ -47,3 +47,7 @@ device backups are not included in this repository.
   and NativeVirtioPci.h at revision 031c35a57c89946977e51a1d64e009062faaed19
   under BSD-2-Clause-Patent. The pinned source hashes and original license are
   retained by scripts/prepare_macos26_input.py. This does not implement sheng touch.
+
+- Apple IOHIDFamily-2238.120.5: the input experiment stages four unmodified
+  private HID key headers from e31e90a24c27ad6cbe981650d12a1a4124065b03.
+  Their original Apple Public Source License 2.0 notices remain in each header.

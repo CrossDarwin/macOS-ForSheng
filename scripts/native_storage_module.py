@@ -110,7 +110,10 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
                 or evidence.get('hardware_enable_required') is not True):
             raise ValueError('UFS transport must restrict its read-only root to macosroot on LUN0')
         display = evidence.get('native_gop_display')
+        input_driver = evidence.get('native_recovery_input')
         allowed = {component, 'NativeGOPDisplay'} if display else {component}
+        if input_driver:
+            allowed |= {'NativeRecoveryInput', 'IOHIDEventDriver'}
         if info['CFBundleExecutable'] != component or any(
                 item['IOClass'] not in allowed for item in info['IOKitPersonalities'].values()):
             raise ValueError('UFS personality differs from the qualified component')
@@ -138,6 +141,34 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
             if (display.get('abi') != contract or family['uuid'] != contract['family_uuid']
                     or text_hash != contract['family_text_sha256']):
                 raise ValueError('GOP private field layout requires the reviewed paired framebuffer family')
+        if input_driver:
+            contract = json.loads((Path(__file__).resolve().parents[1] /
+                                   'config/macos26-input-reference.json').read_text())['abi']
+            if (not display or 'com.apple.iokit.IOHIDFamily' not in selected
+                    or input_driver.get('abi') != contract or input_driver.get('default_off') is not True
+                    or input_driver.get('qemu_only') is not True
+                    or input_driver.get('hardware_admitted') is not False
+                    or input_driver.get('boot_argument') != 'native-recovery-input=1'
+                    or input_driver.get('provider_compatible') != 'sheng,qemu-virtio-input'):
+                raise ValueError('input companion requires the paired default-off QEMU HID contract')
+            expected = dict(CFBundleIdentifier=evidence['bundle'], IOClass='NativeRecoveryInput',
+                IOProviderClass='IOPlatformDevice', IONameMatch='native-recovery-input',
+                IOMatchCategory='NativeRecoveryInput', IOProbeScore=500)
+            event_driver = dict(CFBundleIdentifier='com.apple.iokit.IOHIDFamily', IOClass='IOHIDEventDriver',
+                IOProviderClass='IOHIDInterface', VendorID=6900, ProductID=4178, IOProbeScore=3000)
+            if (info['IOKitPersonalities'].get('NativeRecoveryInput') != expected
+                    or info['IOKitPersonalities'].get('NativeRecoveryHIDEventDriver') != event_driver):
+                raise ValueError('input companion provider or original event driver identity differs')
+            for name, key in (('NativeRecoveryInput.cpp', 'source_sha256'),
+                              ('NativeVirtioPci.h', 'header_sha256')):
+                if hashlib.sha256((directory / 'recovery-input' / name).read_bytes()).hexdigest() != input_driver.get(key):
+                    raise ValueError('input source differs from compiled record')
+            family = kc_macho(original, kc['entries']['com.apple.iokit.IOHIDFamily'][1])
+            text = next(s for s in family['segments'] if s['name'] == '__TEXT_EXEC')
+            if (family['uuid'] != contract['family_uuid'] or
+                    hashlib.sha256(original[text['fileoff']:text['fileoff'] + text['filesize']]).hexdigest()
+                    != contract['family_text_sha256']):
+                raise ValueError('input companion requires the reviewed original HID family')
 
     if 'com.apple.iokit.IOStorageFamily' not in selected:
         raise ValueError('transport needs the original IOStorageFamily dependency')
@@ -280,6 +311,13 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
             raise ValueError('GOP display requires the paired 473-slot legacy ABI')
         driver['display_vtable_abi'] = audit
         driver['display_private_vtable_bindings'] = private_bindings
+    if evidence.get('native_recovery_input'):
+        audit = audit_storage_vtable(driver, original, kc, native, slide,
+            family_bundle='com.apple.iokit.IOHIDFamily', base_class='IOHIDDevice',
+            own_class='NativeRecoveryHID')
+        if audit['slots'] != evidence['native_recovery_input']['abi']['device_slots']:
+            raise ValueError('input companion HID vtable slot count differs')
+        driver['input_vtable_abi'] = audit
     return driver
 
 

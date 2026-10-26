@@ -441,6 +441,8 @@ def emit(native_data, original, native_names, identity, slide, roots=ROOTS, stor
         if 'display_vtable_abi' in driver:
             report['storage_driver']['display_vtable_abi'] = driver['display_vtable_abi']
             report['storage_driver']['display_private_vtable_bindings'] = driver['display_private_vtable_bindings']
+        if 'input_vtable_abi' in driver:
+            report['storage_driver']['input_vtable_abi'] = driver['input_vtable_abi']
     return final_data, report
 
 
