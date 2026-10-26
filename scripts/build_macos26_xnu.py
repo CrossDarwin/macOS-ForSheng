@@ -86,6 +86,7 @@ PATCHES = [
     ROOT / 'UniXNU/patches/xnu/zzx-pmap-sync-64bit-pa.patch',
     ROOT / 'platform/sheng/macos26/patches/0061-native-windowserver-exception-stop.patch',
     ROOT / 'platform/sheng/macos26/patches/0062-native-windowserver-alignment-map.patch',
+    ROOT / 'platform/sheng/macos26/patches/0063-native-managed-ram-writecombine.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'

@@ -1,0 +1,15 @@
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -6028,7 +6028,12 @@
+ 		pte |= ARM_PTE_NX | ARM_PTE_PNX;
+ 		break;
+ 	case VM_WIMG_WCOMB:
++#if SHENG
++		/* The firmware-owned high RAM window can be outside the DT DRAM interval. */
++		if (is_dram_addr(pa) || isphysmem(pa)) {
++#else
+ 		if (is_dram_addr(pa)) {
++#endif
+ 			pte = ARM_PTE_ATTRINDX(CACHE_ATTRINDX_WRITECOMB);
+ 		} else {
+ #if HAS_FEAT_XS
