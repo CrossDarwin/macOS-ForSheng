@@ -14,7 +14,7 @@
 | 帧交换 | [DroidVMDisplay](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/overlay/kext/DroidVMDisplay/DroidVMDisplay.cpp)从4个活动层选最大完整画面，避免登录过渡时复制小指针层 | 已接入有尺寸、比例和像素格式检查的4层选择。40301287790首次捕获800×600 BGRA第0层，实际选择正确；会话转换后的窗口显示仍待验 |
 | CPU呈现 | 同一显示实现通过readBytes逐行读取IOSurface | 本轮实际CPU栈确认该路径反复建立物理拷贝窗口，候选改为每帧一次有界只读映射，失败回退逐行读取。效果须由新内核运行确认 |
 | Metal发现与执行 | [NativeAdrenoMetalPlugin](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/overlay/metal/NativeAdrenoMetalPlugin.mm)经IOGPUMetalDevice注册，连接NativeBridge、Turnip及GPU用户客户端 | 已核对发现、设备包装及对象状态契约。当前先完成软件Recovery；原生Adreno的内存、提交和同步仍需实际后端支持 |
-| 用户态诊断 | [0009诊断补丁](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/patches/xnu-12377/0009-bring-up-diagnostics-stderr-log-sc-trace-sample-pid-.patch)按参数镜像stdout/stderr并采样线程；stage脚本可运行log show、log stream及定时sample命令 | 当前QEMU有只读线程栈，macoslog已通过同候选两次提交读回。下一项补充按进程筛选的用户态输出及统一日志，明确记录截断与丢失，减少仅靠屏幕判断 |
+| 用户态诊断 | [0009诊断补丁](https://github.com/Droid-VM/macOS-DroidVM/blob/031c35a57c89946977e51a1d64e009062faaed19/patches/xnu-12377/0009-bring-up-diagnostics-stderr-log-sc-trace-sample-pid-.patch)按参数镜像stdout/stderr并采样线程；stage脚本可运行log show、log stream及定时sample命令 | 当前QEMU有只读线程栈，macoslog已通过同候选两次提交读回。已接入默认关闭的进程输出镜像，支持stderr、stdout/stderr及精确进程名筛选，159字节以上明确标注截断。边界测试、配套编译及原版dyld/launchd实际输出已验证；统一日志采集仍待接入 |
 
 本轮实际等待链为RecoveryOS Agent的LaunchServices注册，lsd正在读取应用本地化资源。
 这与此前已到达Springboard的运行分开记录，不能将本轮启动阶段黑屏当作同一建窗故障。
@@ -24,6 +24,24 @@
 新内核的顺序为：确认CPU拷贝窗口开销下降，真实选择简体中文并继续，
 确认恢复主程序经过预期初始化并显示窗口，再封装sheng可恢复临时启动候选。
 QEMU运行与sheng实测、源码存在与实际通过分别记录。
+
+构建40305570169实际运行中，原版语言列表与中文标题已显示，真实点击后只读字段为zh-Hans。
+6张间隔8秒的原始QMP截图均保留标题、列表及中文选中行，未再发生此前观察到的局部空白。
+该结论限定这段约40秒的静态观察；继续后的Recovery工具窗口尚未验收。
+逐行读取对照的60次CPU样本中有28次落在物理拷贝窗口，新候选同样长度样本未再命中该路径；
+这是短时执行位置对照，不等于完整启动耗时或实机性能验收。
+
+参考上游workloop修正后，也读回了当前实际限额：WindowServer、Language Chooser、
+RecoveryOS Agent、opendirectoryd的soft/hard均为0，数量分别为24、31、25、11。
+配套源码只在限额大于0时检查超限，因此本轮不套用上游针对3/10限额的补丁。
+
+按DroidVM诊断机制改写的进程输出镜像已在构建40307065705编译通过，并取得QEMU运行证据。
+`sheng-stderr-log=1`镜像stderr，`=2`镜像stdout和stderr，默认0关闭；
+`sheng-stderr-name=launchd`按内核进程短名精确筛选，不指定时记录所有进程。
+原版dyld/launchd实际输出已出现带fd、PID和进程名的保留日志，测试中只观察到所选launchd的诊断行。
+每次最多复制159字节并标注截断，读取失败不打印，原write/write_nocancel调用保持不变。
+该入口不覆盖writev或统一日志数据库，不能称为完整用户态日志。
+正式采集统一日志时仍需配套原版log show/log stream；实机与持续写盘链路尚未用此版本验收。
 
 ## 2026-10-26补充核对
 
