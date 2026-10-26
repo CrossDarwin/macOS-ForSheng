@@ -1,5 +1,21 @@
 # DroidVM参考与sheng接入顺序
 
+## 2026-10-26补充核对
+
+另行核对[DroidVM 59659e4](https://github.com/Droid-VM/macOS-DroidVM/tree/59659e407eb25b77fabd1d3298337683340d1357)
+及[Snapintosh 940eeb9](https://github.com/Snapintosh/Snapintosh/tree/940eeb95ba637528dc45ba098e6b8091163dd489)，
+不替换此前已经配套验证的显示输入。
+DroidVM的SystemOS/Data构造仍用于安装系统布局；当前25F71 BaseSystem恢复路线保留实际临时Data挂载。
+其Metal插件需要真实IOGPU后端，不能只发布设备名称就当作渲染可用。
+
+Snapintosh的[GUI路线](https://github.com/Snapintosh/Snapintosh/blob/940eeb95ba637528dc45ba098e6b8091163dd489/docs/GUI-BOOT-ROADMAP.md)
+撤下未实现的设备，包括蓝牙；其Adreno X2显示、Metal驱动及编译器与sheng硬件不同。
+当前复用的是按实际硬件能力选择原版缺失设备分支的做法。
+QEMU已实际启动Language Chooser并由WindowServer显示苹果进度画面，
+语言选择器在蓝牙初始化中等待，正在验证无控制器路径；语言列表和sheng图形Recovery均尚未通过。
+
+以下保留此前固定提交的接入记录，不把上游状态或源码存在视为本项目运行证据。
+
 核对时间：2026-10-25。参考源码固定为
 [`Droid-VM/macOS-DroidVM@1dfb172`](https://github.com/Droid-VM/macOS-DroidVM/tree/1dfb172304400eef4ed4c935e5dfbda4e4cf5fe9)。
 用户提供了该VM已显示界面的进展；本文记录实际读过的源码及适用条件，不将源码存在视为本项目实测通过。

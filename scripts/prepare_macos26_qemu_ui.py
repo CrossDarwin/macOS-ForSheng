@@ -62,7 +62,7 @@ def inspect_identity(path: Path) -> uuid.UUID | None:
     return identity
 
 
-def prepare(source: Path, output: Path, identity: uuid.UUID) -> dict[str, object]:
+def prepare(source: Path, output: Path, identity: uuid.UUID, *, disable_sleep: bool = False) -> dict[str, object]:
     source = source.resolve(strict=True)
     output = output.absolute()
     if output.exists() or output.is_symlink():
@@ -81,7 +81,8 @@ def prepare(source: Path, output: Path, identity: uuid.UUID) -> dict[str, object
     with tempfile.TemporaryDirectory(prefix='.qemu-ui-', dir=output.parent) as temporary:
         stage = Path(temporary) / 'esp'
         shutil.copytree(source, stage)
-        configure_native_text_state(stage / relative, development_root=True, platform_uuid=identity)
+        configure_native_text_state(stage / relative, development_root=True, platform_uuid=identity,
+                                    qemu_disable_sleep=disable_sleep)
         if inspect_identity(stage / relative) != identity:
             raise ValueError('Prepared VM identity failed readback')
         stage.rename(output)
@@ -95,9 +96,11 @@ def main() -> int:
     parser.add_argument('--esp', required=True, type=Path, help='Existing generated QEMU development ESP')
     parser.add_argument('--output', required=True, type=Path, help='New ESP directory; never overwritten')
     parser.add_argument('--platform-uuid', required=True, type=uuid.UUID, help='Explicit identity of this owned VM')
+    parser.add_argument('--disable-sleep', action='store_true', help='Describe unavailable VM sleep through the native /defaults policy')
     args = parser.parse_args()
     try:
-        report = prepare(args.esp, args.output, args.platform_uuid)
+        report = prepare(args.esp, args.output, args.platform_uuid, disable_sleep=args.disable_sleep)
+        report['native_sleep_disabled'] = args.disable_sleep
     except (OSError, ValueError, struct.error) as error:
         parser.exit(1, f'Failed to prepare QEMU UI ESP: {error}\n')
     print(json.dumps(report, indent=2))

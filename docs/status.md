@@ -2103,3 +2103,23 @@ UI开发策略在执行原版CFRelease后继续原版标记文件创建与完成
 检查模式观察器发现它只影响第一次getenv回退，后续recoveryBootMode查询仍会读到空环境。
 正在把显式QEMU guest回退保持为一致策略，保留原始sysctl与NVRAM结果的优先级，
 用于验证recoveryosd原有launchLanguageChooser分支；没有伪造锁状态或认证结果。
+
+### 原版语言选择器已启动，仍等待蓝牙控制器
+
+一致的guest回退已实际命中，recoveryosd随后启动原版Language Chooser。
+WindowServer实际呈现苹果标志和进度条，截图保留本地；尚未出现语言列表，验收仍未完成。
+本轮保留原始设备所有者查询，FSKit不可用分支及Aqua清理策略均已实际命中。
+
+语言选择器主线程停在systemHasBluetooth调用的IOBluetoothHostController defaultController，
+进一步等待CBPairingAgent与bluetoothd的同步回复。实际QEMU没有蓝牙设备。
+原版可执行头部和完整能力检查函数已与现场核对。
+第一次无控制器分支对照实际命中，但同一函数随后还会重试defaultController，
+因而未解除全部等待。下一轮同时覆盖这两个调用点，保留原版30秒重试循环、失败分支及清理，
+不伪造配对设备或认证成功，不改动共享框架的其他客户端。
+
+该轮还捕获真实内核panic：Attempting to sleep before all CPUs are registered。
+配套链接map将完整帧链定位到IOPMrootDomain的休眠请求、IOCPUSleepKernel及调度器保护判断。
+不删除该判断；新的独立QEMU ESP通过原版/defaults/sleep-disabled描述未实现的VM休眠。
+IOPMrootDomain在启动完成事件中读取该属性，checkSystemSleepAllowed保留原版拒绝逻辑。
+设备树相关10项测试通过，包含默认不启用、开发环境限制、冲突拒绝及幂等；
+运行时是否实际读到该策略以及后续语言窗口仍在验证。

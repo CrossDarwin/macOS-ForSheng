@@ -92,6 +92,22 @@ class NativeTree(unittest.TestCase):
             configure_native_text_state(self.path, boot_volume_uuid=self.root)
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_unavailable_vm_sleep_uses_native_defaults_without_hardware_changes(self):
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'development fixture'):
+            configure_native_text_state(self.path, qemu_disable_sleep=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        configure_native_text_state(self.path, development_root=True, qemu_disable_sleep=True)
+        configured = self.path.read_bytes()
+        self.assertEqual(read_tree(configured)[('device-tree', 'defaults')]['sleep-disabled'], struct.pack('<I', 1))
+        configure_native_text_state(self.path, development_root=True, qemu_disable_sleep=True)
+        self.assertEqual(self.path.read_bytes(), configured)
+        self.path.write_bytes(node('device-tree', children=(node('chosen'), node('defaults', (('sleep-disabled', bytes(4)),)))))
+        conflicting = self.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'conflicts'):
+            configure_native_text_state(self.path, development_root=True, qemu_disable_sleep=True)
+        self.assertEqual(self.path.read_bytes(), conflicting)
+
     def test_nvram_binary_escaping_and_existing_variable_refusal(self):
         identity = uuid.UUID(bytes=bytes([0, 255]) * 8)
         result = seed_vm_nvram_uuid(empty_bank(), identity)
