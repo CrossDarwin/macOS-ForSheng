@@ -87,6 +87,7 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0061-native-windowserver-exception-stop.patch',
     ROOT / 'platform/sheng/macos26/patches/0062-native-windowserver-alignment-map.patch',
     ROOT / 'platform/sheng/macos26/patches/0063-native-managed-ram-writecombine.patch',
+    ROOT / 'platform/sheng/macos26/patches/0064-native-language-chooser-trace.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -268,6 +269,16 @@ def prepare() -> dict:
     stage_file(recovery_ui, source / 'osfmk/vm/sheng_recovery_ui.h')
     stage_file(recovery_ui_kernel, source / 'osfmk/vm/sheng_recovery_ui_kernel.h')
     stage_file(recovery_ui_generated, source / 'osfmk/vm/sheng_recovery_ui_pages.h')
+    from native_language_trace import render as render_language_trace
+    language_manifest = ROOT / 'config/macos26-language-trace.json'
+    language_generated = OUT / 'sheng_language_trace_pages.h'
+    rendered = render_language_trace(json.loads(language_manifest.read_text()))
+    if not language_generated.exists() or language_generated.read_text() != rendered:
+        language_generated.write_text(rendered)
+    language_headers = ('language_trace.h', 'language_trace_kernel.h', 'language_pages_kernel.h')
+    for name in language_headers:
+        stage_file(ROOT / 'platform/sheng/macos26/recovery' / name, source / ('osfmk/vm/sheng_' + name))
+    stage_file(language_generated, source / 'osfmk/vm/sheng_language_trace_pages.h')
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
@@ -275,6 +286,8 @@ def prepare() -> dict:
                     'pexpert/arm/pe_sheng_panel.h', 'pexpert/arm/pe_sheng_font.h',
                     'pexpert/arm/pe_sheng_io_zero.h', 'osfmk/vm/sheng_recovery_ui.h',
                     'osfmk/vm/sheng_recovery_ui_kernel.h', 'osfmk/vm/sheng_recovery_ui_pages.h',
+                    'osfmk/vm/sheng_language_trace.h', 'osfmk/vm/sheng_language_trace_kernel.h',
+                    'osfmk/vm/sheng_language_pages_kernel.h', 'osfmk/vm/sheng_language_trace_pages.h',
                     'bsd/kern/sheng_process_output.h', 'pexpert/arm/pe_sheng_boot_progress.h',
                     'pexpert/arm/pe_sheng_boot_progress_kernel.h', 'pexpert/arm/pe_sheng_panic_qr.h',
                     'pexpert/arm/pe_sheng_qr_encoder.h', 'pexpert/arm/pe_sheng_qr_runtime.h',
@@ -318,6 +331,13 @@ def prepare() -> dict:
                       kernel_hook_sha256=sha(recovery_ui_kernel), generated_sha256=sha(recovery_ui_generated),
                       original_signature_validation_required=True, disk_writes=False,
                       runtime_qualified=False, hardware_admitted=False),
+                  language_trace=dict(default_off=True, boot_argument='sheng-language-trace=1',
+                      requires_recovery_ui=True, page_count=2, point_count=5,
+                      manifest_sha256=sha(language_manifest), generated_sha256=sha(language_generated),
+                      source_sha256={name: sha(ROOT / 'platform/sheng/macos26/recovery' / name)
+                                     for name in language_headers},
+                      disk_writes=False, samples_per_point=32,
+                      runtime_qualified=False, hardware_qualified=False),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],
                   purpose='Native machine-layer source compilation; not a bootable kernel',

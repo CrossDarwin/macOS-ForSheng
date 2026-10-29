@@ -1,0 +1,109 @@
+{
+  "schema": "sheng-recovery-ui-pages-v1",
+  "trace_schema": "sheng-language-trace-v1",
+  "build": "25F71",
+  "architecture": "arm64e",
+  "default_off": true,
+  "disk_writes": false,
+  "authentication_success_fabricated": false,
+  "original_signature_validation_required": true,
+  "boot_argument": "sheng-language-trace=1",
+  "binary_sha256": "d600e4c836ff20f713cd6b4eb2f25d0906e8332a59546dd2e66b1b2d96a00896",
+  "uuid_command_offset": 3120,
+  "uuid_command": "1b00000018000000f3a2dacd0b3436f99138c5a8612f905e",
+  "points": [
+    {
+      "rva": 35684,
+      "file_offset": 35684,
+      "name": "system-language-count",
+      "replay": "cbnz_x0",
+      "destination": 0,
+      "tag": 23041,
+      "instruction": "b50000a0"
+    },
+    {
+      "rva": 37068,
+      "file_offset": 37068,
+      "name": "localized-name-present",
+      "replay": "mov_x0",
+      "destination": 24,
+      "tag": 23042,
+      "instruction": "aa0003f8"
+    },
+    {
+      "rva": 52184,
+      "file_offset": 52184,
+      "name": "table-row-count",
+      "replay": "mov_x0",
+      "destination": 20,
+      "tag": 23043,
+      "instruction": "aa0003f4"
+    },
+    {
+      "rva": 52416,
+      "file_offset": 52416,
+      "name": "row-view-present",
+      "replay": "mov_x0",
+      "destination": 19,
+      "tag": 23044,
+      "instruction": "aa0003f3"
+    },
+    {
+      "rva": 52316,
+      "file_offset": 52316,
+      "name": "row-value-present",
+      "replay": "mov_x0",
+      "destination": 20,
+      "tag": 23045,
+      "instruction": "aa0003f4"
+    }
+  ],
+  "pages": [
+    {
+      "file": "Language Chooser",
+      "file_offset": 32768,
+      "edits": [
+        {
+          "offset": 2916,
+          "before": "a00000b5",
+          "after": "20402bd4",
+          "policy": "language-trace"
+        },
+        {
+          "offset": 4300,
+          "before": "f80300aa",
+          "after": "40402bd4",
+          "policy": "language-trace"
+        }
+      ],
+      "before_sha256": "4b239a5c93be05f89e107e41ad9e4f67547f79a00a5cca20c782c82c5ff3436e",
+      "after_sha256": "64f96637a434f70b8047f15ae3973b764a5821c16551a10e6ec87e407d207798"
+    },
+    {
+      "file": "Language Chooser",
+      "file_offset": 49152,
+      "edits": [
+        {
+          "offset": 3032,
+          "before": "f40300aa",
+          "after": "60402bd4",
+          "policy": "language-trace"
+        },
+        {
+          "offset": 3264,
+          "before": "f30300aa",
+          "after": "80402bd4",
+          "policy": "language-trace"
+        },
+        {
+          "offset": 3164,
+          "before": "f40300aa",
+          "after": "a0402bd4",
+          "policy": "language-trace"
+        }
+      ],
+      "before_sha256": "bbd6f986267df8414ef8515a8647d56f9562bd670dbbbf4741e9ffb4b33c52dc",
+      "after_sha256": "bbb892de23f8b85bc8991895f2258a5f33734ee363249f867ba065232714ab10"
+    }
+  ]
+}

@@ -24,11 +24,15 @@ sheng_recovery_ui_digest(const void *data, size_t size, uint8_t result[32])
     SHA256_Final(result, &context);
 }
 
+#include <vm/sheng_language_pages_kernel.h>
+
 static void
 sheng_recovery_ui_page(vm_page_t page, struct vnode *vnode, uint64_t offset, bool original_validated)
 {
     if (!sheng_recovery_ui_enabled)
         return;
+    if (sheng_recovery_ui_enabled == 1)
+        sheng_language_trace_page(page, vnode, offset, original_validated);
     const size_t count = sizeof(sheng_ui_pages) / sizeof(sheng_ui_pages[0]);
     bool candidate = false;
     for (size_t i = 0; i < count; i++)

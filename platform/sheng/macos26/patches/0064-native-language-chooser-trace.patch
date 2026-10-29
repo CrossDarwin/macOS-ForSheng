@@ -1,0 +1,24 @@
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -766,6 +766,10 @@
+ 	       is_table_walk_error(fault_code);
+ }
+ 
++#if SHENG && (DEVELOPMENT || DEBUG)
++#include <vm/sheng_language_trace_kernel.h>
++#endif
++
+ void
+ sleh_synchronous(arm_context_t *context, uint64_t esr, vm_offset_t far, __unused bool did_initiate_panic_lockdown)
+ {
+@@ -1030,6 +1034,10 @@
+ 			handle_kernel_breakpoint(state, esr);
+ 			break;
+ 		} else {
++#if SHENG && (DEVELOPMENT || DEBUG)
++			if (sheng_language_trace(state, esr))
++				break;
++#endif
+ 			handle_user_breakpoint(state, esr);
+ 			__builtin_unreachable();
+ 		}

@@ -190,4 +190,35 @@ ADB 和 fastboot 分别属于 Android 与 ABL，不能充当已停止的 XNU 的
 它们没有通过本轮实机捕获验收，不能与已通过的 `SHENGLOG.BIN` 周期写入混为一谈。
 实现与失败记录保存在[历史调试记录](history/debugging-before-panic-qr.md)。
 
+## 语言列表诊断
+
+语言窗口出现但列表空白时，在包含语言诊断补丁的开发内核中添加：
+
+```text
+sheng-recovery-ui=1 sheng-language-trace=1
+```
+
+该功能默认关闭，要求配套的 macOS 26.5 / 25F71 Language Chooser。
+本地可用以下命令核对原始程序及取证点：
+
+```sh
+python3 scripts/native_language_trace.py --binary '/path/to/Language Chooser'
+```
+
+日志使用 `SHENG-LANGUAGE` 前缀，每个点最多输出 32 条：
+
+| 字段 | `value` 的含义 |
+| --- | --- |
+| `system-language-count` | `NSLocale.systemLanguages` 返回的语言条数 |
+| `localized-name-present` | 单个语言的本地化名称是否生成，1 为存在，0 为缺失 |
+| `table-row-count` | 表格数据源返回的行数 |
+| `row-view-present` | AppKit 是否返回行视图，1 为存在，0 为缺失 |
+| `row-value-present` | 内容回调是否返回对象，1 为存在，0 为缺失 |
+
+先比较系统语言条数与表格行数，再检查行视图。`row-value-present` 只在对应内容回调执行时出现。
+对象存在不能证明文字已经绘制；没有某条记录也可能是该回调尚未执行。
+日志进入现有控制台和保留日志链路，磁盘读回仍取决于日志卷与周期提交状态。
+
+此诊断已完成主机检查，尚未完成完整内核和设备运行验证。
+
 原始照片、录像、分区镜像和运行日志仅保存在本地 `private/`，不提交仓库或上传 CI。
