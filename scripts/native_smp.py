@@ -58,7 +58,9 @@ def capture(memory: dict, addresses: dict, count: int) -> dict:
                 and result['psci'][i] == 0
                 and result['requested_affinities'][i] & 0xffff == result['seen_affinities'][i] & 0xffff
                 for i in range(1, count)))
-    result['all_cores_received_timer_and_ipi'] = all(
-        result['timer_interrupts'][i] > 0 and result['ipi_interrupts'][i] > 0 for i in range(count))
+    result['all_cores_received_timer'] = all(value > 0 for value in result['timer_interrupts'])
+    result['all_cores_received_ipi'] = all(value > 0 for value in result['ipi_interrupts'])
+    result['all_cores_received_timer_and_ipi'] = (
+        result['all_cores_received_timer'] and result['all_cores_received_ipi'])
     result['scheduler_migration_qualified'] = False
     return result

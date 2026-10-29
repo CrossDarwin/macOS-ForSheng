@@ -52,6 +52,9 @@ class NativeSmpPolicy(unittest.TestCase):
         result = read()
         self.assertTrue(result['secondary_init_complete'])
         self.assertFalse(result['all_cores_received_timer_and_ipi'])
+        data['ipi_interrupts'][:2] = [1, 1]
+        self.assertTrue(read()['all_cores_received_ipi'])
+        self.assertFalse(read()['all_cores_received_timer'])
         for field in ('timer_interrupts', 'ipi_interrupts'):
             data[field][:2] = [1, 1]
         self.assertTrue(read()['all_cores_received_timer_and_ipi'])

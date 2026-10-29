@@ -1,7 +1,8 @@
 # EL1 多核启动
 
 多核开发复用 UniXNU 的 ArmCpu、PSCI 和 GICv3 路径。
-当前已完成 QEMU 双核和八核的副核初始化与定时器验证，核间中断和实机多核仍待验证。
+当前 QEMU 八核已执行到真实 `launchd main`，八核均收到定时器和核间中断。
+实机和图形多核仍待验证。
 
 ## 上游配置
 
@@ -32,11 +33,17 @@ PSCI 返回值与失败计数均为 0，八核均收到定时器中断。
 Mach-O 汇编将行内分号作为注释，导致同一行后续指令被丢弃。
 修正将 ArmCpu 多指令汇编改为换行，并修正 SGI 探针的输入、输出操作数。
 构建时检查实际目标文件，要求发送函数和探针保留 `ICC_SGI1R_EL1` 写入与后续 `ISB`。
-修正后的完整内核运行尚待验证。
+修正构建 [40952990576](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/40952990576) 已通过。
+八核运行到达真实 `launchd main`，第一条指令已执行，随后继续至 180 秒取证时限。
+七个副核均完成初始化，PSCI 返回值和失败计数均为 0。
+最终八核的定时器计数均非零，IPI 接收计数为 `7366,7307,7078,6059,5883,6070,5407,5698`。
+该运行未启用 GOP 图形输出，也未验证特定线程的跨核迁移或性能提升。
 
 `result.json` 的 `smp_runtime` 记录各核启动阶段、PSCI 返回值、实际 affinity、定时器及 IPI 计数。
 `secondary_init_complete` 表示所有请求的次级核心进入 ArmCpu 的运行状态。
-`all_cores_received_timer_and_ipi` 表示每核均收到过两类中断。调度迁移仍需运行验证。
+`all_cores_received_timer` 和 `all_cores_received_ipi` 分别记录两类中断的逐核到达情况，
+`all_cores_received_timer_and_ipi` 表示两项均满足。空闲核的定时器计数可保持为零，需结合实际工作负载判断。
+调度迁移仍需运行验证。
 
 当前多核观察与 `--native-gop-display` 互斥。
 GOP 首帧接管和诊断面板尚依赖单核中断屏蔽，图形多核需要先完成跨核显示同步。
