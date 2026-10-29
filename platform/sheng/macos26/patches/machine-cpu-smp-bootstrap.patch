@@ -1,0 +1,115 @@
+--- a/ArmCpu/ArmCpu.cpp
++++ b/ArmCpu/ArmCpu.cpp
+@@ -13,6 +13,10 @@
+ // Kernel-internal entries used for secondary CPU startup (Darwin 23 osfmk).
+ extern "C" vm_offset_t ml_static_vtop (vm_offset_t);
+ extern "C" char LowResetVectorBase[], LowResetVectorEnd[], ResetHandlerData[], const_boot_args[];
++#if HAS_NATIVE_EL1_PAC
++extern "C" char sheng_boot_pac_bank[];
++extern "C" uint32_t sheng_boot_pac_ready;
++#endif
+ extern "C" kern_return_t kernel_thread_start (void (*) (void *, wait_result_t), void *, thread_t *);
+ extern "C" void armcpu_gic_diag (uint64_t aff, uint32_t *out);
+ extern "C" void armcpu_sgi_selfprobe (uint64_t *out);
+@@ -366,10 +370,8 @@
+   skipGic = skip != 0;
+   unsigned selfIpi = 0;
+   PE_parse_boot_argn ("armcpu-self-ipi", &selfIpi, sizeof (selfIpi));
+-  gSelfIpi = selfIpi == 1;
+   unsigned spiIpi = 0;
+   PE_parse_boot_argn ("armcpu-spi-ipi", &spiIpi, sizeof (spiIpi));
+-  gSpiIpi = spiIpi == 1;
+   unsigned diagnostic = 0;
+   PE_parse_boot_argn("armcpu-diagnostics", &diagnostic, sizeof(diagnostic));
+   diagnosePower=diagnostic==1;
+@@ -387,9 +389,12 @@
+     if (cpuName == nullptr) { return false; }
+     retain ();
+     __atomic_store_n (&gPending[logicalId], this, __ATOMIC_RELEASE);
+-    if (gBootRegistered != 0) { drainPending (); }
++    if (__atomic_load_n (&gBootRegistered, __ATOMIC_ACQUIRE) != 0) { drainPending (); }
+     return true;
+   } else {
++    // Publish the shared IPI policy once, before releasing secondary registrations.
++    gSelfIpi = selfIpi == 1;
++    gSpiIpi = spiIpi == 1;
+     uint64_t bootMpidr;
+     __asm__ volatile ("mrs %0, mpidr_el1" : "=r" (bootMpidr));
+     armcpu_boot_mpidr = static_cast<uint32_t> (bootMpidr);
+@@ -487,9 +492,9 @@
+   register uint64_t x2 __asm__ ("x2") = b;
+   register uint64_t x3 __asm__ ("x3") = c;
+   if (hvc) {
+-    __asm__ volatile ("hvc #0" : "+r" (x0) : "r" (x1), "r" (x2), "r" (x3) : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "memory");
++    __asm__ volatile ("hvc #0" : "+r" (x0), "+r" (x1), "+r" (x2), "+r" (x3) : : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "cc", "memory");
+   } else {
+-    __asm__ volatile ("smc #0" : "+r" (x0) : "r" (x1), "r" (x2), "r" (x3) : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "memory");
++    __asm__ volatile ("smc #0" : "+r" (x0), "+r" (x1), "+r" (x2), "+r" (x3) : : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "cc", "memory");
+   }
+   return static_cast<int64_t> (x0);
+ }
+@@ -514,7 +519,7 @@
+     enableCPUTimeBase (true);
+     setCPUState (kIOCPUStateRunning);
+     armcpu_smp_step[logicalId] = 7;
+-    armcpu_smp_running = armcpu_smp_running + 1;
++    __atomic_fetch_add (&armcpu_smp_running, 1U, __ATOMIC_RELAXED);
+     // XNU clears SIGPdisabled for a core the first time that core takes an IPI, and cpu_signal() silently skips a core until then; Apple's
+     // CPU driver provokes it with a self-IPI from initCPU (osfmk/kern/machine.c, processor_up).
+     if (gSelfIpi) { signalCPU (this); }
+@@ -550,19 +555,19 @@
+     if ((id & 0xffffff) >= 1020) { armcpu_irq_phase=0;break; }
+     if(diagnosePower && ++drained>128)panic("ArmCpu: IRQ drain exceeds 128 id=%llx timer=%llu IPI=%llu",id,armcpu_timer_interrupts,armcpu_ipi_interrupts);
+     if ((id & 0xffffff) == 27) {
+-      armcpu_timer_interrupts = armcpu_timer_interrupts + 1;
++      __atomic_fetch_add (&armcpu_timer_interrupts, 1ULL, __ATOMIC_RELAXED);
+       armcpu_core_timer[logicalId & 7] = armcpu_core_timer[logicalId & 7] + 1;
+       armcpu_irq_phase=2;
+       rtclock_intr (0);
+       armcpu_irq_phase=3;
+     } else if ((id & 0xffffff) == 0) {
+-      armcpu_ipi_interrupts = armcpu_ipi_interrupts + 1;
++      __atomic_fetch_add (&armcpu_ipi_interrupts, 1ULL, __ATOMIC_RELAXED);
+       armcpu_core_sgi[logicalId & 7] = armcpu_core_sgi[logicalId & 7] + 1;
+       armcpu_irq_phase=4;
+       if (ipi_handler != nullptr) { ipi_handler (); }
+       armcpu_irq_phase=5;
+     } else if (gSpiIpi && (id & 0xffffff) >= kIpiSpiBase && (id & 0xffffff) < kIpiSpiBase + 8) {
+-      armcpu_ipi_interrupts = armcpu_ipi_interrupts + 1;
++      __atomic_fetch_add (&armcpu_ipi_interrupts, 1ULL, __ATOMIC_RELAXED);
+       armcpu_core_sgi[logicalId & 7] = armcpu_core_sgi[logicalId & 7] + 1;
+       armcpu_irq_phase = 4;
+       if (ipi_handler != nullptr) { ipi_handler (); }
+@@ -600,7 +605,7 @@
+   uint64_t aff = peer->signalTarget ();
+   uint64_t sgi = ((aff & 0xff00000000ULL) << 16) | ((aff & 0xff0000) << 16) |
+                  ((aff & 0xff00) << 8) | (1ULL << (aff & 0xff));
+-  armcpu_ipi_sent = armcpu_ipi_sent + 1;
++  __atomic_fetch_add (&armcpu_ipi_sent, 1ULL, __ATOMIC_RELAXED);
+   if (gSpiIpi) { spiIpiSend (gDist, peer->logicalId & 7); return; }
+   __asm__ volatile ("dsb ishst; msr icc_sgi1r_el1, %0; isb" :: "r" (sgi) : "memory");
+ }
+@@ -699,7 +704,7 @@
+ extern "C" void armcpu_ipi_selftest (uint64_t aff)
+ {
+   uint64_t sgi = ((aff & 0xff00000000ULL) << 16) | ((aff & 0xff0000) << 16) | ((aff & 0xff00) << 8) | (1ULL << (aff & 0xff));
+-  armcpu_ipi_selftest_sent = armcpu_ipi_selftest_sent + 1;
++  __atomic_fetch_add (&armcpu_ipi_selftest_sent, 1ULL, __ATOMIC_RELAXED);
+   if (gSpiIpi) { spiIpiSend (gDist, static_cast<uint32_t> ((aff >> 8) & 7)); return; }
+   __asm__ volatile ("dsb ishst; msr icc_sgi1r_el1, %0; isb" :: "r" (sgi) : "memory");
+ }
+@@ -753,6 +758,14 @@
+   cleanToMemory (LowResetVectorBase, 0x10000);   // reset vector, start_cpu and the code up to the MMU enable
+   cleanToMemory (ResetHandlerData, 0x1000);
+   cleanToMemory (const_boot_args, 0x1000);
++#if HAS_NATIVE_EL1_PAC
++  if (__atomic_load_n (&sheng_boot_pac_ready, __ATOMIC_ACQUIRE) != 1) {
++    armcpu_smp_psci_rc[logicalId] = -1002;
++    return KERN_FAILURE;
++  }
++  // Publish the cold-boot bank to cores entering with caches and translation disabled.
++  cleanToMemory (sheng_boot_pac_bank, 88);
++#endif
+   armcpu_smp_step[logicalId] = 4;
+   int64_t result = psciCall (hvc, 0xc4000003ULL, affinity & 0xff00ffffffULL, entry, 0);
+   armcpu_smp_psci_rc[logicalId] = static_cast<int32_t> (result);

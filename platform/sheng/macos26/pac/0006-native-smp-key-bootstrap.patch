@@ -1,0 +1,43 @@
+--- a/osfmk/arm64/pac_asm.h
++++ b/osfmk/arm64/pac_asm.h
+@@ -45,6 +45,9 @@
+ 
+ 
+ /* BEGIN IGNORE CODESTYLE */
++#if HAS_NATIVE_EL1_PAC
++#include <arm64/sheng_smp_keys.h>
++#endif
+ 
+ #if HAS_NATIVE_EL1_PAC
+ /* Derive 128-bit keys from four domain-separated PACGA results; always switch GA last. */
+@@ -261,6 +264,9 @@
+  *   tmp2 - scratch register
+  */
+ .macro PAC_INIT_KEY_STATE	tmp, tmp2
++#if HAS_NATIVE_EL1_PAC
++	SHENG_BOOTSTRAP_KERNEL_KEYS
++#endif
+ #if HAS_PARAVIRTUALIZED_PAC
+ #if HIBERNATION
+ 	#error PAC_INIT_KEY_STATE is not implemented for HAS_PARAVIRTUALIZED_PAC && HIBERNATION
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -37,6 +37,9 @@
+ #include <arm64/tunables/tunables.s>
+ #endif
+ #include <arm64/exception_asm.h>
++#if HAS_NATIVE_EL1_PAC
++#include <arm64/sheng_smp_keys_storage.h>
++#endif
+ #include <arm64/sheng_bootstrap_trace.h>
+ 
+ #if __ARM_KERNEL_PROTECT__
+@@ -148,7 +151,7 @@
+ 	adrp	x19, EXT(ResetHandlerData)@page			// Get address of the reset handler data
+ 	add		x19, x19, EXT(ResetHandlerData)@pageoff
+ 	mrs		x15, MPIDR_EL1						// Load MPIDR to get CPU number
+-#if HAS_CLUSTER
++#if HAS_CLUSTER || SHENG
+ 	and		x0, x15, #0xFFFF					// CPU number in Affinity0, cluster ID in Affinity1
+ #else
+ 	and		x0, x15, #0xFF						// CPU number is in MPIDR Affinity Level 0

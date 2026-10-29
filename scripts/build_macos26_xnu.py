@@ -92,6 +92,7 @@ PATCHES = [
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
 CPU_INTERRUPT_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-interrupt-order.patch'
+CPU_SMP_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-smp-bootstrap.patch'
 
 
 # Preserve diagnostics for exported Apple source/tool-generated code on Clang 27.
@@ -279,6 +280,9 @@ def prepare() -> dict:
     for name in language_headers:
         stage_file(ROOT / 'platform/sheng/macos26/recovery' / name, source / ('osfmk/vm/sheng_' + name))
     stage_file(language_generated, source / 'osfmk/vm/sheng_language_trace_pages.h')
+    smp_headers = ('smp_keys.h', 'smp_keys_storage.h')
+    for name in smp_headers:
+        stage_file(ROOT / 'platform/sheng/macos26/pac' / name, source / ('osfmk/arm64/sheng_' + name))
     subprocess.run(['git', '-C', source, 'add', '-N', 'osfmk/prng/sheng_crypto_image.h', 'pexpert/pexpert/arm64/SHENG.h',
                     'pexpert/arm/pe_sheng_log.h', 'osfmk/arm64/sheng_early_exception.h',
                     'osfmk/arm64/sheng_bootstrap_sync.h', 'osfmk/arm64/sheng_bootstrap_trace.h',
@@ -288,6 +292,7 @@ def prepare() -> dict:
                     'osfmk/vm/sheng_recovery_ui_kernel.h', 'osfmk/vm/sheng_recovery_ui_pages.h',
                     'osfmk/vm/sheng_language_trace.h', 'osfmk/vm/sheng_language_trace_kernel.h',
                     'osfmk/vm/sheng_language_pages_kernel.h', 'osfmk/vm/sheng_language_trace_pages.h',
+                    'osfmk/arm64/sheng_smp_keys.h', 'osfmk/arm64/sheng_smp_keys_storage.h',
                     'bsd/kern/sheng_process_output.h', 'pexpert/arm/pe_sheng_boot_progress.h',
                     'pexpert/arm/pe_sheng_boot_progress_kernel.h', 'pexpert/arm/pe_sheng_panic_qr.h',
                     'pexpert/arm/pe_sheng_qr_encoder.h', 'pexpert/arm/pe_sheng_qr_runtime.h',
@@ -338,6 +343,12 @@ def prepare() -> dict:
                                      for name in language_headers},
                       disk_writes=False, samples_per_point=32,
                       runtime_qualified=False, hardware_qualified=False),
+                  smp_bootstrap=dict(kernel_keys='cold-boot bank shared before secondary C entry'
+                                        if ARCH == 'arm64e' else 'not used by the ARM64 target',
+                      reset_affinity_bits=16 if ARCH == 'arm64e' else 8, key_material_logged=False,
+                      source_sha256={name: sha(ROOT / 'platform/sheng/macos26/pac' / name)
+                                     for name in smp_headers},
+                      hardware_qualified=False, graphics_smp_qualified=False),
                   upstream_sheng_defconfig_sha256=baseline['defconfig_sha256'],
                   upstream_sheng_archives=baseline['archives'],
                   purpose='Native machine-layer source compilation; not a bootable kernel',
@@ -492,6 +503,9 @@ def compile_sources(args, record: dict) -> None:
     subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
                     str(CPU_INTERRUPT_PATCH)], cwd=ROOT, check=True)
     record['cpu_interrupt_order_patch_sha256'] = sha(CPU_INTERRUPT_PATCH)
+    subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
+                    str(CPU_SMP_PATCH)], cwd=ROOT, check=True)
+    record['cpu_smp_patch_sha256'] = sha(CPU_SMP_PATCH)
     record['platform_objects'] = {}
     for component in ('ArmDTPlatform', 'ArmCpu'):
         original = ROOT / f'UniXNU/drivers/{component}/{component}.cpp'
@@ -640,6 +654,7 @@ def main() -> None:
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0003-native-user-pac-lifecycle.patch')
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0004-native-signing-window-failure.patch')
         PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0005-native-user-a-key-policy.patch')
+        PATCHES.append(ROOT / 'platform/sheng/macos26/pac/0006-native-smp-key-bootstrap.patch')
     # Keep helpers on this configured module when invoked as a script.
     sys.modules['build_macos26_xnu'] = sys.modules[__name__]
     record = prepare()

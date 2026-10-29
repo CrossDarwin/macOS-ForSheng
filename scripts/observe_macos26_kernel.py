@@ -136,6 +136,8 @@ def main() -> None:
     parser.add_argument('--owned-memory-mib', type=int, choices=(512, 2048, 3072), default=512,
                         help='real contiguous DarwinBoot allocation inside QEMU RAM')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
+    parser.add_argument('--smp', type=int, choices=(1, 2, 4, 8), default=1,
+                        help='explicit CPU-only SMP observation; native GOP remains separately qualified')
     parser.add_argument('--decode-existing-snapshot', action='store_true',
                         help='decode a saved snapshot without restarting QEMU')
     args = parser.parse_args()
@@ -152,6 +154,10 @@ def main() -> None:
     if args.kext_log is not None and not 0 <= args.kext_log <= 0xffffffff:
         parser.error('--kext-log must be a 32-bit unsigned filter')
     kernel, addresses, record = identify(args.kernel_build.resolve())
+    from native_smp import configure as configure_smp
+    smp = configure_smp(json.loads((args.kernel_build / 'build.json').read_text()),
+                        args.smp, args.native_gop_display, NATIVE_BOOT_ARGS)
+    record['smp_observation'] = smp
     component_map = {}
     security_path = args.kernel_build / 'security-relink.json'
     if security_path.is_file():
@@ -291,7 +297,7 @@ def main() -> None:
         shutil.copy2(loader_path, payload / 'DarwinBoot.efi')
         record['loader_sha256'] = loader['sha256']
         shutil.copy2(kernel, payload / 'kernel.macho')
-        boot_args = NATIVE_BOOT_ARGS
+        boot_args = smp['boot_args']
         if args.native_gop_display:
             if boot_args.split().count('cpus=1') != 1 or any(
                     item.startswith('cpus=') and item != 'cpus=1' for item in boot_args.split()):
@@ -329,6 +335,7 @@ def main() -> None:
                         '--platform-compatible', 'xiaomi,sheng', '--qemu-vmm-present',
                         '--nvram-proxy', '--crypto-hash-method', 'sha2-384',
                         '--amfi-platform-only', '--random-seed-bytes', str(args.seed_bytes)]
+        dt_command += ['--smp', str(args.smp)]
         if args.virtio_block_image:
             disk = args.virtio_block_image.resolve()
             if not disk.is_file() or not disk.stat().st_size or disk.stat().st_size % 512:
@@ -336,7 +343,7 @@ def main() -> None:
             fdt = args.output.resolve() / 'qemu-block.dtb'
             fdt_command = ['qemu-system-aarch64', '-M',
                 f'virt,virtualization=off,secure=off,gic-version=3,dumpdtb={fdt}',
-                '-cpu', 'cortex-a710', '-m', str(args.qemu_memory_mib), '-smp', '1', '-nic', 'none', '-display', 'none',
+                '-cpu', 'cortex-a710', '-m', str(args.qemu_memory_mib), '-smp', str(args.smp), '-nic', 'none', '-display', 'none',
                 '-global', 'virtio-mmio.force-legacy=false', '-blockdev', json.dumps(dict(
                     driver='raw', **{'node-name': 'root-disk', 'read-only': True}, file=dict(
                         driver='file', filename=str(disk), **{'read-only': True, 'locking': 'off'}))),
@@ -371,6 +378,7 @@ def main() -> None:
                    '--firmware', args.firmware.resolve(), '--gic-version', '3',
                    '--qemu-memory-mib', str(args.qemu_memory_mib), '--timeout', str(args.timeout),
                    '--system-registers', '--qemu-ramfb']
+        command += ['--smp', str(args.smp)]
         if args.stream_retained_log:
             command += ['--retained-log-address', hex(addresses['_sheng_log_buffer']),
                         '--retained-log-uuid', record['uuid']]
@@ -509,10 +517,17 @@ def main() -> None:
                 command += ['--read-indirect', request]
         if '_commpage_rw_addr' in addresses:
             command += ['--read-indirect', f'{addresses["_commpage_rw_addr"]:x}:160:8']
+        if args.smp > 1:
+            from native_smp import FIELDS as smp_fields
+            for symbol, size in smp_fields.values():
+                command += ['--read-memory', f'{addresses[symbol]:x}:{size:x}']
         (args.output / 'command.json').write_text(json.dumps([str(x) for x in command], indent=2) + '\n')
         with (args.output / 'observer.log').open('w') as log:
             subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     snapshot = json.loads((args.output / 'gdb-stop.json').read_text())
+    if args.smp > 1:
+        from native_smp import capture as capture_smp
+        record['smp_runtime'] = capture_smp(snapshot['memory'], addresses, args.smp)
     record['stopped_at_halt'] = int(snapshot['pc'], 16) == addresses.get('_halt_all_cpus')
     if '_commpage_rw_addr' in addresses:
         request = f'{addresses["_commpage_rw_addr"]:x}:160:8'
