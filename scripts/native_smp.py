@@ -28,9 +28,12 @@ def configure(build: dict, count: int, graphics: bool, boot_args: str) -> dict:
                 for name in ('smp_keys.h', 'smp_keys_storage.h')}
     patch = ROOT / 'platform/sheng/macos26/patches/machine-cpu-smp-bootstrap.patch'
     pac_patch = ROOT / 'platform/sheng/macos26/pac/0006-native-smp-key-bootstrap.patch'
+    asm_patch = ROOT / 'platform/sheng/macos26/patches/machine-cpu-inline-asm.patch'
     if (build.get('architecture') != 'arm64e' or bootstrap.get('source_sha256') != expected
             or bootstrap.get('reset_affinity_bits') != 16
             or build.get('cpu_smp_patch_sha256') != hashlib.sha256(patch.read_bytes()).hexdigest()
+            or build.get('cpu_inline_asm_patch_sha256') != hashlib.sha256(asm_patch.read_bytes()).hexdigest()
+            or not build.get('cpu_sgi_instructions')
             or build.get('patches', {}).get(str(pac_patch.relative_to(ROOT)))
             != hashlib.sha256(pac_patch.read_bytes()).hexdigest()):
         raise ValueError('Requires the compiled native secondary PAC and reset-affinity fixes')

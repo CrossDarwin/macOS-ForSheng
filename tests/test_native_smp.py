@@ -14,10 +14,12 @@ class NativeSmpPolicy(unittest.TestCase):
     def build(self):
         pac = ROOT / 'platform/sheng/macos26/pac'
         patch = ROOT / 'platform/sheng/macos26/patches/machine-cpu-smp-bootstrap.patch'
+        asm_patch = ROOT / 'platform/sheng/macos26/patches/machine-cpu-inline-asm.patch'
         sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
         return dict(architecture='arm64e', smp_bootstrap=dict(reset_affinity_bits=16,
             source_sha256={name: sha(pac / name) for name in ('smp_keys.h', 'smp_keys_storage.h')}),
             cpu_smp_patch_sha256=sha(patch),
+            cpu_inline_asm_patch_sha256=sha(asm_patch), cpu_sgi_instructions={'verified': True},
             patches={str((pac / '0006-native-smp-key-bootstrap.patch').relative_to(ROOT)):
                      sha(pac / '0006-native-smp-key-bootstrap.patch')})
 

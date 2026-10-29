@@ -93,6 +93,7 @@ MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declaratio
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
 CPU_INTERRUPT_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-interrupt-order.patch'
 CPU_SMP_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-smp-bootstrap.patch'
+CPU_ASM_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-inline-asm.patch'
 
 
 # Preserve diagnostics for exported Apple source/tool-generated code on Clang 27.
@@ -506,6 +507,9 @@ def compile_sources(args, record: dict) -> None:
     subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
                     str(CPU_SMP_PATCH)], cwd=ROOT, check=True)
     record['cpu_smp_patch_sha256'] = sha(CPU_SMP_PATCH)
+    subprocess.run(['git', 'apply', '--directory=' + str(machine.relative_to(ROOT)),
+                    str(CPU_ASM_PATCH)], cwd=ROOT, check=True)
+    record['cpu_inline_asm_patch_sha256'] = sha(CPU_ASM_PATCH)
     record['platform_objects'] = {}
     for component in ('ArmDTPlatform', 'ArmCpu'):
         original = ROOT / f'UniXNU/drivers/{component}/{component}.cpp'
@@ -530,6 +534,10 @@ def compile_sources(args, record: dict) -> None:
             run(command, component, record, cwd=Path(compile_record['directory']), env=env)
             record['platform_objects'][component] = dict(source_sha256=sha(original),
                 adapted_source_sha256=sha(adapted), **audit_object(destination))
+            if component == 'ArmCpu':
+                from native_cpu_asm import audit_sgi
+                record['cpu_sgi_instructions'] = audit_sgi(destination,
+                    ('__ZN6ArmCpu9signalCPUEP5IOCPU', '_armcpu_ipi_selftest', '_armcpu_sgi_selfprobe'))
         except (subprocess.CalledProcessError, ValueError) as error:
             failures.append(f'{component}: {error}')
         save(record)
