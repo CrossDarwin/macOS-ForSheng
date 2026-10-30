@@ -41,8 +41,22 @@ Android 已启动到首次设置状态。
 
 八核文字测试包 UUID 为 `50F791BD-AE5F-3D95-AC87-1E954F9CDDFD`。
 包内保留 SPI 和 SGI 两个 IPI 入口，默认使用 UniXNU-sheng 的 SPI 路径；GOP 图形输出关闭。
-已收到 `fastboot boot` 的 `Booting OKAY`，实机运行结果待采集。boot、Recovery 和厂商固件分区未刷写。
+本轮通过 `fastboot boot` 临时启动。boot、Recovery 和厂商固件分区未刷写。
 此前的 218FDCCE 单核图形包仍保留在本地，图形多核尚未验收。
+
+### 八核文字包日志读回
+
+返回 Android Recovery 后，已读回 UUID 匹配的日志，最新有效提交代数为 195，两槽 CRC 均通过。
+累计接收 129,974 字节，保留 81,920 字节，环形覆盖遗漏 48,054 字节，字符 writer 忙时丢失为 0。
+
+日志包含 CPU 0–7 的 `cpu_start()` 调用、`launchd` 服务启动及 `recoveryosd` 建立 Aqua Session 的请求。
+`cpu_start()` 的打印位于启动函数入口，不能代替副核运行状态及逐核 IPI 计数。
+当前进度采集仍要求 `cpus=1`，八核包中的该开关没有产生周期服务清单，需要独立记录 CPU 状态。
+
+保留的日志中没有终止型内核 panic 文本。首次同步异常记录落在 `bzero+0x20`，
+后续已有用户态日志，不能将该首次异常标记直接解释为内核停机。
+日志同时记录 `mountrecursive` 无法取得 imgsrc 设备信息，以及 WindowServer 崩溃后 core dump 被拒绝。
+该包未启用 GOP，不能据此验收图形 Recovery；快照也不能保证包含最后一次异常。
 
 ## EL1 开发恢复
 
