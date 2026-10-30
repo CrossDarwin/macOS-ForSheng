@@ -18,5 +18,6 @@
     "base_class_bytes": 144,
     "legacy_class_bytes": 6904,
     "legacy_slots": 473
-  }
+  },
+  "adapted_header_sha256": "afbbad7bedccc74371d45922036535ae71cbe81025d805f38b78c5ccada05a72"
 }

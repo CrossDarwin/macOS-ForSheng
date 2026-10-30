@@ -32,7 +32,8 @@ class PinnedDisplayInputs(unittest.TestCase):
             files[name] = dict(path='overlay/kext/DroidVMDisplay/' + name,
                               canonical_sha256=hashlib.sha256(data).hexdigest())
         self.manifest = dict(repository='Droid-VM/macOS-DroidVM', revision='1' * 40,
-                             files=files, abi={'test': True})
+                             files=files, abi={'test': True},
+                             adapted_header_sha256=hashlib.sha256(b'// ABI\n').hexdigest())
         (self.root / 'config/macos26-gop-reference.json').write_text(json.dumps(self.manifest))
         (self.root / 'platform/sheng/macos26/display/0001-native-gop-display.patch').write_text(
             '--- a/DroidVMDisplay.cpp\n+++ b/DroidVMDisplay.cpp\n'
@@ -48,6 +49,18 @@ class PinnedDisplayInputs(unittest.TestCase):
         self.assertEqual(first['scanout_sha256'], hashlib.sha256(b'// scanout\n').hexdigest())
         self.assertEqual((self.output / 'gop_layers.h').read_text(), '// layers\n')
         self.assertEqual(first['layer_selection_sha256'], hashlib.sha256(b'// layers\n').hexdigest())
+
+    def test_missing_header_adaptation_is_rejected_before_compilation(self):
+        patch_file = self.root / 'platform/sheng/macos26/display/0001-native-gop-display.patch'
+        source_only = patch_file.read_text()
+        patch_file.write_text(source_only + '--- a/IOMobileFramebufferABI.h\n'
+            '+++ b/IOMobileFramebufferABI.h\n@@ -1 +1 @@\n-// ABI\n+// ABI with paired state\n')
+        self.manifest['adapted_header_sha256'] = hashlib.sha256(b'// ABI with paired state\n').hexdigest()
+        (self.root / 'config/macos26-gop-reference.json').write_text(json.dumps(self.manifest))
+        prepare(self.root, self.output)
+        patch_file.write_text(source_only)
+        with self.assertRaisesRegex(ValueError, 'header adaptation'):
+            prepare(self.root, self.output)
 
     def test_changed_source_or_header_is_rejected(self):
         for name in self.manifest['files']:

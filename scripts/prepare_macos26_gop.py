@@ -45,6 +45,8 @@ def prepare(root: Path, destination: Path) -> dict:
     patch = root / 'platform/sheng/macos26/display/0001-native-gop-display.patch'
     subprocess.run(['patch', '--batch', '--fuzz=0', '-p1', '-i', str(patch.resolve())],
                    cwd=destination, check=True, capture_output=True, text=True)
+    if digest((destination / 'IOMobileFramebufferABI.h').read_bytes()) != manifest['adapted_header_sha256']:
+        raise ValueError('paired framebuffer header adaptation is missing or changed')
     source = destination / 'NativeGOPDisplay.cpp'
     (destination / 'DroidVMDisplay.cpp').replace(source)
     scanout = root / 'platform/sheng/macos26/display/gop_scanout.h'
