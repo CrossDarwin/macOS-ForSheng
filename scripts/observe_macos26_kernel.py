@@ -88,6 +88,8 @@ def main() -> None:
                         help='copy the real log ring at one-second debugger stops; report gaps explicitly')
     parser.add_argument('--capture-screen', action='store_true', help='save the actual QEMU framebuffer')
     parser.add_argument('--handoff-pause', action='store_true', help='exercise the ten-second hardware handoff capture window')
+    parser.add_argument('--boot-progress', action='store_true',
+                        help='enable compiled stage, service and per-core diagnostics')
     parser.add_argument('--early-console', action='store_true', help='acquire the inherited GOP through the XNU text console')
     parser.add_argument('--native-gop-display', action='store_true',
                         help='enable the paired CPU GOP companion and its native display descriptor')
@@ -137,7 +139,7 @@ def main() -> None:
                         help='real contiguous DarwinBoot allocation inside QEMU RAM')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
     parser.add_argument('--smp', type=int, choices=(1, 2, 4, 8), default=1,
-                        help='explicit CPU-only SMP observation; native GOP remains separately qualified')
+                        help='explicit CPU count; GOP requires the matching framebuffer ownership contract')
     parser.add_argument('--decode-existing-snapshot', action='store_true',
                         help='decode a saved snapshot without restarting QEMU')
     args = parser.parse_args()
@@ -302,6 +304,10 @@ def main() -> None:
         if args.native_gop_display:
             boot_args += ' native-gop-display=1'
         record['native_gop_display'] = args.native_gop_display
+        if args.boot_progress:
+            from package_macos26_ufs import qualify_boot_progress
+            record['boot_progress'] = qualify_boot_progress(args.kernel_build)
+            boot_args += ' sheng-boot-progress=1 sheng-stderr-log=2 sheng-stderr-name=WindowServer'
         if args.qemu_no_ignition:
             if '_sheng_qemu_no_ignition_enabled' not in addresses:
                 raise ValueError('kernel lacks the guarded QEMU skipIgnition path')

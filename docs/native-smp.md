@@ -47,7 +47,7 @@ Mach-O 汇编将行内分号作为注释，导致同一行后续指令被丢弃�
 
 ## 多核图形候选
 
-新候选允许 `--smp 8 --native-gop-display`。内核和 GOP companion 必须使用同一版写屏所有权契约；
+新候选允许 `--smp 8 --native-gop-display`。增加 `--boot-progress` 可同时采集阶段、服务和逐核计数。内核和 GOP companion 必须使用同一版写屏所有权契约；
 缺少配套 PAC、写屏锁或 panic 重绘补丁时，观察器拒绝多核图形组合。
 
 GOP 与诊断面板按扫描线互斥写屏。panic 立即接管显示，停住其他核后重绘首次文字和二维码。
