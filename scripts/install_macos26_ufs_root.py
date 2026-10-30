@@ -17,7 +17,18 @@ from repartition_macos26_root import BLOCK, WINDOW, Device
 PARTITION = '/dev/block/by-name/macosroot'
 
 
-def install(device, plan_dir, root_dir, output):
+def qualify_android_format(evidence, plan, serial):
+    if (evidence.get('serial') != serial or evidence.get('read_only') is not True
+            or evidence.get('root_partition_guid') != plan['root_unique_guid']
+            or evidence.get('userdata_partition_bytes') != plan['userdata_bytes']
+            or evidence.get('user_setup_complete') != '0'
+            or evidence.get('filesystem') != 'f2fs'
+            or evidence.get('physical_partition') != 'sda29' or evidence.get('physical_disk') != 'sda'
+            or not (16 << 30) <= evidence.get('filesystem_bytes', 0) <= plan['userdata_bytes']):
+        raise ValueError('requires the freshly rebuilt Android filesystem within resized userdata')
+
+
+def install(device, plan_dir, root_dir, output, android_format=None):
     plan = json.loads((plan_dir / 'plan.json').read_text())
     build = json.loads((root_dir / 'build.json').read_text())
     image = root_dir / 'macosroot.img'
@@ -49,9 +60,13 @@ def install(device, plan_dir, root_dir, output):
             or device.shell(f'ls -A /sys/class/block/sda{plan["root_index"]}/holders')):
         raise ValueError('kernel macosroot node differs from the verified GPT')
     log = device.shell('cat /tmp/recovery.log')
-    if ('Data wipe complete.' not in log
-            or f'wipe metadata encrypted /dev/block/bootdevice/by-name/userdata with size {plan["userdata_bytes"]}' not in log):
-        raise ValueError('requires completed Recovery wipe of the resized encrypted userdata')
+    if android_format:
+        qualify_android_format(json.loads(android_format.read_text()), plan, device.serial)
+        if int(device.shell('blockdev --getsize64 /dev/block/by-name/userdata')) != plan['userdata_bytes']:
+            raise ValueError('current userdata node differs from the observed Android filesystem boundary')
+    elif ('Data wipe complete.' not in log
+          or f'wipe metadata encrypted /dev/block/bootdevice/by-name/userdata with size {plan["userdata_bytes"]}' not in log):
+        raise ValueError('requires completed Recovery wipe or observed rebuilt Android filesystem')
     with image.open('rb') as stream:
         if stream.read(BLOCK) != manifest:
             raise ValueError('root image manifest differs from the prepared manifest')
@@ -59,6 +74,8 @@ def install(device, plan_dir, root_dir, output):
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     (output / 'recovery-wipe.log').write_text(log)
+    if android_format:
+        (output / 'android-format.json').write_bytes(android_format.read_bytes())
     record = dict(serial=device.serial, started_at=datetime.now(timezone.utc).isoformat(),
                   destination=PARTITION, destination_guid=plan['root_unique_guid'],
                   bytes=image.stat().st_size, sha256=digest, status='prepared',
@@ -90,8 +107,8 @@ def install(device, plan_dir, root_dir, output):
     plan.update(root_image_written=True, root_image_bytes=image.stat().st_size,
                 root_image_sha256=digest, root_image_readback_verified=True,
                 userdata_contents_discarded=True,
-                userdata_recovery_wipe_completed=True, userdata_filesystem_rebuilt=False,
-                userdata_format_pending_vold=True)
+                userdata_recovery_wipe_completed=True, userdata_filesystem_rebuilt=bool(android_format),
+                userdata_format_pending_vold=not bool(android_format))
     (plan_dir / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
     return record
 
@@ -102,8 +119,11 @@ def main():
     parser.add_argument('--partition-plan', required=True, type=Path)
     parser.add_argument('--root-build', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--android-format', type=Path,
+                        help='read-only Android statfs evidence after Recovery wipe and filesystem rebuild')
     args = parser.parse_args()
-    print(json.dumps(install(Device(args.serial), args.partition_plan, args.root_build, args.output), indent=2))
+    print(json.dumps(install(Device(args.serial), args.partition_plan, args.root_build, args.output,
+                             args.android_format), indent=2))
 
 
 if __name__ == '__main__':

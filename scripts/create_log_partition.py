@@ -12,6 +12,7 @@ import uuid
 import zlib
 
 from backup_device import parse_gpt
+from native_partition_slots import baseline_entries_match
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCK = 4096
@@ -102,13 +103,8 @@ def prepare(device, directory):
         before = geometry(baseline, device.lbas, start)
         if now[0] != before[0] or now[1][56:72] != before[1][56:72] or now[4:] != before[4:]:
             raise ValueError('current partition geometry or identity differs from baseline')
-        # ABL updates boot-slot attributes; accept attribute changes only for these two entries and preserve their current values.
-        for i in range(now[4]):
-            a = now[2][i * now[5]:(i + 1) * now[5]]
-            b = before[2][i * now[5]:(i + 1) * now[5]]
-            name = a[56:128].decode('utf-16-le').split('\0', 1)[0]
-            if a != b and not (name in ('boot_a', 'boot_b') and a[:48] + a[56:] == b[:48] + b[56:]):
-                raise ValueError('current GPT entry changed beyond boot slot attributes')
+        if not baseline_entries_match(now[2], before[2], now[4], now[5]):
+            raise ValueError('current GPT entry changed beyond paired boot-slot state')
         (directory / f'before-{kind}.bin').write_bytes(raw)
         current[kind] = raw
     g, header, entries, _, count, stride = geometry(current['primary'], device.lbas, 0)

@@ -13,6 +13,7 @@ import uuid
 
 from backup_device import parse_gpt
 from create_log_partition import geometry, update
+from native_partition_slots import baseline_entries_match
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCK = 4096
@@ -130,7 +131,8 @@ def prepare(device, directory, macos_gib):
     baseline = (ROOT / 'private/backups/20261023-gpt-boot/sda-primary.bin').read_bytes()
     before = geometry(primary, device.lbas, 0)
     old = geometry(baseline, device.lbas, 0)
-    if before[1][56:72] != old[1][56:72] or before[2] != old[2]:
+    if (before[1][56:72] != old[1][56:72] or before[4:] != old[4:]
+            or not baseline_entries_match(before[2], old[2], before[4], before[5])):
         raise ValueError('current LUN0 layout differs from the saved baseline')
     result, record = layout(primary, secondary, device.lbas, macos_gib)
     directory.mkdir(parents=True, exist_ok=False, mode=0o700)
