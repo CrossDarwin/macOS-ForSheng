@@ -1,7 +1,7 @@
 # 启动进度诊断
 
 启动进度诊断在滚动日志下方显示固定阶段、服务事件和日志提交状态。
-它根据实际记录的事件更新，适用于 `cpus=1` 的启动调试。
+它根据实际记录的事件更新。新候选支持 `cpus=1`、`2`、`4`、`8`；多核实机结果见[移植状态](status.md)。
 
 ## 启用诊断
 
@@ -80,7 +80,7 @@ WindowServer、Language Chooser、Recovery Springboard、lsd、coreservicesd、l
 诊断区占用已映射 panic 区的底部四行，与普通滚动日志分开。
 发生 panic 时由[首次 panic 面板和二维码](panic-qr.md)覆盖。
 第一次图形复制成功后，诊断器停止写入像素；复制失败时恢复诊断区所有权。
-单核模式下，每条扫描线短暂屏蔽中断并复查所有权，防止旧诊断刷新覆盖接管后的图形帧。
+每条扫描线通过跨核写屏锁检查当前所有者。图形接管后，进度摘要继续写入日志；panic 接管后停止普通写屏。
 
 WindowServer 采集分别覆盖 `write` 和 `writev` 的尝试输出，每次最多记录 159 字节，
 向量写入最多检查 16 个 iovec。超限时标注截断，读取用户地址失败时跳过该次诊断。
@@ -93,3 +93,12 @@ WindowServer 采集分别覆盖 `write` 和 `writev` 的尝试输出，每次最
 状态模型位于 `platform/sheng/macos26/log/boot_progress.h`，内核接入位于同目录的 `boot_progress_kernel.h`。
 `process_output.h` 提供有界输出采集。主机状态测试和 ARM64 像素测试分别验证事件语义及显示交接，
 各完整内核和实机运行的结果统一记录在[移植状态](status.md)。
+
+## 多核计数
+
+多核候选在 RAM 日志中输出 `SHENG-SMP`，随日志快照保存到 `SHENGLOG.BIN`。
+每次采样检查初始化阶段、失败和 PSCI 返回值；发生变化时记录，未变化时每 30 秒记录一次。
+
+每核记录 `step`、`fail`、`psci`、请求与实际 affinity、`timer` 和 `ipi`。
+`secondaries` 表示已完成初始化的副核数。各字段独立采样，不代表同一时刻的全局状态。
+计数增长不会推进阶段格，也不用于判定线程迁移或死循环。
