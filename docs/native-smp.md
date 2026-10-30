@@ -64,5 +64,8 @@ GOP 与诊断面板按扫描线互斥写屏。panic 立即接管显示，停住�
 启动条与逐核计数的使用方式见[启动进度诊断](boot-progress.md)。
 
 当前已完成 ARM64 panic 像素解码、八线程互斥、计数和滚屏竞争边界测试。
-构建 41002348509 已通过；其 QEMU 越界滚屏问题已定位，修正后的完整运行仍待验证，多核图形尚未验收。
+构建 41002348509 的越界滚屏问题已修正；该旧版禁止部署。
+修正构建 [41008552166](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/41008552166) 在八核、进度条开启的 QEMU 中完成 180 秒观察。
+真实 `launchd main` 已执行，`recoveryosd`、`WindowServer` 和 `coreservicesd` 已启动，八核 timer、IPI 均增长，未观察到致命 panic。
+该轮使用 VirtIO 文字输出与 QEMU 时序诊断参数；实机多核图形尚未验收。
 当前实验分区布局见[重新安装实验环境](status.md#重新安装实验环境)。

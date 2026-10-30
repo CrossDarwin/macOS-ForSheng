@@ -73,7 +73,12 @@ QEMU 八核已执行真实 launchd main；7 个副核均完成初始化，8 核 
 定向取证显示，普通 `mmap` 路径发现副核 `cpu_int_state` 为黑色像素值 `0xff000000ff000000`。
 日志面板光标为第 81 行，而区域仅有 17 行。写屏锁竞争会令滚屏提前返回，旧代码此时留下越界光标，
 后续字符覆盖相邻副核数据。修正会在尝试滚屏前固定合法行号，并检查字符和清行边界。
-ARM64 回归检查覆盖锁占用时换行、后续字符写入和区域外哨兵像素；完整修正内核仍待构建与运行验证。
+ARM64 回归检查覆盖锁占用时换行、后续字符写入和区域外哨兵像素。
+
+修正构建 [41008552166](https://github.com/CrossDarwin/macOS-ForSheng/actions/runs/41008552166) 已通过，UUID 为 `247EE16F-7A7E-3A5E-9F3B-64EE336AAC37`。
+QEMU 八核开启进度条连续观察 180 秒，已执行真实 `launchd main`，并启动 `recoveryosd`、`WindowServer` 和 `coreservicesd`。
+7 个副核初始化成功，PSCI 和失败计数均为 0，八核 timer、IPI 均增长。首次 panic 文字状态为 0，未观察到致命 panic。
+最后阶段为 `[#######---] - WindowServer exec`。本轮使用 VirtIO 文字输出及 QEMU 时序诊断参数，实机多核图形仍待验证。
 
 ## EL1 开发恢复
 
