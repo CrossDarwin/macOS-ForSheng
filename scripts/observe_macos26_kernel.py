@@ -138,6 +138,8 @@ def main() -> None:
     parser.add_argument('--owned-memory-mib', type=int, choices=(512, 2048, 3072), default=512,
                         help='real contiguous DarwinBoot allocation inside QEMU RAM')
     parser.add_argument('--timeout', type=int, default=60, metavar='SECONDS')
+    parser.add_argument('--qemu-smp-timeouts', action='store_true',
+                        help='record IRQ latency violations and use finite one-second locks for TCG SMP')
     parser.add_argument('--smp', type=int, choices=(1, 2, 4, 8), default=1,
                         help='explicit CPU count; GOP requires the matching framebuffer ownership contract')
     parser.add_argument('--decode-existing-snapshot', action='store_true',
@@ -160,6 +162,8 @@ def main() -> None:
     smp = configure_smp(json.loads((args.kernel_build / 'build.json').read_text()),
                         args.smp, args.native_gop_display, NATIVE_BOOT_ARGS)
     record['smp_observation'] = smp
+    if args.qemu_smp_timeouts and args.smp == 1:
+        parser.error('--qemu-smp-timeouts requires multiple QEMU CPUs')
     component_map = {}
     security_path = args.kernel_build / 'security-relink.json'
     if security_path.is_file():
@@ -303,6 +307,10 @@ def main() -> None:
         boot_args = smp['boot_args']
         if args.native_gop_display:
             boot_args += ' native-gop-display=1'
+        if args.qemu_smp_timeouts:
+            boot_args += ' interrupt-masked-debug-mode=1 slto_us=1000000 tlto_us=1000000'
+            record['qemu_smp_timing'] = dict(irq_hygiene='trace', lock_timeout_us=1000000,
+                ticket_lock_timeout_us=1000000, hardware_qualified=False)
         record['native_gop_display'] = args.native_gop_display
         if args.boot_progress:
             from package_macos26_ufs import qualify_boot_progress

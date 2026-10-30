@@ -45,6 +45,16 @@ Mach-O 汇编将行内分号作为注释，导致同一行后续指令被丢弃�
 `all_cores_received_timer_and_ipi` 表示两项均满足。空闲核的定时器计数可保持为零，需结合实际工作负载判断。
 调度迁移仍需运行验证。
 
+## QEMU 时序诊断
+
+TCG 多核观察可增加 `--qemu-smp-timeouts`。
+该选项将中断延迟检查设为记录模式，并把普通锁、ticket 锁超时设为 1 秒。
+它通过 `interrupt-masked-debug-mode=1`、`slto_us=1000000` 和 `tlto_us=1000000` 接入原有 XNU 参数。
+
+XNU 在中断延迟检查处于 panic 模式时，会用其中断关闭阈值限制锁等待时间。
+因此，仅提高锁超时不能排除 TCG 和调试停顿引起的时序影响。
+该选项仅作用于 QEMU 观察器；实机参数保持原样。
+
 ## 多核图形候选
 
 新候选允许 `--smp 8 --native-gop-display`。增加 `--boot-progress` 可同时采集阶段、服务和逐核计数。内核和 GOP companion 必须使用同一版写屏所有权契约；
