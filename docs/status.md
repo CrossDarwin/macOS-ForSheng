@@ -23,11 +23,26 @@ KDP 实机双向轮询传输、Apple 激活、系统安装和日常桌面使用�
 
 2026-10-27，设备已恢复实验前的 GPT 分区边界：移除 `macosroot` 和 `macoslog`，
 userdata 分区恢复为 249,497,890,816 字节。当前 A/B 启动属性保留，六个 UFS LUN 的 GPT 均已读回核对。
-本次仅写 GPT 元数据，没有刷写 boot、Recovery 或 userdata 内容。Android 已正常启动。
+该次仅写 GPT 元数据，没有刷写 boot、Recovery 或 userdata 内容。Android 已正常启动。
 现有 Android 数据文件系统仍维持此前的容量，没有执行扩容或格式化。
 
 下文记录的是此前实验布局上的验证结果。再次使用临时启动包前，须重新准备匹配的根盘与日志布局；
 原始分区表上的设备不能直接复用该实验入口。源码、未提交依赖改动和私人取证将分别保存在本地项目恢复包中。
+
+## 重新安装实验环境
+
+2026-10-30，用户重新授权清空 Android 数据并划出 64 GiB `macosroot`。
+当前已恢复根盘与 64 MiB `macoslog`。主备 GPT 读回一致，保留当前 A/B 槽状态及其他分区边界。
+Android userdata 已重建；实际 F2FS 容量为 180,775,288,832 字节，位于 180,777,385,984 字节的 `sda29` 内。
+Android 已启动到首次设置状态。
+
+3,728,736,256 字节的 BaseSystem 与 ISC 根镜像已写入并完成全量读回校验。
+日志分区中的 2 MiB `SHENGLOG.BIN` 已预分配并读回一致。
+
+八核文字测试包 UUID 为 `50F791BD-AE5F-3D95-AC87-1E954F9CDDFD`。
+包内保留 SPI 和 SGI 两个 IPI 入口，默认使用 UniXNU-sheng 的 SPI 路径；GOP 图形输出关闭。
+已收到 `fastboot boot` 的 `Booting OKAY`，实机运行结果待采集。boot、Recovery 和厂商固件分区未刷写。
+此前的 218FDCCE 单核图形包仍保留在本地，图形多核尚未验收。
 
 ## EL1 开发恢复
 
