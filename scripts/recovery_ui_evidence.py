@@ -56,12 +56,13 @@ def qualify_language_selector(build, fixture, identity):
         raise ValueError('requires authenticated, memory-only UI policies')
     driver = json.loads((build / 'security-relink.json').read_text())['storage_driver']
     display = driver['build']['native_gop_display']
+    from native_framebuffer import display_cpus
     reference = json.loads((ROOT / 'config/macos26-gop-reference.json').read_text())
     if (display.get('default_off') is not True or display.get('gpu_acceleration') is not False
-            or display.get('publishes_vm_identity') is not False or display.get('required_cpus') != 1
+            or display.get('publishes_vm_identity') is not False or 1 not in display_cpus(display)
             or display.get('reference') != 'https://github.com/' + reference['repository'] + '/tree/' + reference['revision']
             or display.get('input_sha256') != {k: v['canonical_sha256'] for k, v in reference['files'].items()}):
-        raise ValueError('requires the pinned single-CPU GOP source')
+        raise ValueError('requires the pinned GOP source')
     for key, name in (('patch_sha256', '0001-native-gop-display.patch'),
                       ('scanout_sha256', 'gop_scanout.h'), ('layer_selection_sha256', 'gop_layers.h')):
         if display.get(key) != digest(ROOT / 'platform/sheng/macos26/display' / name):

@@ -229,8 +229,11 @@ def qualify_boot_progress(build):
     compiled = json.loads((build / 'build.json').read_text())
     progress = compiled.get('boot_progress', {})
     output = compiled.get('process_output_log', {})
+    if progress.get('supported_cpus') == [1, 2, 4, 8]:
+        from native_framebuffer import require_smp_owner
+        require_smp_owner(compiled)
     if (progress.get('default_off') is not True or progress.get('stage_count') != 10
-            or progress.get('required_cpus') != 1 or progress.get('repeated_events_advance') is not False
+            or not (progress.get('required_cpus') == 1 or progress.get('supported_cpus') == [1, 2, 4, 8]) or progress.get('repeated_events_advance') is not False
             or progress.get('stalled_is_not_deadlock') is not True
             or output.get('default_off') is not True or output.get('vector_writes') is not True
             or output.get('max_bytes_per_write') != 159 or output.get('max_iovecs') != 16):

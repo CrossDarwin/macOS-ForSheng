@@ -1,6 +1,6 @@
 --- a/DroidVMDisplay.cpp
 +++ b/DroidVMDisplay.cpp
-@@ -1,21 +1,15 @@
+@@ -1,21 +1,16 @@
  // SPDX-License-Identifier: BSD-2-Clause-Patent
 -// DroidVMDisplay: the macOS display of a DroidVM guest, an IOMobileFramebufferLegacy (IOMobileGraphicsFamily) over the firmware
 -// framebuffer, as AppleParavirtDisplay (AppleParavirtGPUIOGPUFamily, the vma2 display) is over the paravirtual GPU. The family runs
@@ -27,11 +27,12 @@
 +extern "C" volatile uint64_t sheng_panel_ready, sheng_status_pixels;
  #include <IOKit/IOLib.h>
 +#include "gop_scanout.h"
++#include "framebuffer_owner.h"
 +#include "gop_layers.h"
  #include <IOKit/IOPlatformExpert.h>
  #include <IOKit/IOTimerEventSource.h>
  #include <IOKit/IOUserClient.h>
-@@ -47,8 +41,7 @@
+@@ -47,8 +42,7 @@
  static constexpr size_t kSwapDropReasons = 844;    // programmed when nothing but bit 3 is set, else dropped (swap_begin_gated 0x...dbac0)
  static constexpr size_t kSwapInfoA = 752;         // swap info words 3 and 4 (notify_swap_done_gated 0x...d93f4)
  static constexpr size_t kSwapInfoB = 816;
@@ -41,7 +42,7 @@
  static constexpr size_t kSwapNext = 3192;          // TAILQ entry of the queue
  static constexpr size_t kSwapPrev = 3200;
  // IOMFBNotifyRequest
-@@ -86,44 +79,11 @@
+@@ -86,44 +80,11 @@
      __asm("__ZN21IOAVVideoColorElement16withCapabilitiesE16IOAVStandardTypej22IOAVVideoPixelEncoding26IOAVVideoColorDynamicRange"
            "18IOAVVideoColorEOTF20IOAVVideoColorimetrybPK12OSDictionaryS7_S7_PK5OSSet");
  
@@ -91,7 +92,7 @@
  public:
      bool start(IOService *) override;
      void stop(IOService *) override;
-@@ -156,7 +116,6 @@
+@@ -156,7 +117,6 @@
  
  private:
      static constexpr uint32_t kRefreshHz = 60;
@@ -99,7 +100,7 @@
      static constexpr uint32_t kColorID = 100, kTimingID = 1000;  // AppleParavirtDisplay's IDs of its first color and timing element
  
      bool clean_queue_gated();
-@@ -172,37 +131,48 @@
+@@ -172,37 +132,47 @@
      static_assert(sizeof(SwapInfo) == 48, "IOMobileFramebufferLegacy::SwapInfoBlob");
      static constexpr unsigned kSwapInfoRing = 6;
  
@@ -159,8 +160,7 @@
 +    unsigned enabled = 0, cpus = 0;
 +    PE_parse_boot_argn("native-gop-display", &enabled, sizeof(enabled));
 +    PE_parse_boot_argn("cpus", &cpus, sizeof(cpus));
-+    // Single-CPU bring-up serializes the custom boot panel handoff with interrupts masked.
-+    if (enabled != 1 || cpus != 1 || !provider)
++    if (enabled != 1 || (cpus != 1 && cpus != 2 && cpus != 4 && cpus != 8) || !provider)
 +        return false;
 +    if (getPlatform()->getConsoleInfo(&fVideo) != kIOReturnSuccess || !fVideo.v_baseAddr || fVideo.v_depth != 32 ||
 +        !fVideo.v_width || !fVideo.v_height || fVideo.v_width > 16384 || fVideo.v_height > 16384 ||
@@ -366,7 +366,7 @@
      swap_complete_gated();
  }
  
-@@ -412,49 +367,110 @@
+@@ -412,61 +367,124 @@
      return static_cast<uint8_t>((scaled + (1u << (shift - 1))) >> shift);
  }
  
@@ -417,7 +417,7 @@
              fHalfToByte[half] = halfToByte(static_cast<uint16_t>(half));
      }
 +    const uint64_t sourceRowBytes = width * pixelBytes;
-+    if ((scaled || format == kFormatRGhA) && fRowBytes < sourceRowBytes) {
++    if (fRowBytes < sourceRowBytes) {
 +        auto *replacement = static_cast<uint16_t *>(IOMalloc(sourceRowBytes));
 +        if (!replacement) return;
 +        if (fRow) IOFree(fRow, fRowBytes);
@@ -442,68 +442,67 @@
 +            kIOMapAnywhere | kIOMapReadOnly, base, span);
 +    const uint8_t *source = frame.mapping && frame.mapping->getLength() >= span
 +        ? reinterpret_cast<const uint8_t *>(frame.mapping->getVirtualAddress()) : nullptr;
-+    // A failed first copy must return the diagnostic surface to its owner.
++    // The work loop serializes frames. Only bounded wired scanlines hold the pixel lease.
 +    struct DiagnosticHandoff {
-+        bool active, committed = false;
++        bool active = false, committed = false;
 +        uint64_t ready = 0, status = 0;
-+        explicit DiagnosticHandoff(bool first) : active(first) {
-+            if (!active) return;
-+            boolean_t interrupts = ml_set_interrupts_enabled(FALSE);
++        explicit DiagnosticHandoff(bool first) {
++            if (!first || !sheng_fb_claim_gui()) return;
++            active = true;
 +            ready = sheng_panel_ready; status = sheng_status_pixels;
 +            sheng_panel_ready = 0; sheng_status_pixels = 0;
-+            __asm__ volatile("dsb sy" ::: "memory");
-+            ml_set_interrupts_enabled(interrupts);
 +        }
 +        ~DiagnosticHandoff() {
 +            if (!active || committed) return;
-+            boolean_t interrupts = ml_set_interrupts_enabled(FALSE);
-+            sheng_panel_ready = ready; sheng_status_pixels = status;
-+            __asm__ volatile("dsb sy" ::: "memory");
-+            ml_set_interrupts_enabled(interrupts);
++            sheng_fb_abort_gui();
++            uint64_t saved;
++            if (sheng_fb_begin(SHENG_FB_BOOT, &saved)) {
++                sheng_panel_ready = ready; sheng_status_pixels = status;
++                sheng_fb_end(saved);
++            }
 +        }
 +    } handoff(!fFrames);
++    if (!fFrames && !handoff.active) return;
      uint64_t lit = 0, raw = 0, center = 0;
      bool sample = true;   // bring-up: the first frames and every 50th are logged, the last one goes into the periodic report
      for (uint64_t y = 0; y < copyHeight; y++) {
          uint8_t *line = fScanout + y * fVideo.v_rowBytes;
 -        if (format == kFormatBGRA) {
 -            memory->readBytes(base + y * rowBytes, line, copyWidth * 4);
+-            continue;
 +        const uint64_t sourceY = y * height / copyHeight;
-+        if (format == kFormatBGRA && !scaled) {
-+            if (source) {
-+                memcpy(line, source + sourceY * rowBytes, sourceRowBytes);
-+            } else if (memory->readBytes(base + sourceY * rowBytes, line, sourceRowBytes) != sourceRowBytes) {
-+                IOLog("NativeGOPDisplay: short BGRA row read\n");
-+                return;
-+            }
-             continue;
-         }
--        memory->readBytes(base + y * rowBytes, fRow, copyWidth * 8);
 +        if (source) {
 +            memcpy(fRow, source + sourceY * rowBytes, sourceRowBytes);
 +        } else if (memory->readBytes(base + sourceY * rowBytes, fRow, sourceRowBytes) != sourceRowBytes) {
 +            IOLog("NativeGOPDisplay: short source row read\n");
 +            return;
-+        }
-         auto *pixels = reinterpret_cast<uint32_t *>(line);
+         }
+-        memory->readBytes(base + y * rowBytes, fRow, copyWidth * 8);
+-        auto *pixels = reinterpret_cast<uint32_t *>(line);
 -        for (uint64_t x = 0; x < copyWidth; x++) {
 -            const uint16_t *rgba = fRow + x * 4;
 -            pixels[x] = 0xff000000u | fHalfToByte[rgba[0]] << 16 | fHalfToByte[rgba[1]] << 8 | fHalfToByte[rgba[2]];
 -            if (sample) {
+-                lit += (pixels[x] & 0xffffff) != 0;
++        uint64_t saved;
++        if (!sheng_fb_begin(SHENG_FB_GUI, &saved)) return;
++        auto *pixels = reinterpret_cast<volatile uint32_t *>(line);
 +        nativeGopScanoutRow(pixels, copyWidth, fRow, width,
 +                           format == kFormatRGhA ? fHalfToByte : nullptr);
++        sheng_fb_end(saved);
 +        if (sample && format == kFormatRGhA) {
 +            for (uint64_t x = 0; x < copyWidth; x++) {
 +                const uint16_t *rgba = fRow + (x * width / copyWidth) * 4;
-                 lit += (pixels[x] & 0xffffff) != 0;
++                lit += (fHalfToByte[rgba[0]] | fHalfToByte[rgba[1]] | fHalfToByte[rgba[2]]) != 0;
                  raw += (rgba[0] | rgba[1] | rgba[2] | rgba[3]) != 0;
                  if (y == copyHeight / 2 && x == copyWidth / 2)
-@@ -462,11 +478,17 @@
+                     center = static_cast<uint64_t>(rgba[3]) << 48 | static_cast<uint64_t>(rgba[2]) << 32 | rgba[1] << 16 | rgba[0];
              }
          }
      }
 -    memory->complete();
 +    __asm__ volatile("dsb sy" ::: "memory");
++    if (__atomic_load_n(&sheng_framebuffer.owner, __ATOMIC_ACQUIRE) != SHENG_FB_GUI) return;
 +    fFrames++;
 +    handoff.committed = true;
 +    if (fFrames == 1) {
@@ -518,7 +517,7 @@
  }
  
  static bool appendNumber(OSDictionary *dictionary, const char *key, uint64_t value, unsigned bits = 32)
-@@ -502,16 +524,19 @@
+@@ -502,16 +520,19 @@
  
  // AppleParavirtDisplay::createDisplayAttributes, with the display of the boot framebuffer: one timing (the GOP mode) with one
  // 8-bit SDR color element. Chromaticities are sRGB's (16.16 fixed point, as the panel's EDID would give them).
@@ -540,7 +539,7 @@
      // CVT reduced blanking as IOAVFamily's sCVTTimingData has it (1280x800@60: 1440x823, 71 MHz). Sync rates are 16.16 fixed point
      // (IOAVVideoTimingGetSyncRateRounded); the table leaves the horizontal one 0.
      uint8_t timingData[80] = {};
-@@ -541,8 +566,8 @@
+@@ -541,8 +562,8 @@
          if (!colors->setObject(color) || !timingColors->setObject(color) || !timings->setObject(timing))
              break;
          ioavTimingSetColorElements(timing, timingColors);
@@ -551,7 +550,7 @@
                appendNumber(product, "WeekOfManufacture", 24) && appendNumber(product, "YearOfManufacture", 2021)))
              break;
          if (!(appendDictionary(chromaticity, "Red", point(41943, 21627)) && appendDictionary(chromaticity, "Green", point(19661, 39322)) &&
-@@ -554,8 +579,8 @@
+@@ -554,8 +575,8 @@
                attributes->setObject("Chromaticity", chromaticity) && attributes->setObject("DefaultColorSpaceIsSRGB", kOSBooleanFalse) &&
                attributes->setObject("DefaultWhitePoint", whitePoint) && attributes->setObject("SupportsStandby", kOSBooleanTrue) &&
                appendNumber(attributes, "ContinuousFrequencySupport", 3) &&
@@ -562,7 +561,7 @@
                appendNumber(attributes, "NativeFormatHorizontalPixels", width) && appendNumber(attributes, "NativeFormatVerticalPixels", height) &&
                appendNumber(attributes, "PreciseAspectRatio", (static_cast<uint64_t>(width) << 16) / height)))
              break;
-@@ -567,8 +592,8 @@
+@@ -567,8 +588,8 @@
              break;
          if (!(appendNumber(scalingLimits, "RGBLayer_MinScaleFraction", 4) && appendNumber(scalingLimits, "RGBLayer_MaxScale", 4)))
              break;
@@ -573,7 +572,7 @@
          setProperty("primary", 0ULL, 32);   // AppleParavirtDisplay's display index
          done = setProperty("DisplayAttributes", attributes) && setProperty("Transport", transport) &&
              setProperty("ColorElements", colors) && setProperty("TimingElements", timings) &&
-@@ -587,14 +612,14 @@
+@@ -587,14 +608,14 @@
      OSSafeReleaseNULL(color);
      OSSafeReleaseNULL(timing);
      if (!done || set_digital_out_mode(kColorID, kTimingID) != kIOReturnSuccess) {
@@ -590,7 +589,7 @@
  {
      if (colorID != kColorID || timingID != kTimingID)
          return kIOReturnBadArgument;
-@@ -606,55 +631,57 @@
+@@ -606,55 +627,57 @@
      return kIOReturnSuccess;
  }
  
@@ -671,7 +670,7 @@
  {
      IOMFBSwapIORequest *swap = at<IOMFBSwapIORequest *>(this, kCurrentSwap);
      if (at<uint32_t>(swap, kSwapDropReasons))
-@@ -672,7 +699,7 @@
+@@ -672,7 +695,7 @@
  }
  
  // AppleParavirtDisplay::do_swap_info_notify_gated: the request's async result is the mask, the swap ID and the words it asks for.
@@ -680,7 +679,7 @@
  {
      const SwapInfo *info = reinterpret_cast<const SwapInfo *>(blob);
      uint32_t mask = at<uint32_t>(request, kNotifyMask);
-@@ -698,5 +725,5 @@
+@@ -698,5 +721,5 @@
      return userClientSendAsyncResult(&at<io_user_reference_t>(request, kNotifyAsyncReference), kIOReturnSuccess, args, count,
                                       kIOUserNotifyOptionCanDrop);
  }
@@ -688,22 +687,3 @@
 -bool DroidVMDisplay::are_timings_enabled() const {return false;}
 +IOReturn NativeGOPDisplay::notify_crc_ready_gated(unsigned int) {return kIOReturnSuccess;}
 +bool NativeGOPDisplay::are_timings_enabled() const {return false;}
---- a/IOMobileFramebufferABI.h
-+++ b/IOMobileFramebufferABI.h
-@@ -141,6 +141,7 @@
-     virtual bool is_power_on_pending();                                                                                            // 368 0xcf25
-     virtual IOReturn ap_power_debug_trace(iomfb_power_trace_event_t, unsigned int, unsigned int, unsigned int, unsigned int);      // 369 0x5554
-     virtual IOReturn get_ap_power_debug_trace(void*, unsigned long, unsigned long) const;                                          // 370 0x3a25
-+    uint8_t iomfbState[0x90 - sizeof(IOService)];   // Includes the hardware-started byte at offset 140
- };
- 
- class IOMobileFramebufferLegacy : public IOMobileFramebuffer {
-@@ -343,7 +344,7 @@
-     virtual IOReturn trigger_pswap_dependent_thread();                                                                             // 470 0x106a
-     virtual IOReturn send_clamshell_state();                                                                                       // 471 0xf761
-     virtual IOReturn get_shared_disp_property();                                                                                   // 472 0xc09c
--    uint8_t iomfbLegacyState[0x1af8 - sizeof(IOService)];   // the instance size of its MetaClass
-+    uint8_t iomfbLegacyState[0x1af8 - sizeof(IOMobileFramebuffer)];   // the instance size of its MetaClass
- };
- 
- static_assert(sizeof(IOMobileFramebufferLegacy) == 0x1af8, "IOMobileFramebufferLegacy instance size");

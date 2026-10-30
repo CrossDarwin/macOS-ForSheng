@@ -36,6 +36,20 @@ class NativeSmpPolicy(unittest.TestCase):
             with self.assertRaises(ValueError):
                 configure(self.build(), count, True, baseline)
 
+    def test_smp_graphics_requires_the_compiled_owner_and_panic_hook(self):
+        from native_framebuffer import owner_hash
+        build = self.build()
+        patch = ROOT / 'platform/sheng/macos26/patches/0065-native-panic-framebuffer-owner.patch'
+        build['patches'][str(patch.relative_to(ROOT))] = hashlib.sha256(patch.read_bytes()).hexdigest()
+        build['framebuffer_owner'] = dict(version=1, source_sha256=owner_hash(), max_cpus=8,
+            panic_bypasses_writer=True, late_panic_redraw=True)
+        result = configure(build, 8, True, '-v cpus=1')
+        self.assertTrue(result['graphics'])
+        self.assertFalse(result['hardware_qualified'])
+        build['framebuffer_owner']['late_panic_redraw'] = False
+        with self.assertRaises(ValueError):
+            configure(build, 8, True, '-v cpus=1')
+
     def test_cpu_on_success_does_not_prove_cpu_init_or_irq_delivery(self):
         addresses = {symbol: 0x10000 + 0x100 * i for i, (symbol, _) in enumerate(FIELDS.values())}
         data = {field: [0] * (size // 4) for field, (_, size) in FIELDS.items()}

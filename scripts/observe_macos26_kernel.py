@@ -173,7 +173,8 @@ def main() -> None:
     if args.native_gop_display:
         display = component_map.get('storage_driver', {})
         contract = display.get('build', {}).get('native_gop_display', {})
-        if (contract.get('default_off') is not True or contract.get('required_cpus') != 1
+        from native_framebuffer import display_cpus
+        if (contract.get('default_off') is not True or args.smp not in display_cpus(contract)
                 or display.get('display_vtable_abi', {}).get('slots') != 473
                 or not display.get('display_vtable_abi', {}).get('pac_metadata_matches')):
             parser.error('GOP observation requires the actual paired, ABI-audited display companion')
@@ -299,9 +300,6 @@ def main() -> None:
         shutil.copy2(kernel, payload / 'kernel.macho')
         boot_args = smp['boot_args']
         if args.native_gop_display:
-            if boot_args.split().count('cpus=1') != 1 or any(
-                    item.startswith('cpus=') and item != 'cpus=1' for item in boot_args.split()):
-                raise ValueError('GOP display handoff requires exactly one configured CPU')
             boot_args += ' native-gop-display=1'
         record['native_gop_display'] = args.native_gop_display
         if args.qemu_no_ignition:

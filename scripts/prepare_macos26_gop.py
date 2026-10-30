@@ -51,6 +51,8 @@ def prepare(root: Path, destination: Path) -> dict:
     shutil.copyfile(scanout, destination / scanout.name)
     layers = root / 'platform/sheng/macos26/display/gop_layers.h'
     shutil.copyfile(layers, destination / layers.name)
+    owner = root / 'platform/sheng/macos26/log/framebuffer_owner.h'
+    shutil.copyfile(owner, destination / owner.name)
     evidence = dict(reference=f'https://github.com/{repository}/tree/{revision}',
                     input_sha256=hashes, patch_sha256=digest(patch.read_bytes()),
                     source_sha256=digest(source.read_bytes()),
@@ -59,7 +61,8 @@ def prepare(root: Path, destination: Path) -> dict:
                     layer_selection_sha256=digest(layers.read_bytes()),
                     abi=manifest['abi'],
                     build='25F71', default_off=True, boot_argument='native-gop-display=1',
-                    required_cpus=1, gpu_acceleration=False, publishes_vm_identity=False,
+                    supported_cpus=[1, 2, 4, 8], framebuffer_owner_sha256=digest(owner.read_bytes()),
+                    gpu_acceleration=False, publishes_vm_identity=False,
                     runtime_qualified=False, source=str(source))
     (destination / 'source.json').write_text(json.dumps(evidence, indent=2) + '\n')
     return evidence

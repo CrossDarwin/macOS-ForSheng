@@ -1,0 +1,33 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -163,6 +163,7 @@
+ void sheng_log_putc(char c);
+ void sheng_log_begin(uint64_t physical_base, uint64_t virtual_base, const void *header);
+ void sheng_log_panic(uint64_t caller, const char *message);
++void sheng_log_panic_redraw(void);
+ void sheng_bootstrap_capture_end(void);
+ void sheng_log_bind_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
+ void sheng_log_bind_panic_panel(uintptr_t address, unsigned stride, unsigned columns, unsigned rows, unsigned scale);
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1378,6 +1378,9 @@
+ void __attribute__((noinline, optnone))
+ panic_spin_forever(void)
+ {
++#if SHENG
++	sheng_log_panic_redraw();
++#endif
+ 	for (;;) {
+ #if defined(__arm__) || defined(__arm64__)
+ 		/* On arm32, which doesn't have a WFE timeout, this may not return.  But that should be OK on this path. */
+@@ -1740,6 +1743,10 @@
+ 
+ 	ret = DebuggerHaltOtherCores(CPUDEBUGGERSYNC, (CPUDEBUGGEROP == DBOP_STACKSHOT));
+ 
++#if SHENG
++	if (CPUDEBUGGEROP == DBOP_PANIC) sheng_log_panic_redraw();
++#endif
++
+ 	DEBUGGER_TRAP_TIMESTAMP(1);
+ 
+ #if SCHED_HYGIENE_DEBUG

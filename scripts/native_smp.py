@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Admit explicit CPU-only SMP observations with the paired native PAC bootstrap."""
+"""Admit explicit SMP observations with the paired native PAC bootstrap."""
 import hashlib
 from pathlib import Path
 
@@ -17,12 +17,13 @@ FIELDS = {
 
 
 def configure(build: dict, count: int, graphics: bool, boot_args: str) -> dict:
-    if count not in (1, 2, 4, 8) or boot_args.split().count('cpus=1') != 1:
+    if count not in (1, 2, 4, 8) or [item for item in boot_args.split() if item.startswith('cpus=')] != ['cpus=1']:
         raise ValueError('Requires an explicit supported CPU count and the single-CPU baseline')
     if count == 1:
         return dict(cpu_count=1, boot_args=boot_args, graphics=graphics)
     if graphics:
-        raise ValueError('SMP graphics requires a separate framebuffer ownership qualification')
+        from native_framebuffer import require_smp_owner
+        require_smp_owner(build)
     bootstrap = build.get('smp_bootstrap', {})
     expected = {name: hashlib.sha256((ROOT / 'platform/sheng/macos26/pac' / name).read_bytes()).hexdigest()
                 for name in ('smp_keys.h', 'smp_keys_storage.h')}
@@ -40,7 +41,7 @@ def configure(build: dict, count: int, graphics: bool, boot_args: str) -> dict:
     arguments = boot_args.split()
     arguments[arguments.index('cpus=1')] = f'cpus={count}'
     arguments += ['sheng-smp=1', 'armcpu-self-ipi=1']
-    return dict(cpu_count=count, boot_args=' '.join(arguments), graphics=False,
+    return dict(cpu_count=count, boot_args=' '.join(arguments), graphics=graphics,
                 ipi='GIC SGI - QEMU', hardware_qualified=False)
 
 

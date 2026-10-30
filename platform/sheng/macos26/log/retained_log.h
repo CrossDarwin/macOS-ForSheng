@@ -32,6 +32,8 @@ volatile uint64_t sheng_bootstrap_vm_stage = UINT64_MAX;
 volatile uint64_t sheng_bootstrap_vm_pixels;
 uint64_t sheng_bootstrap_vm_row_pa, sheng_bootstrap_vm_stride;
 volatile uint64_t sheng_bootstrap_vm_witness;
+#include "pe_sheng_framebuffer.h"
+struct sheng_framebuffer_owner sheng_framebuffer;
 #include "pe_sheng_panic_qr.h"
 #include "pe_sheng_panel.h"
 
@@ -272,8 +274,14 @@ void sheng_log_begin(uint64_t physical_base, uint64_t virtual_base, const void *
     while (*message) sheng_log_putc(*message++);
 }
 
+void sheng_log_panic_redraw(void)
+{
+    sheng_panic_panel_render();
+}
+
 void sheng_log_panic(uint64_t caller, const char *message)
 {
+    sheng_fb_enter_panic();
     struct sheng_log_record *r = &sheng_log_buffer;
     uint32_t expected = 0;
     if (__atomic_compare_exchange_n(&r->panic_state, &expected, 1, 0,

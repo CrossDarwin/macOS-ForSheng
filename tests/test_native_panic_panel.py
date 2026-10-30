@@ -18,13 +18,15 @@ from gdb_packets import Packets
 class NativePanicPanel(unittest.TestCase):
     def test_busy_writer_keeps_full_panic_and_disjoint_pixels(self):
         clang = os.environ.get('CLANG', shutil.which('clang'))
-        qemu = ROOT / 'out/qemu-root/usr/bin/qemu-system-aarch64'
+        qemu = Path(os.environ.get('SHENG_TEST_QEMU', str(ROOT / 'out/qemu-root/usr/bin/qemu-system-aarch64')))
         font = ROOT / 'sources/macos26/xnu/osfmk/console/iso_font.c'
         if not clang or not qemu.exists() or not font.exists():
             self.skipTest('requires clang, QEMU and the pinned XNU font')
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             for source, target in (('retained_log.h', 'pe_sheng_log.h'),
+                                   ('framebuffer_owner.h', 'pe_sheng_framebuffer.h'),
+                                   ('smp_log.h', 'pe_sheng_smp_log.h'),
                                    ('panel_console.h', 'pe_sheng_panel.h'), ('vm_trace.h', 'vm_trace.h'),
                                    ('boot_progress.h', 'pe_sheng_boot_progress.h'),
                                    ('boot_progress_kernel.h', 'pe_sheng_boot_progress_kernel.h')):
@@ -51,13 +53,14 @@ class NativePanicPanel(unittest.TestCase):
                 '-I' + str(ROOT / 'sources/macos26/xnu/osfmk'), '-nostdlib', '-fuse-ld=lld',
                 '-Wl,-T,' + str(work / 'runtime.ld'), str(work / 'entry.S'),
                 str(ROOT / 'tests/native_panic_panel.c'), '-o', str(work / 'runtime.elf')], check=True, timeout=30)
-            symbols = {parts[2]: int(parts[0], 16) for line in subprocess.check_output(
-                [str(compiler.parent / 'llvm-nm'), str(work / 'runtime.elf')], text=True).splitlines()
-                if len(parts := line.split()) == 3}
+            from elftools.elf.elffile import ELFFile
+            with (work / 'runtime.elf').open('rb') as stream:
+                symbols = {symbol.name: int(symbol['st_value'])
+                    for symbol in ELFFile(stream).get_section_by_name('.symtab').iter_symbols()}
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
                 port = listener.getsockname()[1]
-            env = dict(os.environ, LD_LIBRARY_PATH=str(ROOT / 'out/qemu-root/usr/lib/x86_64-linux-gnu'))
+            env = dict(os.environ)
             with (work / 'qemu.log').open('w') as log:
                 process = subprocess.Popen([str(qemu), '-M', 'virt,virtualization=off,secure=off',
                     '-cpu', 'cortex-a710', '-m', '256', '-nodefaults', '-display', 'none',
@@ -158,7 +161,7 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertTrue(request('c').startswith(('T05', 'S05')))
                         self.assertEqual(number('panic_test_checks'), 15)
                         self.assertEqual(number('snapshot_test_checks'), 7)
-                        self.assertEqual(number('writer_scope_test_checks'), 7)
+                        self.assertEqual(number('writer_scope_test_checks'), 31)
                         self.assertEqual(before, memory(base, len(before)))
                         self.assertEqual(memory(symbols['sheng_qr_payload'], 640).split(b'\0', 1)[0].decode('ascii'), payload)
                         import zxingcpp

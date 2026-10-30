@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "pe_sheng_log.h"
+volatile uint32_t armcpu_smp_running, armcpu_smp_requested;
+volatile uint32_t armcpu_smp_step[8], armcpu_smp_fail[8];
+volatile int32_t armcpu_smp_psci_rc[8];
+volatile uint32_t armcpu_smp_mpidr[8], armcpu_smp_seen_mpidr[8];
+volatile uint32_t armcpu_core_timer[8], armcpu_core_sgi[8];
+volatile uint64_t armcpu_ipi_sent, armcpu_ipi_interrupts;
 typedef struct { uint64_t v_baseAddr, v_display, v_rowBytes, v_width, v_height, v_depth; } Boot_Video;
 typedef struct { Boot_Video Video; } boot_args;
 #include "vm_trace.h"
@@ -79,7 +85,20 @@ void run_trace(void)
     sheng_log_panel_writer = 1;
     if (!sheng_log_snapshot_copy(&snapshot, sizeof(snapshot)) && sheng_log_buffer.writer == 1)
         snapshot_test_checks |= 1;
+    /* A fault may interrupt a GUI scanline while its lease is still held. */
+    sheng_framebuffer.owner = SHENG_FB_GUI;
+    sheng_framebuffer.writer = 1;
     sheng_log_panic(0x112233, reason);
+    /* Simulate the last in-flight scanline completing after the immediate panic draw. */
+    volatile uint32_t *panic_pixel = (volatile uint32_t *)sheng_panic_panel.base;
+    *panic_pixel = 0x12345678;
+    sheng_framebuffer.writer = 0;
+    sheng_log_panic_redraw();
+    uint64_t lease;
+    if (*panic_pixel == 0xff000000 && !sheng_fb_begin(SHENG_FB_GUI, &lease) &&
+        !sheng_fb_claim_gui()) writer_scope_test_checks |= 8;
+    sheng_fb_abort_gui();
+    if (sheng_framebuffer.owner == SHENG_FB_PANIC) writer_scope_test_checks |= 16;
     if (sheng_log_buffer.writer == 1 && sheng_log_buffer.panic_state == 3 &&
         sheng_panic_text_state == 2 && sheng_panic_writer_busy == 1 && sheng_log_buffer.dropped > 0)
         panic_test_checks |= 1;

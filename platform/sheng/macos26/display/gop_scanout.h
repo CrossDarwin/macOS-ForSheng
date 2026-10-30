@@ -4,7 +4,7 @@
 // The root IOSurface can have a different backing scale from the scanout.
 // Select source pixels before format conversion; never relabel its storage.
 // The caller validates nonzero extents and supplies a complete source row.
-static inline void nativeGopScanoutRow(uint32_t *destination, uint64_t destinationWidth,
+static inline void nativeGopScanoutRow(volatile uint32_t *destination, uint64_t destinationWidth,
                                      const uint16_t *source, uint64_t sourceWidth,
                                      const uint8_t *halfToByte)
 {

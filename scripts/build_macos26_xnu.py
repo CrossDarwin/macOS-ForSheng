@@ -88,6 +88,8 @@ PATCHES = [
     ROOT / 'platform/sheng/macos26/patches/0062-native-windowserver-alignment-map.patch',
     ROOT / 'platform/sheng/macos26/patches/0063-native-managed-ram-writecombine.patch',
     ROOT / 'platform/sheng/macos26/patches/0064-native-language-chooser-trace.patch',
+    ROOT / 'platform/sheng/macos26/patches/0065-native-panic-framebuffer-owner.patch',
+    ROOT / 'platform/sheng/macos26/patches/0066-native-smp-progress.patch',
 ]
 MACHINE_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-driver-declarations.patch'
 CPU_PATCH = ROOT / 'platform/sheng/macos26/patches/machine-cpu-registration.patch'
@@ -225,8 +227,12 @@ def prepare() -> dict:
             subprocess.run(['git', '-C', source, 'apply', patch], check=True)
     io_zero = ROOT / 'platform/sheng/macos26/log/io_zero.h'
     stage_file(io_zero, source / 'pexpert/arm/pe_sheng_io_zero.h')
+    framebuffer_owner = ROOT / 'platform/sheng/macos26/log/framebuffer_owner.h'
+    stage_file(framebuffer_owner, source / 'pexpert/arm/pe_sheng_framebuffer.h')
     retained_log = ROOT / 'platform/sheng/macos26/log/retained_log.h'
     stage_file(retained_log, source / 'pexpert/arm/pe_sheng_log.h')
+    smp_log = ROOT / 'platform/sheng/macos26/log/smp_log.h'
+    stage_file(smp_log, source / 'pexpert/arm/pe_sheng_smp_log.h')
     boot_progress = ROOT / 'platform/sheng/macos26/log/boot_progress.h'
     boot_progress_kernel = ROOT / 'platform/sheng/macos26/log/boot_progress_kernel.h'
     stage_file(boot_progress, source / 'pexpert/arm/pe_sheng_boot_progress.h')
@@ -296,6 +302,7 @@ def prepare() -> dict:
                     'osfmk/arm64/sheng_smp_keys.h', 'osfmk/arm64/sheng_smp_keys_storage.h',
                     'bsd/kern/sheng_process_output.h', 'pexpert/arm/pe_sheng_boot_progress.h',
                     'pexpert/arm/pe_sheng_boot_progress_kernel.h', 'pexpert/arm/pe_sheng_panic_qr.h',
+                    'pexpert/arm/pe_sheng_framebuffer.h', 'pexpert/arm/pe_sheng_smp_log.h',
                     'pexpert/arm/pe_sheng_qr_encoder.h', 'pexpert/arm/pe_sheng_qr_runtime.h',
                     'pexpert/arm/qrcodegen.h'], check=True)
     record = dict(xnu='12377.121.6', darwin='25.5.0', build='25F71', machine='SHENG',
@@ -307,8 +314,11 @@ def prepare() -> dict:
                   patches={str(p.relative_to(ROOT)): sha(p) for p in PATCHES},
                   io_zero_source_sha256=sha(io_zero),
                   retained_log_source_sha256=sha(retained_log),
+                  framebuffer_owner=dict(version=1, source_sha256=sha(framebuffer_owner),
+                      panic_bypasses_writer=True, late_panic_redraw=True, max_cpus=8),
+                  smp_log=dict(source_sha256=sha(smp_log), interval_seconds=30, per_core=True),
                   boot_progress=dict(default_off=True, boot_argument='sheng-boot-progress=1',
-                      stage_count=10, required_cpus=1, model_sha256=sha(boot_progress),
+                      stage_count=10, supported_cpus=[1, 2, 4, 8], model_sha256=sha(boot_progress),
                       kernel_sha256=sha(boot_progress_kernel), stalled_is_not_deadlock=True,
                       repeated_events_advance=False, periodic_summary_seconds=30,
                       renderer_handoff='first native GOP frame', runtime_qualified=False),

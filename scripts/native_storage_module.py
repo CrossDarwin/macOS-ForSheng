@@ -14,6 +14,7 @@ import struct
 import subprocess
 
 from native_macho import macho, symbols
+from native_framebuffer import display_cpus
 from inspect_macos26_security import backed_offset, chains, exports, macho as kc_macho
 
 PAGE = 16384
@@ -121,10 +122,10 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
             required = {'com.apple.iokit.IOMobileGraphicsFamily', 'com.apple.iokit.IOSurface',
                         'com.apple.iokit.IOAVFamily'}
             if (not required <= selected.keys() or display.get('build') != '25F71'
-                    or display.get('default_off') is not True or display.get('required_cpus') != 1
+                    or display.get('default_off') is not True or 1 not in display_cpus(display)
                     or display.get('gpu_acceleration') is not False
                     or display.get('publishes_vm_identity') is not False):
-                raise ValueError('GOP display requires the paired default-off single-CPU contract')
+                raise ValueError('GOP display requires the paired default-off framebuffer contract')
             expected = dict(CFBundleIdentifier=evidence['bundle'], IOClass='NativeGOPDisplay',
                 IOProviderClass='IOPlatformExpertDevice', IOMatchCategory='NativeGOPDisplay', IOProbeScore=500)
             if info['IOKitPersonalities'].get('NativeGOPDisplay') != expected:
@@ -133,6 +134,9 @@ def prepare(directory: Path, base: int, native: dict, original: bytes,
                               ('IOMobileFramebufferABI.h', 'header_sha256')):
                 if hashlib.sha256((directory / 'gop-display' / name).read_bytes()).hexdigest() != display.get(key):
                     raise ValueError('GOP display source differs from the compiled record')
+            if len(display_cpus(display)) > 1:
+                if hashlib.sha256((directory / 'gop-display/framebuffer_owner.h').read_bytes()).hexdigest() != display.get('framebuffer_owner_sha256'):
+                    raise ValueError('GOP framebuffer owner differs from the compiled record')
             contract = json.loads((Path(__file__).resolve().parents[1] /
                                   'config/macos26-gop-reference.json').read_text())['abi']
             family = kc_macho(original, kc['entries']['com.apple.iokit.IOMobileGraphicsFamily'][1])

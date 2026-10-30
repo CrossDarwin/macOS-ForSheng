@@ -1,0 +1,22 @@
+--- a/pexpert/pexpert/pexpert.h
++++ b/pexpert/pexpert/pexpert.h
+@@ -173,6 +173,7 @@
+ extern volatile uint64_t sheng_panel_ready;
+ extern volatile uint64_t sheng_status_pixels;
+ extern unsigned sheng_boot_progress_enabled;
++extern unsigned sheng_smp_log_cpus;
+ void sheng_boot_checkpoint(unsigned stage);
+ void sheng_boot_service(const char *name, int pid, int exiting, int status);
+ void sheng_boot_progress_tick(void);
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -579,7 +579,8 @@
+ 	unsigned progress = 0, cpus = 0;
+ 	PE_parse_boot_argn("sheng-boot-progress", &progress, sizeof(progress));
+ 	PE_parse_boot_argn("cpus", &cpus, sizeof(cpus));
+-	sheng_boot_progress_enabled = progress == 1 && cpus == 1;
++	sheng_boot_progress_enabled = progress == 1 && (cpus == 1 || cpus == 2 || cpus == 4 || cpus == 8);
++	sheng_smp_log_cpus = cpus;
+ 	sheng_boot_checkpoint(0);
+ 	sheng_boot_checkpoint(1);
+ #endif

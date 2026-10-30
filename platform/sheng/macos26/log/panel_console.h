@@ -8,6 +8,7 @@ volatile uint64_t sheng_panel_ready, sheng_panel_characters, sheng_panel_witness
 volatile uint64_t sheng_status_witness;
 char sheng_status_message[45];
 static unsigned sheng_status_pinned;
+static uint32_t sheng_status_writer;
 
 volatile uint64_t sheng_status_pixels;
 uint64_t sheng_status_row_pa, sheng_status_scale, sheng_console_columns, sheng_console_rows;
@@ -65,6 +66,9 @@ static void sheng_status_render(const char *prefix, const char *message)
     const uintptr_t stride = sheng_bootstrap_vm_stride;
     const unsigned scale = (unsigned)sheng_status_scale;
     if (!base || stride < 2560 || stride > 65536 || (scale != 1 && scale != 2)) return;
+    uint32_t expected = 0;
+    if (!__atomic_compare_exchange_n(&sheng_status_writer, &expected, 1, 0,
+        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
     unsigned length = 0;
     while (prefix && *prefix && length < 44) sheng_status_message[length++] = *prefix++;
     while (message && *message && length < 44) {
@@ -83,6 +87,8 @@ static void sheng_status_render(const char *prefix, const char *message)
             for (unsigned row = 0; row < 16; row++) {
                 const unsigned bits = sheng_panel_font[c * 16 + row];
                 for (unsigned y = 0; y < scale; y++) {
+                    uint64_t saved;
+                    if (!sheng_fb_begin(SHENG_FB_BOOT, &saved)) goto out;
                     volatile uint32_t *pixels = (volatile uint32_t *)(base +
                         ((line * 16 + row) * scale + y) * stride + col * 8 * scale * 4);
                     for (unsigned x = 0; x < 8; x++) {
@@ -90,12 +96,15 @@ static void sheng_status_render(const char *prefix, const char *message)
                         for (unsigned sx = 0; sx < scale; sx++) pixels[x * scale + sx] = color;
                         if (!white && color == 0xffffffffu) white = (uintptr_t)&pixels[x * scale];
                     }
+                    sheng_fb_end(saved);
                 }
             }
         }
     }
     __asm__ volatile ("dsb sy" ::: "memory");
     if (white && *(volatile uint32_t *)white == 0xffffffffu) sheng_status_witness = 1;
+out:
+    __atomic_store_n(&sheng_status_writer, 0, __ATOMIC_RELEASE);
 }
 
 void sheng_log_status(const char *message)
@@ -119,11 +128,14 @@ static struct {
 static void sheng_panel_clear_row(unsigned row)
 {
     for (unsigned y = 0; y < 16 * sheng_panel.scale; y++) {
+        uint64_t saved;
+        if (!sheng_fb_begin(SHENG_FB_BOOT, &saved)) return;
         volatile uint32_t *p = (volatile uint32_t *)(sheng_panel.base +
             (row * 16 * sheng_panel.scale + y) * sheng_panel.stride);
         for (unsigned x = 0; x < sheng_panel.columns * 8 * sheng_panel.scale; x++) {
             p[x] = 0xff000000u;
         }
+        sheng_fb_end(saved);
     }
 }
 
@@ -142,11 +154,14 @@ static void sheng_panel_newline(void)
         const unsigned pixels = sheng_panel.columns * 8 * sheng_panel.scale;
         for (unsigned row = sheng_panel.pinned; row + 1 < sheng_panel.rows; row++) {
             for (unsigned y = 0; y < 16 * sheng_panel.scale; y++) {
+                uint64_t saved;
+                if (!sheng_fb_begin(SHENG_FB_BOOT, &saved)) return;
                 volatile uint32_t *dst = (volatile uint32_t *)(sheng_panel.base +
                     (row * 16 * sheng_panel.scale + y) * sheng_panel.stride);
                 volatile uint32_t *src = (volatile uint32_t *)((uintptr_t)dst +
                     16 * sheng_panel.scale * sheng_panel.stride);
                 for (unsigned x = 0; x < pixels; x++) dst[x] = src[x];
+                sheng_fb_end(saved);
             }
         }
         sheng_panel.y = sheng_panel.rows - 1;
@@ -156,7 +171,7 @@ static void sheng_panel_newline(void)
 
 static void sheng_panel_putc(unsigned char byte)
 {
-    if (!sheng_panel_ready) return;
+    if (!sheng_panel_ready || __atomic_load_n(&sheng_framebuffer.owner, __ATOMIC_ACQUIRE) != SHENG_FB_BOOT) return;
     if (byte == '\r') { sheng_panel.x = 0; return; }
     if (byte == '\n') { sheng_panel_newline(); return; }
     if (byte < 32 || byte > 126) return;
@@ -167,12 +182,15 @@ static void sheng_panel_putc(unsigned char byte)
     for (unsigned row = 0; row < 16; row++) {
         const unsigned bits = sheng_panel_font[byte * 16 + row];
         for (unsigned y = 0; y < scale; y++) {
+            uint64_t saved;
+            if (!sheng_fb_begin(SHENG_FB_BOOT, &saved)) return;
             volatile uint32_t *p = (volatile uint32_t *)(origin + (row * scale + y) * sheng_panel.stride);
             for (unsigned col = 0; col < 8; col++) {
                 const uint32_t color = bits & (1u << col) ? 0xffffffffu : 0xff000000u;
                 for (unsigned x = 0; x < scale; x++) p[col * scale + x] = color;
                 if (!white && color == 0xffffffffu) white = (uintptr_t)&p[col * scale];
             }
+            sheng_fb_end(saved);
         }
     }
     __asm__ volatile ("dsb sy" ::: "memory");
