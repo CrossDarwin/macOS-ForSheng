@@ -127,6 +127,7 @@ static struct {
 
 static void sheng_panel_clear_row(unsigned row)
 {
+    if (row >= sheng_panel.rows) return;
     for (unsigned y = 0; y < 16 * sheng_panel.scale; y++) {
         uint64_t saved;
         if (!sheng_fb_begin(SHENG_FB_BOOT, &saved)) return;
@@ -149,7 +150,10 @@ static void sheng_panel_reset(void)
 static void sheng_panel_newline(void)
 {
     sheng_panel.x = 0;
-    if (++sheng_panel.y == sheng_panel.rows) {
+    if (!sheng_panel.rows) return;
+    if (sheng_panel.y >= sheng_panel.rows - 1) {
+        /* Commit a valid cursor before any try-only scanline can skip the scroll. */
+        sheng_panel.y = sheng_panel.rows - 1;
         /* Access the I/O mapping word by word; avoid memory routines that may use SIMD or DC ZVA. */
         const unsigned pixels = sheng_panel.columns * 8 * sheng_panel.scale;
         for (unsigned row = sheng_panel.pinned; row + 1 < sheng_panel.rows; row++) {
@@ -164,7 +168,8 @@ static void sheng_panel_newline(void)
                 sheng_fb_end(saved);
             }
         }
-        sheng_panel.y = sheng_panel.rows - 1;
+    } else {
+        sheng_panel.y++;
     }
     sheng_panel_clear_row(sheng_panel.y);
 }
@@ -172,6 +177,9 @@ static void sheng_panel_newline(void)
 static void sheng_panel_putc(unsigned char byte)
 {
     if (!sheng_panel_ready || __atomic_load_n(&sheng_framebuffer.owner, __ATOMIC_ACQUIRE) != SHENG_FB_BOOT) return;
+    if (!sheng_panel.rows || !sheng_panel.columns) return;
+    if (sheng_panel.y >= sheng_panel.rows) sheng_panel.y = sheng_panel.rows - 1;
+    if (sheng_panel.x >= sheng_panel.columns) sheng_panel.x = 0;
     if (byte == '\r') { sheng_panel.x = 0; return; }
     if (byte == '\n') { sheng_panel_newline(); return; }
     if (byte < 32 || byte > 126) return;

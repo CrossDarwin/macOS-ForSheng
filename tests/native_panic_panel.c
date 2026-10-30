@@ -13,6 +13,7 @@ typedef struct { Boot_Video Video; } boot_args;
 volatile uint64_t panic_test_checks;
 volatile uint64_t snapshot_test_checks;
 volatile uint64_t writer_scope_test_checks;
+volatile uint64_t scroll_bounds_test_checks;
 static struct sheng_log_record snapshot;
 static uint64_t progress_clock = 120;
 uint64_t sheng_boot_progress_seconds(void) { return progress_clock; }
@@ -42,6 +43,31 @@ void run_trace(void)
         12192, 88, (unsigned)sheng_console_rows, 2);
     sheng_log_bind_panic_panel(sheng_status_pixels + (32 + 16 * sheng_console_rows) *
         sheng_status_scale * sheng_bootstrap_vm_stride, 12192, 88, (unsigned)sheng_console_panic_rows, 2);
+    /* A busy progress scanline must never leave the scroll cursor outside its region. */
+    const uintptr_t after_panel = sheng_panel.base + sheng_panel.rows * 16 *
+        sheng_panel.scale * sheng_panel.stride;
+    volatile uint32_t *guard = (volatile uint32_t *)after_panel;
+    for (unsigned n = 0; n < 2 * sheng_panel.stride / 4; n++) guard[n] = 0x12345678;
+    sheng_panel.y = sheng_panel.rows - 1;
+    sheng_framebuffer.writer = 1;
+    sheng_panel_putc('\n');
+    if (sheng_panel.y == sheng_panel.rows - 1) scroll_bounds_test_checks |= 1;
+    sheng_framebuffer.writer = 0;
+    sheng_panel_putc('X');
+    sheng_panel_putc('\n');
+    int guard_intact = 1;
+    for (unsigned n = 0; n < 2 * sheng_panel.stride / 4; n++)
+        if (guard[n] != 0x12345678) guard_intact = 0;
+    if (guard_intact) scroll_bounds_test_checks |= 2;
+    sheng_panel.y = sheng_panel.rows + 10;
+    sheng_panel_putc('Y');
+    if (sheng_panel.y == sheng_panel.rows - 1) scroll_bounds_test_checks |= 4;
+    sheng_panel_clear_row(sheng_panel.rows);
+    guard_intact = 1;
+    for (unsigned n = 0; n < 2 * sheng_panel.stride / 4; n++)
+        if (guard[n] != 0x12345678) guard_intact = 0;
+    if (guard_intact) scroll_bounds_test_checks |= 8;
+    sheng_panel_reset();
     uint64_t before_total = sheng_log_buffer.total, before_dropped = sheng_log_buffer.dropped;
     uint64_t before_pixels = sheng_panel_characters, original_daif, observed_daif;
     __asm__ volatile("mrs %0, daif\nmsr daifclr, #7" : "=r"(original_daif) :: "memory");

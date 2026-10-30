@@ -162,6 +162,7 @@ class NativePanicPanel(unittest.TestCase):
                         self.assertEqual(number('panic_test_checks'), 15)
                         self.assertEqual(number('snapshot_test_checks'), 7)
                         self.assertEqual(number('writer_scope_test_checks'), 31)
+                        self.assertEqual(number('scroll_bounds_test_checks'), 15)
                         self.assertEqual(before, memory(base, len(before)))
                         self.assertEqual(memory(symbols['sheng_qr_payload'], 640).split(b'\0', 1)[0].decode('ascii'), payload)
                         import zxingcpp
@@ -176,6 +177,7 @@ class NativePanicPanel(unittest.TestCase):
                             writer_not_stolen=True, first_panic_text_preserved=True,
                             panel_contention_keeps_ram_log=True, panel_contention_allows_snapshot=True,
                             ram_writer_restores_interrupt_mask=True,
+                            contended_scroll_cursor_bounded=True, scroll_guard_pixels_preserved=True,
                             periodic_service_inventory_verified=True,
                             actual_font_pixels_verified=True, ordinary_tail_lines=80,
                             progress_age_and_segments_verified=True, handoff_stops_progress_pixels=True,
