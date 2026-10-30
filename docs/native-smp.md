@@ -69,3 +69,7 @@ GOP 与诊断面板按扫描线互斥写屏。panic 立即接管显示，停住�
 真实 `launchd main` 已执行，`recoveryosd`、`WindowServer` 和 `coreservicesd` 已启动，八核 timer、IPI 均增长，未观察到致命 panic。
 该轮使用 VirtIO 文字输出与 QEMU 时序诊断参数；实机多核图形尚未验收。
 当前实验分区布局见[重新安装实验环境](status.md#重新安装实验环境)。
+
+实机 `247EE16F` 已读回配套日志：7 个副核初始化完成，PSCI 和失败计数均为 0，
+八核 timer、IPI 持续增长。图形阶段停在 `WindowServer exec`，尚未显示首帧。
+捕获范围与丢失计数见[实机日志读回](status.md#247ee16f-实机日志读回)。
